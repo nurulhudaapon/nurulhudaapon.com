@@ -31,6 +31,7 @@ export const postBySlugQuery = `
 `;
 
 export const postUpdatedQuery = `*[_type == "post" && _id == $id].slug.current`;
+export const snippetUpdatedQuery = `*[_type == "snippet" && _id == $id].slug.current`;
 
 const snippetFields = `
   _id,

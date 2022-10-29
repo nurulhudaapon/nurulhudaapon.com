@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { isValidSignature, SIGNATURE_HEADER_NAME } from '@sanity/webhook';
 import { sanityClient } from 'lib/sanity-server';
-import { postUpdatedQuery } from 'lib/queries';
+import { postUpdatedQuery, snippetUpdatedQuery } from 'lib/queries';
 
 export default async function handler(
   req: NextApiRequest,
@@ -20,12 +20,20 @@ export default async function handler(
   }
 
   try {
-    const slug = await sanityClient.fetch(postUpdatedQuery, { id });
-    await Promise.all([
+    const postSlug = await sanityClient.fetch(postUpdatedQuery, { id });
+    const snippetSlug = await sanityClient.fetch(snippetUpdatedQuery, { id });
+
+    if (postSlug) await Promise.all([
       res.revalidate('/blog'),
-      res.revalidate(`/blog/${slug}`)
+      res.revalidate(`/blog/${postSlug}`)
     ]);
-    return res.status(200).json({ message: `Updated ${slug}` });
+
+    if (snippetSlug) await Promise.all([
+      res.revalidate('/snippets'),
+      res.revalidate(`/snippets/${postSlug}`)
+    ]);
+
+    return res.status(200).json({ message: `Updated ${postSlug || snippetSlug}` });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
