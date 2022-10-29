@@ -23,7 +23,6 @@ specifiers:
   next-themes: ^0.2.0
   postcss: ^8.4.16
   prettier: 2.7.1
-  prisma: 4.3.1
   react: 18.2.0
   react-dom: 18.2.0
   reading-time: ^1.5.0
@@ -75,7 +74,6 @@ devDependencies:
   globby: 13.1.2
   postcss: 8.4.16
   prettier: 2.7.1
-  prisma: 4.3.1
   reading-time: 1.5.0
   rehype: 12.0.1
   rehype-autolink-headings: 6.1.1
@@ -1555,11 +1553,6 @@ packages:
     resolution: {integrity: sha512-SDDsdury2SaTI2D5Ea6o+Y39SSZMYHRMWJHxkxYl3yzFP0n/0EknOhoXcoaV+bxGr2dTTqZi2TOEj+uWYuavSw==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
     dev: false
-
-  /@prisma/engines/4.3.1:
-    resolution: {integrity: sha512-4JF/uMaEDAPdcdZNOrnzE3BvrbGpjgV0FcPT3EVoi6I86fWkloqqxBt+KcK/+fIRR0Pxj66uGR9wVH8U1Y13JA==}
-    requiresBuild: true
-    dev: true
 
   /@reach/auto-id/0.17.0_react-dom@18.2.0+react@18.2.0:
     resolution: {integrity: sha512-ud8iPwF52RVzEmkHq1twuqGuPA+moreumUHdtgvU3sr3/15BNhwp3KyDLrKKSz0LP1r3V4pSdyF9MbYM8BoSjA==}
@@ -6747,15 +6740,6 @@ packages:
     dependencies:
       parse-ms: 2.1.0
     dev: false
-
-  /prisma/4.3.1:
-    resolution: {integrity: sha512-90xo06wtqil76Xsi3mNpc4Js3SdDRR5g4qb9h+4VWY4Y8iImJY6xc3PX+C9xxTSt1lr0Q89A0MLkJjd8ax6KiQ==}
-    engines: {node: '>=14.17'}
-    hasBin: true
-    requiresBuild: true
-    dependencies:
-      '@prisma/engines': 4.3.1
-    dev: true
 
   /prismjs/1.27.0:
     resolution: {integrity: sha512-t13BGPUlFDR7wRB5kQDG4jjl7XeuH6jbJGt11JHPL96qwsEHNX2+68tFXqc1/k+/jALsbSWJKUOT/hcYAZ5LkA==}
