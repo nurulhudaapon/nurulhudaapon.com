@@ -4,11 +4,11 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method == 'POST')
   {
-    const { email } = req.body;
+    const { email } = JSON.parse(req.body);
     const subscriber = await createSubscriber(email);
     return res.status(201).json(subscriber);
   } 
-  
+
   try {
     const count = await getTotalSubscriberCount();
 
