@@ -1,0 +1,6 @@
+This favicon was generated using the following font:
+
+- Font Title: Be Vietnam Pro
+- Font Author: Copyright 2021 The Be Vietnam Pro Project Authors (https://github.com/bettergui/BeVietnamPro)
+- Font Source: http://fonts.gstatic.com/s/bevietnampro/v10/QdVPSTAyLFyeg_IDWvOJmVES_EwwD3s6ZKAi.ttf
+- Font License: SIL Open Font License, 1.1 (http://scripts.sil.org/OFL))
