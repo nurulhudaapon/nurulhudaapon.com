@@ -18,6 +18,12 @@ export async function getTotalSubscriberCount(): Promise<number> {
     return await collection.countDocuments();
 }
 
+export async function getSubscriberByEmail(email: string) {
+    const client = await clientPromise;
+    const collection = client.db('test').collection('subscribers');
+    return await collection.findOne({ email });
+}
+
 export async function createView(ip: string, contentSlug: string, contentType: string) {
     const client = await clientPromise;
     return await client.db('test').collection('views').insertOne({

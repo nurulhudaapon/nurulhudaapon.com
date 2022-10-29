@@ -1,5 +1,4 @@
 import { useState, useRef } from 'react';
-import Link from 'next/link';
 import useSWR from 'swr';
 
 import fetcher from 'lib/fetcher';
@@ -7,12 +6,15 @@ import { Form, FormState, Subscribers } from 'lib/types';
 import SuccessMessage from 'components/SuccessMessage';
 import ErrorMessage from 'components/ErrorMessage';
 import LoadingSpinner from 'components/LoadingSpinner';
+import { GLOBAL_CONFIG } from './Resources';
 
 export default function Subscribe() {
   const [form, setForm] = useState<FormState>({ state: Form.Initial });
   const inputEl = useRef(null);
   const { data } = useSWR<Subscribers>('/api/subscribers', fetcher);
   const subscriberCount = new Number(data?.count);
+
+  if (!GLOBAL_CONFIG.enableNewsletter) return null;
 
   const subscribe = async (e) => {
     e.preventDefault();
@@ -21,7 +23,7 @@ export default function Subscribe() {
     const email = inputEl.current.value;
     const res = await fetch(`/api/subscribers`, {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email })
     });
 
     const { error } = await res.json();
@@ -34,19 +36,24 @@ export default function Subscribe() {
     }
 
     inputEl.current.value = '';
-    setForm({
-      state: Form.Success,
-      message: `Hooray! You're now on the list.`
-    });
+    let _form = { ...form };
+    if (res.status === 200)
+      _form = { state: Form.Already, message: 'You are already subscribed!' };
+    else if (res.status === 201)
+      _form = {
+        state: Form.Success,
+        message: `Hooray! You're now on the list.`
+      };
+    else if (res.status === 201)
+      _form = { state: Form.Error, message: `Oops! Something went wrong. 😔` };
+    setForm(_form);
   };
-
+  const countText =
+    subscriberCount > 0 ? subscriberCount.toLocaleString() : '-';
   return (
     <div className="border border-blue-200 rounded p-6 my-4 w-full dark:border-gray-800 dark:bg-blue-opaque">
       <p className="text-lg md:text-xl font-bold text-gray-900 dark:text-gray-100">
-        Subscribe to the newsletter
-      </p>
-      <p className="my-1 text-gray-800 dark:text-gray-200">
-        Get email notifcation about new post.
+        Subscribe to receive updates
       </p>
       <form className="relative my-4" onSubmit={subscribe}>
         <input
@@ -67,14 +74,12 @@ export default function Subscribe() {
       </form>
       {form.state === Form.Error ? (
         <ErrorMessage>{form.message}</ErrorMessage>
-      ) : form.state === Form.Success ? (
+      ) : form.state === Form.Success || form.state === Form.Already ? (
         <SuccessMessage>{form.message}</SuccessMessage>
       ) : (
         <p className="text-sm text-gray-800 dark:text-gray-200">
-          {`${
-            subscriberCount > 0 ? subscriberCount.toLocaleString() : '-'
-          } subscribers `}
-     
+          {countText} subscribers
+          <span className="relative inline-flex ml-2 w-2 h-2 rounded-full bg-green-400 animate-ping"></span>
         </p>
       )}
     </div>

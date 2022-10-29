@@ -1,13 +1,18 @@
-import { createSubscriber, getTotalSubscriberCount } from 'lib/database';
+import { createSubscriber, getSubscriberByEmail, getTotalSubscriberCount } from 'lib/database';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method == 'POST')
-  {
+  if (req.method == 'POST') {
+
     const { email } = JSON.parse(req.body);
+    const currentSubscriber = await getSubscriberByEmail(email);
+
+    if (currentSubscriber?._id)
+      return res.status(200).json({});
+
     const subscriber = await createSubscriber(email);
     return res.status(201).json(subscriber);
-  } 
+  }
 
   try {
     const count = await getTotalSubscriberCount();

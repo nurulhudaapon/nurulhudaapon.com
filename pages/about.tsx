@@ -3,11 +3,8 @@ import Image from 'next/image';
 
 import Container from 'components/Container';
 import avatar from 'public/avatar.jpg';
-import { useTheme } from 'next-themes';
 
 export default function About() {
-  const { resolvedTheme } = useTheme();
-
   return (
     <Container title="About – Nurul Huda (Apon)">
       <div className="flex flex-col justify-center items-start max-w-2xl mx-auto mb-16 w-full">
@@ -55,9 +52,7 @@ export default function About() {
                 width={400}
                 quality={100}
                 src={avatar}
-                className={`rounded-md filter ${
-                  resolvedTheme === 'dark' ? 'grayscale' : ''
-                }`}
+                className={`rounded-md filter dark:grayscale`}
               />
             </a>
             

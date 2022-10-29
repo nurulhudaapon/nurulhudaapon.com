@@ -1,5 +1,4 @@
 import { Suspense } from 'react';
-import { useTheme } from 'next-themes';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -8,20 +7,17 @@ import Container from '../components/Container';
 import ProjectCard from 'components/ProjectCard';
 import Subscribe from '../components/Subscribe';
 import VideoCard from '../components/VideoCard';
+import { CONTENT, GLOBAL_CONFIG } from 'components/Resources';
 
 export default function Home() {
-  const { resolvedTheme } = useTheme();
-
   return (
     <Suspense fallback={null}>
       <Container>
         <div className="flex flex-col justify-center items-start max-w-2xl border-gray-200 dark:border-gray-700 mx-auto pb-16">
-          <ProfileSection resolvedTheme={resolvedTheme} />
+          <ProfileSection />
           <ProjectSection />
-          {/* <BlogPostSection /> */}
-
-          {/* Future Sections */}
-          {/* <VideoSection /> */}
+          {GLOBAL_CONFIG.enableBlogSection && <BlogPostSection />}
+          {GLOBAL_CONFIG.enableVideoSection && <VideoSection />}
           <br />
           <br />
 
@@ -32,7 +28,7 @@ export default function Home() {
   );
 }
 
-function ProfileSection({ resolvedTheme }) {
+function ProfileSection({}) {
   return (
     <div className="flex flex-col-reverse sm:flex-row items-start">
       <div className="flex flex-col pr-8">
@@ -43,7 +39,10 @@ function ProfileSection({ resolvedTheme }) {
           Software Engineer at <span className="font-semibold">Voyage SMS</span>
         </h2>
         <p className="text-gray-600 dark:text-gray-400 mb-16">
-          A tech enthusiast, enrolling in Computer Science and Engineering at <span className="font-semibold">Green University of Bangladesh</span> and working as a <span className="font-semibold">Software Engineer</span>
+          A tech enthusiast, enrolling in Computer Science and Engineering at{' '}
+          <span className="font-semibold">Green University of Bangladesh</span>{' '}
+          and working as a{' '}
+          <span className="font-semibold">Software Engineer</span>
         </p>
       </div>
       <div className="w-[100px] sm:w-[276px] relative mb-8 sm:mb-0 mr-auto">
@@ -54,9 +53,7 @@ function ProfileSection({ resolvedTheme }) {
           src="/avatar.jpg"
           sizes="30vw"
           priority
-          className={`rounded-full filter ${
-            resolvedTheme === 'dark' ? 'grayscale' : ''
-          }`}
+          className={'rounded-full filter dark:grayscale'}
         />
       </div>
     </div>
@@ -64,29 +61,13 @@ function ProfileSection({ resolvedTheme }) {
 }
 
 function ProjectSection({}) {
-  const projects: Parameters<typeof ProjectCard>['0'][] = [
-    {
-      title: 'VS Code Extension',
-      repoUrl: 'https://github.com/nurulhudaapon/enum-map-generator',
-      description: 'A VSCode extension for generating mapper from TS enum or JS enum like object',
-      languages: ['typescript', 'vscode'],
-
-    },
-    {
-      title: 'Web API Template',
-      repoUrl: 'https://github.com/nurulhudaapon/boilerplate-dotenet-mssql',
-      description: '.Net Core Best Practices and Base Template for Web API',
-      languages: ['csharp', 'dotnetcore', 'microsoftsqlserver'],
-    }
-  ];
-  
   return (
     <section>
       <h3 className="font-bold text-2xl md:text-4xl tracking-tight mb-6 text-black dark:text-white">
         Projects
       </h3>
       <div className="flex gap-6 flex-col md:flex-row mb-8">
-        {projects.map((project) => (
+        {CONTENT.projects.map((project) => (
           <ProjectCard key={project.repoUrl} {...project} />
         ))}
       </div>
@@ -95,26 +76,13 @@ function ProjectSection({}) {
 }
 
 function BlogPostSection({}) {
-  const posts: Parameters<typeof BlogPostCard>['0'][] = [
-    {
-      title: 'All about PostgreSQL',
-      slug: 'postgresql',
-      gradient: 'from-[#6EE7B7] via-[#3B82F6] to-[#9333EA]'
-    },
-    {
-      title: 'Past, Present, and Future of React State Management',
-      slug: 'react-state-management',
-      gradient: 'from-[#FDE68A] via-[#FCA5A5] to-[#FECACA]'
-    }
-  ];
-
   return (
     <section>
       <h3 className="font-bold text-2xl md:text-4xl tracking-tight mb-6 text-black dark:text-white">
         Blog Posts
       </h3>
       <div className="flex gap-6 flex-col md:flex-row">
-        {posts.map((post) => (
+        {CONTENT.posts.map((post) => (
           <BlogPostCard key={post.slug} {...post} />
         ))}
       </div>
@@ -149,9 +117,7 @@ function VideoSection({}) {
       <h3 className="font-bold text-2xl md:text-4xl tracking-tight mb-4 mt-16 text-black dark:text-white">
         Online videos
       </h3>
-      <p className="text-gray-600 dark:text-gray-400 mb-4">
-        Video details
-      </p>
+      <p className="text-gray-600 dark:text-gray-400 mb-4">Video details</p>
 
       <VideoCard
         index="04"

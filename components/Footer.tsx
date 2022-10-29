@@ -20,6 +20,12 @@ export default function Footer() {
             Statistics
           </Link>
           <Link
+            href="/newsletter"
+            className="text-gray-500 hover:text-gray-600 transition"
+          >
+            Newsletter
+          </Link>
+          <Link
             href="/snippets"
             className="text-gray-500 hover:text-gray-600 transition"
           >
@@ -35,6 +41,9 @@ export default function Footer() {
           </ExternalLink>
         </div>
         <div className="flex flex-col space-y-4">
+          <ExternalLink href="https://fb.me/nurulhudaapon">
+            Facebook
+          </ExternalLink>
           <ExternalLink href="https://www.youtube.com/nurulhudaapon">
             YouTube
           </ExternalLink>

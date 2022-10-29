@@ -25,6 +25,7 @@ export enum Form {
   Initial,
   Loading,
   Success,
+  Already,
   Error
 }
 
