@@ -76,6 +76,9 @@ html {
 .anchor:hover {
   @apply visible;
 }
+.prose h1 {
+  @apply dark:text-white;
+}
 
 .prose a {
   @apply transition-all;

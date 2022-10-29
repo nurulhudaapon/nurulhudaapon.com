@@ -9,8 +9,8 @@ import { mdxToHtml } from 'lib/mdx';
 import { Post } from 'lib/types';
 
 export default function PostPage({ post }: { post: Post }) {
-  const StaticTweet = ({ id }) => {
-    const tweet = post.tweets.find((tweet) => tweet.id === id);
+  const StaticTweet = ({ id } = {id: null}) => {
+    const tweet = post.tweets.find((tweet) => tweet?.id === id) || {};
     return <Tweet {...tweet} />;
   };
 

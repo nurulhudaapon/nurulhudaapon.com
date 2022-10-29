@@ -13,9 +13,9 @@ export default function BlogPostCard({ title, slug, gradient }) {
     (<Link
       href={`/blog/${slug}`}
       className={cn(
-        'transform hover:scale-[1.01] transition-all',
+        'transform hover:scale-[1.01] w-full transition-all',
         'rounded-xl w-full md:w-1/3 bg-gradient-to-r p-1',
-        gradient
+        gradient,
       )}>
 
       <div className="flex flex-col justify-between h-full bg-white dark:bg-gray-900 rounded-lg p-4">

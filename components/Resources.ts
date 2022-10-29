@@ -45,15 +45,15 @@ const projects: Parameters<typeof ProjectCard>['0'][] = [
 
 const posts: Parameters<typeof BlogPostCard>['0'][] = [
     {
-        title: 'All about PostgreSQL',
-        slug: 'postgresql',
-        gradient: 'from-[#6EE7B7] via-[#3B82F6] to-[#9333EA]'
+        title: 'REST API Resources',
+        slug: 'rest-api-resources',
+        gradient: 'from-[#ff0080] to-[#7928CA]'
     },
     {
-        title: 'Past, Present, and Future of React State Management',
-        slug: 'react-state-management',
-        gradient: 'from-[#FDE68A] via-[#FCA5A5] to-[#FECACA]'
-    }
+        title: 'REST API Resources',
+        slug: 'coming-soon-0',
+        gradient: 'from-[#ff0080] to-[#7928CA]'
+    },
 ];
 
 export const CONTENT = {
