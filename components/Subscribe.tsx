@@ -38,11 +38,11 @@ export default function Subscribe() {
     inputEl.current.value = '';
     let _form = { ...form };
     if (res.status === 200)
-      _form = { state: Form.Already, message: 'You are already subscribed!' };
+      _form = { state: Form.Already, message: 'You were in!' };
     else if (res.status === 201)
       _form = {
         state: Form.Success,
-        message: `Hooray! You're now on the list.`
+        message: `You are in!`
       };
     else if (res.status === 201)
       _form = { state: Form.Error, message: `Oops! Something went wrong. 😔` };
@@ -51,10 +51,7 @@ export default function Subscribe() {
   const countText =
     subscriberCount > 0 ? subscriberCount.toLocaleString() : '-';
   return (
-    <div className="border border-blue-200 rounded p-6 my-4 w-full dark:border-gray-800 dark:bg-blue-opaque">
-      <p className="text-lg md:text-xl font-bold text-gray-900 dark:text-gray-100">
-        Subscribe to receive updates
-      </p>
+    <div className="border border-blue-200 rounded p-3 pt-0 my-4 w-full dark:border-gray-800 dark:bg-blue-opaque">
       <form className="relative my-4" onSubmit={subscribe}>
         <input
           ref={inputEl}
@@ -63,7 +60,7 @@ export default function Subscribe() {
           type="email"
           autoComplete="email"
           required
-          className="px-4 py-2 mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full border-gray-500 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 pr-32"
+          className="px-4 py-2 mt-1b foblue-500 focuscus:ring-:border-blue-500 block w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 pr-32"
         />
         <button
           className="flex items-center justify-center absolute right-1 top-1 px-4 pt-1 font-medium h-8 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded w-28"
@@ -72,16 +69,26 @@ export default function Subscribe() {
           {form.state === Form.Loading ? <LoadingSpinner /> : 'Subscribe'}
         </button>
       </form>
-      {form.state === Form.Error ? (
-        <ErrorMessage>{form.message}</ErrorMessage>
-      ) : form.state === Form.Success || form.state === Form.Already ? (
-        <SuccessMessage>{form.message}</SuccessMessage>
-      ) : (
-        <p className="text-sm text-gray-800 dark:text-gray-200">
-          {countText} subscribers
-          <span className="relative inline-flex ml-2 w-2 h-2 rounded-full bg-green-400 animate-ping"></span>
-        </p>
-      )}
+
+      <div className="label flex justify-between">
+        <div className="title ml-1 justify-start">
+          <p className="text-sm font-bold text-gray-900 dark:text-gray-100">
+            Subscribe to receive updates
+          </p>
+        </div>
+        <div className="message justify-end">
+          {form.state === Form.Error ? (
+            <ErrorMessage>{form.message}</ErrorMessage>
+          ) : form.state === Form.Success || form.state === Form.Already ? (
+            <SuccessMessage>{form.message}</SuccessMessage>
+          ) : (
+            <p className="text-sm text-gray-800 dark:text-gray-200">
+              {countText} subscribers
+              <span className="relative inline-flex ml-2 w-2 h-2 rounded-full bg-green-400 animate-ping"></span>
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
