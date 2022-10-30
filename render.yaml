@@ -2,11 +2,12 @@ services:
   - type: web
     name: strapi
     env: docker
-    dockerfilePath: ./strapi/Dockerfile.prod
+    dockerfilePath: ./Dockerfile.prod
+    rootDir: strapi
     plan: starter
     region: singapore
     buildCommand: cd strapi && yarn install && yarn build
-    startCommand: yarn start
+    # startCommand: yarn start
     healthCheckPath: /_health
     disk:
       name: strapi-uploads
