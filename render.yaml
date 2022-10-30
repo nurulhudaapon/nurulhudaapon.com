@@ -4,7 +4,7 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile.prod
     rootDir: strapi
-    plan: starter
+    plan: free
     region: singapore
     buildCommand: yarn install && yarn build
     # startCommand: yarn start
@@ -33,4 +33,4 @@ services:
 
 databases:
   - name: strapi
-    plan: starter
+    plan: free
