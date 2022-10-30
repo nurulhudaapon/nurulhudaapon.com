@@ -1,5 +1,7 @@
 import { MDXRemoteSerializeResult } from 'next-mdx-remote';
 
+
+
 export type Post = {
   _id: string;
   slug: string;
@@ -11,6 +13,11 @@ export type Post = {
   readingTime: string;
   tweets: any[];
 };
+
+export interface StrapiResponse<T>
+{
+  attributes: T
+}
 
 export type Snippet = {
   _id: string;

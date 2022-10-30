@@ -17,7 +17,7 @@ export default async function handler(
     id: 'UC81l-_AJt_jyUYuM0ZrUO2A',
     part: 'statistics'
   });
-console.log(response, "YOUTUBE")
+
   const channel = response.data.items[0];
   const { subscriberCount, viewCount } = channel.statistics;
 

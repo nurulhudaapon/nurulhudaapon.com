@@ -5,13 +5,13 @@ module.exports = {
   reactStrictMode: true,
   images: {
     domains: [
-      'i.scdn.co', // Spotify Album Art
       'pbs.twimg.com', // Twitter Profile Picture
-      'cdn.sanity.io'
+      'cdn.sanity.io',
+      'res.cloudinary.com'
     ]
   },
   experimental: {
-    legacyBrowsers: false,
+    legacyBrowsers: false
     // browsersListForSwc: true
   },
   async headers() {

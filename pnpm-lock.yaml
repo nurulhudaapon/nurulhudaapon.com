@@ -23,6 +23,7 @@ specifiers:
   next-themes: ^0.2.0
   postcss: ^8.4.16
   prettier: 2.7.1
+  qs: ^6.11.0
   react: 18.2.0
   react-dom: 18.2.0
   reading-time: ^1.5.0
@@ -56,6 +57,7 @@ dependencies:
   next-mdx-remote: 4.1.0_react-dom@18.2.0+react@18.2.0
   next-sanity: 0.8.4_react@18.2.0
   next-themes: 0.2.0_8f650e0c8016e2c6687d734f6ab990a9
+  qs: 6.11.0
   react: 18.2.0
   react-dom: 18.2.0_react@18.2.0
   sanity: 3.0.0-dev-preview.22_f3077d08ca5209c0289d5c6c5eab0445

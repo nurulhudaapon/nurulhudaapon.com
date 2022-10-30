@@ -1,9 +1,8 @@
 import Container from 'components/Container';
 import FunctionCard from 'components/FunctionCard';
 import { InferGetStaticPropsType } from 'next';
-import { allSnippetsQuery } from 'lib/queries';
-import { getClient } from 'lib/sanity-server';
-import { Snippet } from 'lib/types';
+import { Snippet, StrapiResponse } from 'lib/types';
+import { strapiClient } from 'lib/strapi';
 
 export default function Snippets({
   snippets
@@ -24,11 +23,11 @@ export default function Snippets({
         <div className="grid w-full grid-cols-1 gap-4 my-2 mt-4 sm:grid-cols-2">
           {snippets.map((snippet) => (
             <FunctionCard
-              key={snippet.slug}
-              title={snippet.title}
-              slug={snippet.slug}
-              logo={snippet.logo}
-              description={snippet.description}
+              key={snippet.attributes.slug}
+              title={snippet.attributes.title}
+              slug={snippet.attributes.slug}
+              logo={snippet.attributes.logo}
+              description={snippet.attributes.description}
             />
           ))}
         </div>
@@ -38,7 +37,6 @@ export default function Snippets({
 }
 
 export async function getStaticProps({ preview = false }) {
-  const snippets: Snippet[] = await getClient(preview).fetch(allSnippetsQuery);
-
+  const snippets: StrapiResponse<Snippet>[] = await strapiClient.getSnippets();
   return { props: { snippets } };
 }
