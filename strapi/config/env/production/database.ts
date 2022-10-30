@@ -6,7 +6,7 @@ connection: {
     client: "postgres",
     connection: {
       host: config.host,
-      port: config.port,
+      // port: config.port,
       database: config.database,
       user: config.user,
       password: config.password,
