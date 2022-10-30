@@ -12,7 +12,7 @@ export default function Blog({
 }: InferGetStaticPropsType<typeof getStaticProps>) {
   const [searchValue, setSearchValue] = useState('');
   const filteredBlogPosts = posts.filter((post) =>
-    post.title.toLowerCase().includes(searchValue.toLowerCase())
+    JSON.stringify(post).toLowerCase().includes(searchValue.toLowerCase()) 
   );
 
   return (
