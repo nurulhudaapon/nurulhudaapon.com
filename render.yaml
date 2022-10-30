@@ -34,3 +34,4 @@ services:
 databases:
   - name: strapi
     plan: free
+    region: singapore
