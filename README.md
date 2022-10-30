@@ -1,9 +1,10 @@
 **Inspiration from https://github.com/leerob/leerob.io**
 # Technologies
 
-- **Framework**: [Next.js](https://nextjs.org/)
+- **Framework**: [Next.js 13](https://nextjs.org/)
 - **Deployment**: [Vercel](https://vercel.com)
-- **CMS**: [Sanity](https://www.sanity.io/)
+- **CMS**: [Strapi V3](https://www.strapi.io/)
+- **Database**: [PostgreSQL](https://www.postgresql.org/)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
 
 ## Overview

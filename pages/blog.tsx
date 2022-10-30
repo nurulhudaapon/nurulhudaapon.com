@@ -3,9 +3,8 @@ import { Suspense, useState } from 'react';
 import Container from 'components/Container';
 import BlogPost from 'components/BlogPost';
 import { InferGetStaticPropsType } from 'next';
-import { indexQuery } from 'lib/queries';
-import { getClient } from 'lib/sanity-server';
-import { Post } from 'lib/types';
+import { Post, StrapiResponse } from 'lib/types';
+import { strapiClient } from 'lib/strapi';
 
 export default function Blog({
   posts
@@ -74,7 +73,6 @@ export default function Blog({
 }
 
 export async function getStaticProps({ preview = false }) {
-  const posts: Post[] = await getClient(preview).fetch(indexQuery);
-
-  return { props: { posts } };
+  const posts: StrapiResponse<Post>[] = await strapiClient.getPosts();
+  return { props: { posts: posts?.map(p => p.attributes) } };
 }

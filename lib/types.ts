@@ -3,6 +3,9 @@ import { MDXRemoteSerializeResult } from 'next-mdx-remote';
 
 
 export type Post = {
+  publishedAt: string | number | Date;
+  imageUrl: any;
+  createdAt: string | number | Date;
   _id: string;
   slug: string;
   content: MDXRemoteSerializeResult;

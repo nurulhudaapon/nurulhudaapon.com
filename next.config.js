@@ -6,13 +6,11 @@ module.exports = {
   images: {
     domains: [
       'pbs.twimg.com', // Twitter Profile Picture
-      'cdn.sanity.io',
       'res.cloudinary.com'
     ]
   },
   experimental: {
     legacyBrowsers: false
-    // browsersListForSwc: true
   },
   async headers() {
     return [

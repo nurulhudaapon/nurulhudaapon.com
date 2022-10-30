@@ -2,11 +2,10 @@ import { MDXRemote } from 'next-mdx-remote';
 import BlogLayout from 'layouts/blog';
 import Tweet from 'components/Tweet';
 import components from 'components/MDXComponents';
-import { postQuery, postSlugsQuery } from 'lib/queries';
 import { getTweets } from 'lib/twitter';
-import { sanityClient, getClient } from 'lib/sanity-server';
 import { mdxToHtml } from 'lib/mdx';
 import { Post } from 'lib/types';
+import { strapiClient } from 'lib/strapi';
 
 export default function PostPage({ post }: { post: Post }) {
   const StaticTweet = ({ id } = {id: null}) => {
@@ -30,21 +29,25 @@ export default function PostPage({ post }: { post: Post }) {
 }
 
 export async function getStaticPaths() {
-  const paths = await sanityClient.fetch(postSlugsQuery);
+  const posts = await strapiClient.getPosts();
+
   return {
-    paths: paths.map((slug) => ({ params: { slug } })),
+    paths: posts.map((p) => ({ params: { slug: p.attributes.slug } })),
     fallback: 'blocking'
   };
 }
 
 export async function getStaticProps({ params, preview = false }) {
-  const { post } = await getClient(preview).fetch(postQuery, {
-    slug: params.slug
-  });
+  const posts = await strapiClient.getPostBySlug(params.slug);
+
+  if (!posts?.length) return { notFound: true };
+  const [postRaw] = posts;
+  const post = postRaw.attributes;
 
   if (!post) {
     return { notFound: true };
   }
+
 
   const { html, tweetIDs, readingTime } = await mdxToHtml(post.content);
   const tweets = await getTweets(tweetIDs);

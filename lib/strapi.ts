@@ -14,6 +14,14 @@ class StrapiClient {
         return (await fetchAPI('/snippets', { populate: ['logo'] })).data;
     }
 
+    async getPosts() {
+        return (await fetchAPI('/posts')).data;
+    }
+
+    async getPostBySlug(slug: string) {
+        return (await fetchAPI('/posts', { filters: { slug: { $eq: slug } }, populate: ['imageUrl'] })).data;
+    }
+
     async getSnippetBySlug(slug: string) {
         return (await fetchAPI('/snippets', { filters: { slug: { $eq: slug } }, populate: ['logo'] })).data;
     }

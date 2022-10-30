@@ -6,18 +6,21 @@ import Container from 'components/Container';
 import Subscribe from 'components/Subscribe';
 import ViewCounter from 'components/ViewCounter';
 import { Post } from 'lib/types';
-import { urlForImage } from 'lib/sanity';
+import { getStrapiMedia } from 'lib/strapi';
 
 export default function BlogLayout({
   children,
   post
 }: PropsWithChildren<{ post: Post }>) {
+  const imageUrl = post.imageUrl?.data?.id ? getStrapiMedia(post.imageUrl) : null;
+
+  console.log(imageUrl);
   return (
     <Container
       title={`${post.title} – Nurul Huda (Apon)`}
       description={post.excerpt}
-      image={post.coverImage ? urlForImage(post.coverImage).url() : null}
-      date={new Date(post.date).toISOString()}
+      image={imageUrl}
+      date={new Date(post.publishedAt).toISOString()}
       type="article"
     >
       <article className="flex flex-col items-start justify-center w-full max-w-2xl mx-auto mb-16">
@@ -36,7 +39,7 @@ export default function BlogLayout({
             />
             <p className="ml-2 text-sm text-gray-700 dark:text-gray-300">
               {'Nurul Huda (Apon) / '}
-              {format(parseISO(post.date), 'MMMM dd, yyyy')}
+              {format(parseISO(post.createdAt as string), 'MMMM dd, yyyy')}
             </p>
           </div>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 min-w-32 md:mt-0">
@@ -46,13 +49,13 @@ export default function BlogLayout({
           </p>
         </div>
         <Suspense fallback={null}>
-          {post.coverImage && (
+          {imageUrl && (
             <Image
               alt={post.excerpt}
               height={620}
               width={620}
               sizes="20vw"
-              src={urlForImage(post.coverImage).url()}
+              src={imageUrl}
               className="w-full rounded-lg mt-6"
             />
           )}

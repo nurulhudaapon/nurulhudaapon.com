@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { urlForImage } from 'lib/sanity';
 import { getStrapiMedia } from 'lib/strapi';
 
 export default function FunctionCard({

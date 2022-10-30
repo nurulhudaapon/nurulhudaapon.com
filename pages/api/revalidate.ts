@@ -1,13 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { isValidSignature, SIGNATURE_HEADER_NAME } from '@sanity/webhook';
-import { sanityClient } from 'lib/sanity-server';
-import { postUpdatedQuery, snippetUpdatedQuery } from 'lib/queries';
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const signature = req.headers[SIGNATURE_HEADER_NAME] as string
   const strapiSingature = req.headers['x-strapi-webhook'] as string
   let isStrapi = false
 
@@ -15,7 +11,7 @@ export default async function handler(
   if (strapiSingature === process.env.STRAPI_WEBHOOK_SECRET || 'just-for-dev-null') {
     isStrapi = true
   }
-  else if (!isValidSignature(body, signature, process.env.SANITY_STUDIO_REVALIDATE_SECRET)) {
+  else {
     res.status(401).json({ message: 'Invalid signature' })
     return
   }
@@ -25,17 +21,9 @@ export default async function handler(
   try {
     let postSlug, snippetSlug;
 
-    if (isStrapi) {
-      if (model === 'post') postSlug = entry.slug;
-      if (model === 'snippet') snippetSlug = entry.slug;
-    }
-    else {
-      if (typeof id !== 'string' || !id) {
-        return res.status(400).json({ message: 'Invalid _id' });
-      }
-      postSlug = await sanityClient.fetch(postUpdatedQuery, { id });
-      snippetSlug = await sanityClient.fetch(snippetUpdatedQuery, { id });
-    }
+    if (model === 'post') postSlug = entry.slug;
+    if (model === 'snippet') snippetSlug = entry.slug;
+
 
     if (postSlug) await Promise.all([
       res.revalidate('/blog'),

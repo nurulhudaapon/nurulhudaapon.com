@@ -1,6 +1,5 @@
 import RSS from 'rss';
-import { sanityClient } from 'lib/sanity-server';
-import { indexQuery } from 'lib/queries';
+import { strapiClient } from 'lib/strapi';
 
 export async function getServerSideProps({ res }) {
   const feed = new RSS({
@@ -9,8 +8,9 @@ export async function getServerSideProps({ res }) {
     feed_url: 'https://nurulhudaapon.com/feed.xml'
   });
 
-  const allPosts = await sanityClient.fetch(indexQuery);
-  allPosts.map((post) => {
+  const allPosts = await strapiClient.getPosts();
+  const posts = allPosts.map((post) => post.attributes);
+  posts.map((post) => {
     feed.item({
       title: post.title,
       url: `https://nurulhudaapon.com/blog/${post.slug}`,
