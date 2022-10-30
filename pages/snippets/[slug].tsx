@@ -13,6 +13,14 @@ export default function SnippetsPage({ snippet }: { snippet: Snippet }) {
   );
 }
 
+export async function getStaticPaths() {
+  const snippets = await strapiClient.getSnippets();
+  console.log(snippets)
+  return {
+    paths: snippets.map((snippet) => ({ params: { slug: snippet.attributes.slug } })),
+    fallback: 'blocking'
+  };
+}
 
 export async function getStaticProps({ params, preview = false }) {
   const snippets = await strapiClient.getSnippetBySlug(params.slug);

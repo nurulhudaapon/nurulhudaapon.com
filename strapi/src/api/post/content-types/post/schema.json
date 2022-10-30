@@ -13,13 +13,15 @@
   "pluginOptions": {},
   "attributes": {
     "title": {
-      "type": "string"
+      "type": "string",
+      "required": true
     },
     "excerpt": {
       "type": "string"
     },
     "content": {
-      "type": "richtext"
+      "type": "richtext",
+      "required": true
     },
     "imageUrl": {
       "type": "media",
@@ -31,7 +33,8 @@
     },
     "slug": {
       "type": "uid",
-      "targetField": "excerpt"
+      "targetField": "excerpt",
+      "required": true
     }
   }
 }

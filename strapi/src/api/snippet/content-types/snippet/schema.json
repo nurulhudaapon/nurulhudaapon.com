@@ -13,7 +13,8 @@
   "pluginOptions": {},
   "attributes": {
     "title": {
-      "type": "string"
+      "type": "string",
+      "required": true
     },
     "description": {
       "type": "string",
@@ -22,7 +23,7 @@
     "logo": {
       "type": "media",
       "multiple": false,
-      "required": false,
+      "required": true,
       "allowedTypes": [
         "images"
       ]
@@ -33,7 +34,7 @@
     },
     "slug": {
       "type": "uid",
-      "targetField": "title",
+      "targetField": "description",
       "required": true
     }
   }
