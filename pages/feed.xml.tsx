@@ -1,5 +1,5 @@
 import RSS from 'rss';
-import { strapiClient } from 'lib/strapi';
+import { apiService } from 'lib/api';
 
 export async function getServerSideProps({ res }) {
   const feed = new RSS({
@@ -8,7 +8,7 @@ export async function getServerSideProps({ res }) {
     feed_url: 'https://nurulhudaapon.com/feed.xml'
   });
 
-  const allPosts = await strapiClient.getPosts();
+  const allPosts = await apiService.getPosts();
   const posts = allPosts.map((post) => post.attributes);
   posts.map((post) => {
     feed.item({

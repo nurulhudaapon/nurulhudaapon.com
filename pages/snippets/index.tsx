@@ -2,7 +2,7 @@ import Container from 'components/Container';
 import FunctionCard from 'components/FunctionCard';
 import { InferGetStaticPropsType } from 'next';
 import { Snippet, StrapiResponse } from 'lib/types';
-import { strapiClient } from 'lib/strapi';
+import { apiService } from 'lib/api';
 
 export default function Snippets({
   snippets
@@ -18,7 +18,8 @@ export default function Snippets({
         </h1>
         <p className="mb-4 text-gray-600 dark:text-gray-400">
           Collection of various useful code snippets across different
-          technologies. If you have any suggestions, please feel free to contact.
+          technologies. If you have any suggestions, please feel free to
+          contact.
         </p>
         <div className="grid w-full grid-cols-1 gap-4 my-2 mt-4 sm:grid-cols-2">
           {snippets.map((snippet) => (
@@ -37,6 +38,6 @@ export default function Snippets({
 }
 
 export async function getStaticProps({ preview = false }) {
-  const snippets: StrapiResponse<Snippet>[] = await strapiClient.getSnippets();
+  const snippets: StrapiResponse<Snippet>[] = await apiService.getSnippets();
   return { props: { snippets } };
 }

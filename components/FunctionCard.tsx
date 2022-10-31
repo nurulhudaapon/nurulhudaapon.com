@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { getStrapiMedia } from 'lib/strapi';
+import { getStrapiMedia } from 'lib/api/utility';
 
 export default function FunctionCard({
   title,

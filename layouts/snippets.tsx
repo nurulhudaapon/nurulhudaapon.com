@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Container from 'components/Container';
 import type { PropsWithChildren } from 'react';
 import { Snippet } from 'lib/types';
-import { getStrapiMedia } from 'lib/strapi';
+import { getStrapiMedia } from 'lib/api/utility';
 
 export default function SnippetLayout({
   children,

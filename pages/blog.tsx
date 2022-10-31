@@ -1,17 +1,17 @@
 import { Suspense, useState } from 'react';
 
-import Container from 'components/Container';
 import BlogPost from 'components/BlogPost';
-import { InferGetStaticPropsType } from 'next';
+import Container from 'components/Container';
+import { apiService } from 'lib/api';
 import { Post, StrapiResponse } from 'lib/types';
-import { strapiClient } from 'lib/strapi';
+import { InferGetStaticPropsType } from 'next';
 
 export default function Blog({
   posts
 }: InferGetStaticPropsType<typeof getStaticProps>) {
   const [searchValue, setSearchValue] = useState('');
   const filteredBlogPosts = posts.filter((post) =>
-    JSON.stringify(post).toLowerCase().includes(searchValue.toLowerCase()) 
+    JSON.stringify(post).toLowerCase().includes(searchValue.toLowerCase())
   );
 
   return (
@@ -73,6 +73,6 @@ export default function Blog({
 }
 
 export async function getStaticProps({ preview = false }) {
-  const posts: StrapiResponse<Post>[] = await strapiClient.getPosts();
-  return { props: { posts: posts?.map(p => p.attributes) } };
+  const posts: StrapiResponse<Post>[] = await apiService.getPosts();
+  return { props: { posts: posts?.map((p) => p.attributes) } };
 }

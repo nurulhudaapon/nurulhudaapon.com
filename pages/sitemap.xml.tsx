@@ -1,4 +1,4 @@
-import { strapiClient } from 'lib/strapi';
+import { apiService } from 'lib/api';
 
 const createSitemap = (slugs) => `<?xml version="1.0" encoding="UTF-8"?>
     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -14,17 +14,11 @@ const createSitemap = (slugs) => `<?xml version="1.0" encoding="UTF-8"?>
     </urlset>
 `;
 export async function getServerSideProps({ res }) {
-  const allPosts = await strapiClient.getPosts();
-  const posts = allPosts.map((post) => post.attributes);  const allPages = [
+  const allPosts = await apiService.getPosts();
+  const posts = allPosts.map((post) => post.attributes);
+  const allPages = [
     ...posts.map((slug) => `blog/${slug}`),
-    ...[
-      '',
-      'about',
-      'blog',
-      'statistics',
-      'newsletter',
-      'snippets',
-    ]
+    ...['', 'about', 'blog', 'statistics', 'newsletter', 'snippets']
   ];
 
   res.setHeader('Content-Type', 'text/xml');

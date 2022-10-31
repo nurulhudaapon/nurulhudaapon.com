@@ -1,9 +1,9 @@
-import { MDXRemote } from 'next-mdx-remote';
-import SnippetLayout from 'layouts/snippets';
 import components from 'components/MDXComponents';
+import SnippetLayout from 'layouts/snippets';
+import { apiService } from 'lib/api';
 import { mdxToHtml } from 'lib/mdx';
 import { Snippet } from 'lib/types';
-import { strapiClient } from 'lib/strapi';
+import { MDXRemote } from 'next-mdx-remote';
 
 export default function SnippetsPage({ snippet }: { snippet: Snippet }) {
   return (
@@ -14,15 +14,17 @@ export default function SnippetsPage({ snippet }: { snippet: Snippet }) {
 }
 
 export async function getStaticPaths() {
-  const snippets = await strapiClient.getSnippets();
+  const snippets = await apiService.getSnippets();
   return {
-    paths: snippets.map((snippet) => ({ params: { slug: snippet.attributes.slug } })),
+    paths: snippets.map((snippet) => ({
+      params: { slug: snippet.attributes.slug }
+    })),
     fallback: 'blocking'
   };
 }
 
 export async function getStaticProps({ params, preview = false }) {
-  const snippets = await strapiClient.getSnippetBySlug(params.slug);
+  const snippets = await apiService.getSnippetBySlug(params.slug);
 
   if (!snippets?.length) return { notFound: true };
   const [snippetRaw] = snippets;

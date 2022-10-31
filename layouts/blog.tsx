@@ -6,13 +6,15 @@ import Container from 'components/Container';
 import Subscribe from 'components/Subscribe';
 import ViewCounter from 'components/ViewCounter';
 import { Post } from 'lib/types';
-import { getStrapiMedia } from 'lib/strapi';
+import { getStrapiMedia } from 'lib/api/utility';
 
 export default function BlogLayout({
   children,
   post
 }: PropsWithChildren<{ post: Post }>) {
-  const imageUrl = post.imageUrl?.data?.id ? getStrapiMedia(post.imageUrl) : null;
+  const imageUrl = post.imageUrl?.data?.id
+    ? getStrapiMedia(post.imageUrl)
+    : null;
 
   console.log(imageUrl);
   return (
