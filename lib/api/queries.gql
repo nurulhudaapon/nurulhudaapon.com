@@ -1,0 +1,20 @@
+query GetSimplePosts {
+  posts {
+    data {
+      attributes {
+        title
+      }
+    }
+  }
+}
+
+query GetSimpleSnippets {
+  snippets {
+    data {
+      attributes {
+        title
+        slug
+      }
+    }
+  }
+}

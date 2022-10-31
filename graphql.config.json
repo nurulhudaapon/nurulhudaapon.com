@@ -1,0 +1,11 @@
+{
+    "name": "cms.nurulhudaapon.com",
+    "schemaPath": "./lib/api/schema.graphql",
+    "extensions": {
+      "endpoints": {
+        "Default GraphQL Endpoint": {
+          "url": "/graphql"
+        }
+      }
+    }
+  }

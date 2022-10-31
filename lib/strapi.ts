@@ -1,4 +1,6 @@
 import qs from 'qs';
+import { GQL_QUERIES } from './api/graphql';
+import { print } from 'graphql/language/printer';
 
 class StrapiClient {
 
@@ -11,6 +13,8 @@ class StrapiClient {
     }
 
     async getSnippets() {
+        console.log(print(GQL_QUERIES.GetSimplePosts));
+        // console.log((await fetchAPI('/graphql', null, { method: 'POST', body: GQL_QUERIES.GetSimpleSnippets.loc.source.body })));
         return (await fetchAPI('/snippets', { populate: ['logo'] })).data;
     }
 
@@ -62,7 +66,7 @@ export function getStrapiURL(path = "") {
  * @param {Object} options Options passed to fetch
  * @returns Parsed API call response
  */
-async function fetchAPI(path, urlParamsObject: StrapiQuery = {}, options = {}) {
+async function fetchAPI(path, urlParamsObject: StrapiQuery = {}, options: Partial<RequestInit> = {}) {
     // Merge default and user options
     const mergedOptions = {
         headers: {
@@ -75,9 +79,11 @@ async function fetchAPI(path, urlParamsObject: StrapiQuery = {}, options = {}) {
 
     // Build request URL
     const queryString = qs.stringify(urlParamsObject);
-    const requestUrl = `${getStrapiURL(
+    let requestUrl = `${getStrapiURL(
         `/api${path}${queryString ? `?${queryString}` : ""}`
     )}`;
+
+    if (path == '/graphql') requestUrl = `${getStrapiURL(`/graphql`)}`;
 
     // Trigger API call
     const response = await fetch(requestUrl, mergedOptions);
