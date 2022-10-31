@@ -4,3 +4,24 @@ This favicon was generated using the following font:
 - Font Author: Copyright 2020 The Dangrek Project Authors (https://github.com/danhhong/Dangrek)
 - Font Source: http://fonts.gstatic.com/s/dangrek/v26/LYjCdG30nEgoH8E2gCNqqVIuTN4.ttf
 - Font License: SIL Open Font License, 1.1 (http://scripts.sil.org/OFL))
+
+Favicon Style
+
+- Font Size: 80
+- Background: Rounded
+
+- Variant Purple
+    - Background Color: #80F
+    - Text Color: #FFF
+
+- Variant Green
+    - Background Color: #0A5
+    - Text Color: #FFF
+
+- Variant Light
+    - Background Color: transparent
+    - Text Color: #000
+
+- Variant Dark
+    - Background Color: transparent
+    - Text Color: #000
