@@ -73,6 +73,6 @@ export default function Blog({
 }
 
 export async function getStaticProps({ preview = false }) {
-  const posts: StrapiResponse<Post>[] = await apiService.getPosts();
+  const posts = await apiService.getPosts();
   return { props: { posts: posts?.map((p) => p.attributes) } };
 }
