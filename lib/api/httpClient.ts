@@ -7,14 +7,19 @@ import { getUrl } from './utility';
  * Helper to make GET requests to Strapi API endpoints
  * @returns Parsed API call response
  */
-export async function httpClient(path, urlParamsObject: StrapiQuery = {}, options = {}) {
+export async function httpClient<T = unknown>(path, urlParamsObject: StrapiQuery = {}, options: RequestInit = {}, timeout: number = 8000) {
+
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+
     // Merge default and user options
-    const mergedOptions = {
+    const mergedOptions: RequestInit = {
         headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${process.env.NEXT_STRAPI_JWT_SECRET}`,
 
         },
+        signal: controller.signal,
         ...options,
     };
 
@@ -32,6 +37,6 @@ export async function httpClient(path, urlParamsObject: StrapiQuery = {}, option
         console.error(response.statusText);
         throw new Error(`An error occured please try again: ${response.statusText}`);
     }
-    const data = await response.json();
+    const data = await response.json() as T;
     return data;
 }

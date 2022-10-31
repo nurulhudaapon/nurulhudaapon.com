@@ -13,9 +13,14 @@ const createSitemap = (slugs) => `<?xml version="1.0" encoding="UTF-8"?>
           .join('')}
     </urlset>
 `;
+
+let posts = [];
 export async function getServerSideProps({ res }) {
-  const allPosts = await apiService.getPosts();
-  const posts = allPosts.map((post) => post.attributes);
+  try {
+    const allPosts = await apiService.getPosts(undefined, undefined, 3000);
+    posts = allPosts.map((post) => post.attributes.slug);
+  } catch (error) {}
+
   const allPages = [
     ...posts.map((slug) => `blog/${slug}`),
     ...['', 'about', 'blog', 'statistics', 'newsletter', 'snippets']

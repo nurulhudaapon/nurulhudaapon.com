@@ -17,8 +17,10 @@ export type Post = {
   tweets: any[];
 };
 
-export interface StrapiResponse<T>
-{
+export interface StrapiResponse<T> {
+  data: Array<{
+    attributes: T;
+  }>;
   attributes: T
 }
 
