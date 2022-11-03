@@ -1,7 +1,6 @@
 import Container from 'components/Container';
 import FunctionCard from 'components/FunctionCard';
 import { InferGetStaticPropsType } from 'next';
-import { Snippet, StrapiResponse } from 'lib/types';
 import { apiService } from 'lib/api';
 
 export default function Snippets({
@@ -39,5 +38,8 @@ export default function Snippets({
 
 export async function getStaticProps({ preview = false }) {
   const snippets = await apiService.getSnippets();
-  return { props: { snippets } };
+  const filteredSnippets = snippets?.filter(
+    (s) => s?.attributes?.visibility !== 'unlisted'
+  );
+  return { props: { snippets: filteredSnippets } };
 }

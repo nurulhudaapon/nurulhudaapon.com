@@ -31,6 +31,7 @@ export type Snippet = {
   title: string;
   description: string;
   logo: string;
+  visibility?: 'unlisted' | 'private';
 };
 
 export enum Form {
