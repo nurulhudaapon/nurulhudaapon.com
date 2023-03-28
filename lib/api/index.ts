@@ -6,7 +6,7 @@ export const apiService = {
     // Post
     getPosts: async (...args) => (await httpClient<StrapiResponse<Post>>('/posts', ...args)).data,
     getSimplePosts: async () => (await httpClient<StrapiResponse<Post>>('/posts')).data,
-    getPostBySlug: async (slug: string) => (await httpClient<StrapiResponse<Post>>('/posts', { filters: { slug: { $eq: 'sdf' } }, populate: ['imageUrl'] })).data,
+    getPostBySlug: async (slug: string) => (await httpClient<StrapiResponse<Post>>('/posts', { filters: { slug: { $eq: slug } }, populate: ['imageUrl'] })).data,
 
     // Snippet
     getSnippets: async () => (await httpClient<StrapiResponse<Snippet>>('/snippets', { populate: ['logo'] })).data,
@@ -20,6 +20,6 @@ export const apiService = {
             { method: 'POST', body: JSON.stringify({ email, username: email, password: email, confirmed: false, role: { connect: [3] } }) },
         ),
     getUsers: async () => await httpClient('/users'),
-    getUserByEmail: async (email: string) => await httpClient(`/users`, { filters: { email: { $eq: email } } }),
+    getUserByEmail: async (email: string) => await httpClient<{ user: { email: string } }[]>(`/users`, { filters: { email: { $eq: email } } }),
     getUserCount: async () => await httpClient('/users/count'),
 };

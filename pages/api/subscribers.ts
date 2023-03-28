@@ -6,7 +6,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const { email } = JSON.parse(req.body);
         const currentSubscriber = await apiService.getUserByEmail(email);
 
-        if (currentSubscriber) return res.status(200).json(currentSubscriber);
+        if (currentSubscriber?.length) return res.status(200).json(currentSubscriber);
 
         const subscriber = await apiService.registerSubscriber({ email });
 
@@ -15,6 +15,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     try {
         const count = await apiService.getUserCount();
+
+        res.setHeader('Cache-Control', 'public, s-maxage=1200, stale-while-revalidate=600');
 
         return res.status(200).json({ count });
     } catch (e) {
