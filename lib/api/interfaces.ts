@@ -1,8 +1,10 @@
-
 export interface StrapiQuery {
     sort?: string[];
     filters?: {
-        slug: {
+        slug?: {
+            $eq: string;
+        };
+        email?: {
             $eq: string;
         };
     };

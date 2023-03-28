@@ -2,10 +2,25 @@ import Container from 'components/Container';
 import FunctionCard from 'components/FunctionCard';
 import { InferGetStaticPropsType } from 'next';
 import { apiService } from 'lib/api';
+import { useState } from 'react';
+import { SearchInput } from 'components/Input';
+
+const PRIORITY_SORT = ['', 'low', 'medium', 'high'];
 
 export default function Snippets({
   snippets
 }: InferGetStaticPropsType<typeof getStaticProps>) {
+  const sortedSnippets = snippets.sort((a, b) => {
+    const aPriority = PRIORITY_SORT.indexOf(a.attributes.priority || '');
+    const bPriority = PRIORITY_SORT.indexOf(b.attributes.priority || '');
+    return bPriority - aPriority;
+  });
+
+  const [searchValue, setSearchValue] = useState('');
+  const filteredSnippets = sortedSnippets.filter((snippet) =>
+    JSON.stringify(snippet).toLowerCase().includes(searchValue.toLowerCase())
+  );
+
   return (
     <Container
       title="Code Snippets – Nurul Huda (Apon)"
@@ -20,8 +35,13 @@ export default function Snippets({
           technologies. If you have any suggestions, please feel free to
           contact.
         </p>
-        <div className="grid w-full grid-cols-1 gap-4 my-2 mt-4 sm:grid-cols-2">
-          {snippets.map((snippet) => (
+
+        <SearchInput
+          setSearchValue={setSearchValue}
+          placeholder="Search snippets"
+        />
+        <div className="grid w-full grid-cols-1 gap-4 my-2 mt-2 sm:grid-cols-2">
+          {filteredSnippets.map((snippet) => (
             <FunctionCard
               key={snippet.attributes.slug}
               title={snippet.attributes.title}

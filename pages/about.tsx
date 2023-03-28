@@ -15,10 +15,44 @@ export default function About() {
           <h2>Find me on the web</h2>
           <ul>
             <li>
-              Twitter: <a href="https://twitter.com/nurulhudaapon">@nurulhudaapon</a>
+              GitHub:{' '}
+              <a
+                target="_blank"
+                rel="noreferrer"
+                href="https://github.com/nurulhudaapon"
+              >
+                @nurulhudaapon
+              </a>
             </li>
             <li>
-              GitHub: <a href="https://github.com/nurulhudaapon">@nurulhudaapon</a>
+              Facebook:{' '}
+              <a
+                target="_blank"
+                rel="noreferrer"
+                href="https://fb.me/nurulhudaapon"
+              >
+                fb.me/nurulhudaapon
+              </a>
+            </li>
+            <li>
+              LinkedIn:{' '}
+              <a
+                target="_blank"
+                rel="noreferrer"
+                href="https://www.linkedin.com/in/nurulhudaapon/"
+              >
+                https://www.linkedin.com/in/nurulhudaapon
+              </a>
+            </li>
+            <li>
+              Twitter:{' '}
+              <a
+                target="_blank"
+                rel="noreferrer"
+                href="https://twitter.com/nurulhudaapon"
+              >
+                @nurulhudaapon
+              </a>
             </li>
             <li>
               Website:{' '}
@@ -26,23 +60,21 @@ export default function About() {
                 https://nurulhudaapon.com
               </Link>
             </li>
-            <li>
-              LinkedIn:{' '}
-              <a href="https://www.linkedin.com/in/nurulhudaapon/">
-                https://www.linkedin.com/in/nurulhudaapon
-              </a>
-            </li>
           </ul>
           <h2>Bio</h2>
           <p>
             Hello, I'm Nurul. I'm a Software Engineer at{' '}
-            <a href="https://voyagesms.com/">Voyage SMS</a>, where I build stuff using C#, .NET Core, React, TypeScript, PostgreSQL and many more. I'm also a Computer Science and Engineering student at Green University of Bangladesh.
+            <a href="https://voyagesms.com/">Voyage SMS</a>, where I build stuff
+            using C#, .NET Core, React, TypeScript, PostgreSQL and many more.
+            I'm also a Computer Science and Engineering student at Green
+            University of Bangladesh.
           </p>
           <h3>Current Position</h3>
           <p>Nurul Huda (Apon), Software Engineer at Voyage SMS</p>
           <h3>Education</h3>
           <p>
-            Currently enrolling Bachelor of Computer Science and Engineering at Greeen University of Bangladesh and expected to graducate in 2026.
+            Currently enrolling Bachelor of Computer Science and Engineering at
+            Greeen University of Bangladesh and expected to graducate in 2026.
           </p>
           <h2>Here is me</h2>
           <div className="flex space-x-8">
@@ -55,7 +87,6 @@ export default function About() {
                 className={`rounded-md filter dark:grayscale`}
               />
             </a>
-            
           </div>
         </div>
       </div>

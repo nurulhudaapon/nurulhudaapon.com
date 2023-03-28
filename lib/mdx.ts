@@ -6,6 +6,7 @@ import rehypeCodeTitles from 'rehype-code-titles';
 import rehypeAutolinkHeadings from 'rehype-autolink-headings';
 import rehypePrism from 'rehype-prism-plus';
 
+// TODO: Add more plugins
 export async function mdxToHtml(source) {
   const mdxSource = await serialize(source, {
     mdxOptions: {
