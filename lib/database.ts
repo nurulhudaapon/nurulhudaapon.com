@@ -55,9 +55,9 @@ export async function createQuestion(question: string, email: string, visitorId:
     });
 }
 
-export async function getQuestions() {
+export async function getQuestions( visitorId: string) {
     const client = await clientPromise;
-    return await client.db('test').collection('questions').find().toArray();
+    return await client.db('test').collection('questions').find({ visitorId }).toArray();
 }
 
 export async function createVisitor(ip: string, details: any) {

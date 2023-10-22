@@ -1,5 +1,5 @@
 import { apiService } from 'lib/api';
-import { createQuestion, createVisitor } from 'lib/database';
+import { createQuestion, createVisitor, getQuestions } from 'lib/database';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -33,11 +33,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
-        const count = await apiService.getUserCount();
+        // const count = await apiService.getUserCount();
 
-        res.setHeader('Cache-Control', 'public, s-maxage=1200, stale-while-revalidate=600');
+        // res.setHeader('Cache-Control', 'public, s-maxage=1200, stale-while-revalidate=600');
 
-        return res.status(200).json({ count });
+        // return res.status(200).json({ count });
+        let visitorId = req.cookies['visitor_id']
+
+        if (!visitorId)
+        {
+            // return not found
+            return res.status(404).json({ message: 'Not found' });
+        }
+
+        const questions = await getQuestions(visitorId);
+
+        return res.status(200).json(questions);
     } catch (e) {
         return res.status(500).json({ message: e.message });
     }
