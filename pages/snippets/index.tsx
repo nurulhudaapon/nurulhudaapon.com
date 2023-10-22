@@ -57,7 +57,8 @@ export default function Snippets({
 }
 
 export async function getStaticProps({ preview = false }) {
-  const snippets = await apiService.getSnippets();
+  // const snippets = await apiService.getSnippets();
+  const snippets = [];
   const filteredSnippets = snippets?.filter(
     (s) => s?.attributes?.visibility !== 'unlisted'
   );

@@ -51,6 +51,7 @@ export default function Blog({
 }
 
 export async function getStaticProps({ preview = false }) {
-  const posts = await apiService.getPosts();
+  // const posts = await apiService.getPosts();
+  const posts = [];
   return { props: { posts: posts?.map((p) => p.attributes) } };
 }

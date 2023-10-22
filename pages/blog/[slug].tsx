@@ -29,7 +29,8 @@ export default function PostPage({ post }: { post: Post }) {
 }
 
 export async function getStaticPaths() {
-  const posts = await apiService.getPosts();
+  // const posts = await apiService.getPosts();
+  const posts = [];
 
   return {
     paths: posts.map((p) => ({ params: { slug: p.attributes.slug } })),
@@ -38,7 +39,8 @@ export async function getStaticPaths() {
 }
 
 export async function getStaticProps({ params, preview = false }) {
-  const posts = await apiService.getPostBySlug(params.slug);
+  // const posts = await apiService.getPostBySlug(params.slug);
+  const posts = [];
 
   if (!posts?.length) return { notFound: true };
   const [postRaw] = posts;

@@ -14,7 +14,8 @@ export default function SnippetsPage({ snippet }: { snippet: Snippet }) {
 }
 
 export async function getStaticPaths() {
-    const snippets = await apiService.getSnippets();
+    // const snippets = await apiService.getSnippets();
+    const snippets = [];
     return {
         paths: snippets.map((snippet) => ({
             params: { slug: snippet.attributes.slug },
@@ -24,7 +25,8 @@ export async function getStaticPaths() {
 }
 
 export async function getStaticProps({ params, preview = false }) {
-    const snippets = await apiService.getSnippetBySlug(params.slug);
+    // const snippets = await apiService.getSnippetBySlug(params.slug);
+    const snippets = [];
 
     if (!snippets?.length) return { notFound: true };
     const [snippetRaw] = snippets;

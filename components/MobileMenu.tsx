@@ -37,7 +37,7 @@ export default function MobileMenu() {
                             style={{ transitionDelay: '150ms', transitionDuration: '150ms', transitionProperty: 'all', transitionTimingFunction: 'ease-in-out' }}
                             key={href}
                         >
-                            <Link className="flex w-auto pb-4" href={href}>
+                            <Link className="flex w-auto pb-4" href={href} target={href.startsWith('http') ? '_blank' : '_self'}>
                                 {text}
                             </Link>
                         </li>

@@ -22,4 +22,9 @@ export const apiService = {
     getUsers: async () => await httpClient('/users'),
     getUserByEmail: async (email: string) => await httpClient<{ user: { email: string } }[]>(`/users`, { filters: { email: { $eq: email } } }),
     getUserCount: async () => await httpClient('/users/count'),
+
+    // Question
+    getQuestions: async () => await httpClient('/api/questions'),
+    createQuestion: async ({ question, email, visitor }: { question: string; email: string; visitor: any }) =>
+        await fetch('/api/questions', { method: 'POST', body: JSON.stringify({ question, email, visitor }) }),
 };

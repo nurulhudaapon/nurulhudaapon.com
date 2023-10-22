@@ -1,11 +1,10 @@
 import { apiService } from 'lib/api';
-import { createSubscriber, createVisitor, getSubscriberByEmail } from 'lib/database';
+import { createQuestion, createVisitor } from 'lib/database';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method == 'POST') {
-        const { email, ip } = JSON.parse(req.body);
-
+        const { email, question, visitor } = JSON.parse(req.body);
 
         // get visitor id from cookie
         let visitorId = req.cookies['visitor_id']
@@ -15,22 +14,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         {
         const createdVisitor = await createVisitor(
             req.headers['x-forwarded-for'] as string,
-            ip,
+            visitor,
         )
 
         res.setHeader('Set-Cookie', `visitor_id=${createdVisitor.insertedId}; Path=/; SameSite=Strict`);
         visitorId = createdVisitor.insertedId.toString();
         }
 
-        // const currentSubscriber = await apiService.getUserByEmail(email);
-        const currentSubscriber = await getSubscriberByEmail(email);
+        const createdQuestion = await createQuestion(question, email, visitorId, visitor);
 
-        if (currentSubscriber?._id) return res.status(200).json(currentSubscriber);
+        // const currentSubscriber = await apiService.getUserByEmail(email);
+
+        // if (currentSubscriber?.length) return res.status(200).json(currentSubscriber);
 
         // const subscriber = await apiService.registerSubscriber({ email });
-        const subscriber = await createSubscriber(email, visitorId, ip);
 
-        return res.status(201).json(subscriber);
+        return res.status(201).json(createdQuestion);
     }
 
     try {

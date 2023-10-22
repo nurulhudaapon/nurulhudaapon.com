@@ -8,19 +8,53 @@ import ErrorMessage from 'components/ErrorMessage';
 import LoadingSpinner from 'components/LoadingSpinner';
 import { GLOBAL_CONFIG } from './Resources';
 import { apiService } from 'lib/api';
+import { useGoogleLoginButton } from 'lib/hooks/use-google-login-button';
 
 export default function Subscribe() {
     const [form, setForm] = useState<FormState>({ state: Form.Initial });
     const inputEl = useRef(null);
     const { data } = useSWR<Subscribers>('/api/subscribers', fetcher);
     const subscriberCount = new Number(data?.count);
-    const [currentUser, setCurrentUser] = useState();
+    const [currentUser, setCurrentUser] = useState<object>();
+
+    // useGoogleLoginButton('google-login-button', (user) => {
+    //     console.log(user);
+    //     setCurrentUser(user);
+    // });
+
+    const [ip, setIp] = useState();
+    // const { data } = useSWR<Subscribers>('/api/subscribers', fetcher);
+    // const subscriberCount = new Number(data?.count);
+    // const [currentUser, setCurrentUser] = useState<object>();
+
+    // useGoogleLoginButton('google-login-button', (user) => {
+    //     console.log(user);
+    //     setCurrentUser(user);
+    // });
+
+    // useEffect(() => {
+    //     const currentUser = JSON.parse(localStorage.getItem('user'));
+    //     setCurrentUser(currentUser);
+    //     console.log(currentUser);
+    // }, []);
+
+    // if (!GLOBAL_CONFIG.enableNewsletter) return null;
 
     useEffect(() => {
-        const currentUser = JSON.parse(localStorage.getItem('user'));
-        setCurrentUser(currentUser);
-        console.log(currentUser);
+        (async () => {
+            const request = await fetch("https://ipinfo.io/json?token=18a8a8f700399d")
+const jsonResponse = await request.json()
+
+console.log(jsonResponse)
+setIp(jsonResponse)     
+        })();
     }, []);
+
+    // useEffect(() => {
+    //     const currentUser = JSON.parse(localStorage.getItem('user'));
+    //     setCurrentUser(currentUser);
+    //     console.log(currentUser);
+    // }, []);
 
     if (!GLOBAL_CONFIG.enableNewsletter) return null;
 
@@ -40,7 +74,7 @@ export default function Subscribe() {
         try {
             const res = await fetch(`/api/subscribers`, {
                 method: 'POST',
-                body: JSON.stringify({ email }),
+                body: JSON.stringify({ email, ip }),
             });
 
             const { error, ...data } = await res.json();
@@ -56,7 +90,7 @@ export default function Subscribe() {
 
             inputEl.current.value = '';
             let _form = { ...form };
-            if (res.status === 200) _form = { state: Form.Already, message: 'You were in!' };
+            if (res.status === 200) _form = { state: Form.Already, message: 'You are already subscribed 😊' };
             else if (res.status === 201)
                 _form = {
                     state: Form.Success,
@@ -71,7 +105,7 @@ export default function Subscribe() {
             });
         }
     };
-    const countText = subscriberCount > 0 ? subscriberCount.toLocaleString() : '-';
+    // const countText = subscriberCount > 0 ? subscriberCount.toLocaleString() : '-';
     return (
         <div className="my-4 w-full rounded border border-blue-200 p-3 pt-0 dark:border-gray-800 dark:bg-blue-opaque">
             <form className="relative my-4" onSubmit={subscribe}>
@@ -80,6 +114,8 @@ export default function Subscribe() {
                     aria-label="Email for newsletter"
                     placeholder="example@mail.com"
                     type="email"
+                    name="email"
+                    aria-autocomplete="list"
                     autoComplete="email"
                     required
                     className="mt-1b foblue-500 focuscus:ring-:border-blue-500 block w-full rounded-md bg-white px-4 py-2 pr-32 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
@@ -91,10 +127,11 @@ export default function Subscribe() {
                     {form.state === Form.Loading ? <LoadingSpinner /> : 'Subscribe'}
                 </button>
             </form>
+            <div className="mb-3" id="google-login-button"></div>
 
             <div className="label flex justify-between">
                 <div className="title ml-1 justify-start">
-                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100">Subscribe to receive updates</p>
+                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100">Subscribe to receive updates from me!</p>
                 </div>
                 <div className="message justify-end">
                     {form.state === Form.Error ? (
@@ -103,8 +140,8 @@ export default function Subscribe() {
                         <SuccessMessage>{form.message}</SuccessMessage>
                     ) : (
                         <p className="text-sm text-gray-800 dark:text-gray-200">
-                            {countText} subscribers
-                            <span className="relative ml-2 inline-flex h-2 w-2 animate-ping rounded-full bg-green-400"></span>
+                            {/* {countText} subscribers
+                            <span className="relative ml-2 inline-flex h-2 w-2 animate-ping rounded-full bg-green-400"></span> */}
                         </p>
                     )}
                 </div>

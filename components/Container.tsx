@@ -16,6 +16,7 @@ function NavItem({ href, text }) {
   return (
     <NextLink
       href={href}
+      target={href.startsWith('http') ? '_blank' : '_self'}
       className={cn(
         isActive
           ? 'font-semibold text-gray-800 dark:text-gray-200'

@@ -30,14 +30,46 @@ export async function createView(ip: string, contentSlug: string, contentType: s
         ip,
         type: contentType,
         slug: contentSlug,
-        createdAt: new Date()
+        createdAt: new Date(),
     });
 }
 
-export async function createSubscriber(email: string) {
+export async function createSubscriber(email: string, visitorId: string, ip: any) {
     const client = await clientPromise;
     return await client.db('test').collection('subscribers').insertOne({
         email,
-        createdAt: new Date()
+        createdAt: new Date(),
+        visitorId,
+        visitor: ip
     });
+}
+
+export async function createQuestion(question: string, email: string, visitorId: string, visitor: any) {
+    const client = await clientPromise;
+    return await client.db('test').collection('questions').insertOne({
+        question,
+        email,
+        createdAt: new Date(),
+        visitorId,
+        visitor,
+    });
+}
+
+export async function getQuestions() {
+    const client = await clientPromise;
+    return await client.db('test').collection('questions').find().toArray();
+}
+
+export async function createVisitor(ip: string, details: any) {
+    const client = await clientPromise;
+    return await client.db('test').collection('visitors').insertOne({
+        createdAt: new Date(),
+        ip,
+        details,
+    });
+}
+
+export async function getVisitor(visitorId: string) {
+    const client = await clientPromise;
+    return await client.db('test').collection('visitors').findOne({ _id: visitorId });
 }
