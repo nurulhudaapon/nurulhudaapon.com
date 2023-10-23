@@ -33,8 +33,8 @@ export function Questions({ time, handleSelection, selected }: Props) {
     };
 
     const handleDelete = useCallback(
-        async (e) => {
-            if (e.key === 'Backspace' || e.key === 'Delete') {
+        async (e: KeyboardEvent) => {
+            if (e.key === 'Backspace' && e.ctrlKey && selected && e.shiftKey) {
                 await apiService.updateQuestion({
                     id: selected._id,
                     deleted: true,
@@ -62,7 +62,7 @@ export function Questions({ time, handleSelection, selected }: Props) {
                 <div
                     onClick={() => onSelect(question)}
                     className={classNames(
-                        'border-gray-200ra w-full rounded border p-3 dark:border-gray-800 dark:bg-blue-opaque',
+                        'border-gray-200 w-full rounded border p-3 dark:border-gray-800 dark:bg-blue-opaque',
                         handleSelection ? 'cursor-pointer' : '',
                         selected?._id === question._id && 'border-2 border-blue-400',
                     )}
