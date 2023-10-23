@@ -1,3 +1,4 @@
+import { ObjectID, ObjectId } from 'mongodb';
 import clientPromise from './mongodb';
 
 export async function getViewCount(contentSlug: string, contentType: string): Promise<number> {
@@ -40,7 +41,7 @@ export async function createSubscriber(email: string, visitorId: string, ip: any
         email,
         createdAt: new Date(),
         visitorId,
-        visitor: ip
+        visitor: ip,
     });
 }
 
@@ -55,9 +56,27 @@ export async function createQuestion(question: string, email: string, visitorId:
     });
 }
 
-export async function getQuestions( visitorId: string) {
+export async function updateQuestion(id: string, answer: string, deleted?: boolean) {
+    const client = await clientPromise;
+    console.log('updateQuestion', id, answer, deleted);
+    return await client
+        .db('test')
+        .collection('questions')
+        .updateOne({ _id: new ObjectId(id) }, { $set: { answer, deleted, updatedAt: new Date() } });
+}
+
+export async function getQuestions(visitorId: string) {
     const client = await clientPromise;
     return await client.db('test').collection('questions').find({ visitorId }).toArray();
+}
+
+export async function getAllQuestions() {
+    const client = await clientPromise;
+    return await client
+        .db('test')
+        .collection('questions')
+        .find({ deleted: { $ne: true } }, { sort: { createdAt: -1 } })
+        .toArray();
 }
 
 export async function createVisitor(ip: string, details: any) {

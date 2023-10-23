@@ -34,11 +34,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
-        const count = await apiService.getUserCount();
+        // const count = await apiService.getUserCount();
 
         res.setHeader('Cache-Control', 'public, s-maxage=1200, stale-while-revalidate=600');
 
-        return res.status(200).json({ count });
+        return res.status(200).json({ count: 0 });
     } catch (e) {
         return res.status(500).json({ message: e.message });
     }

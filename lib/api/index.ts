@@ -27,4 +27,6 @@ export const apiService = {
     getQuestions: async () => (await fetch('/api/questions')).json() as Promise<any[]>,
     createQuestion: async ({ question, email, visitor }: { question: string; email: string; visitor: any }) =>
         await fetch('/api/questions', { method: 'POST', body: JSON.stringify({ question, email, visitor }) }),
+    getAllQuestions: async () => (await fetch('/api/questions?all=true')).json() as Promise<any[]>,
+updateQuestion: async ({ id, answer, deleted }: { id: string; answer?: string, deleted?: boolean }) => await fetch(`/api/questions`, { method: 'PUT', body: JSON.stringify({ answer, id, deleted}) }),
 };

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import useSWR from 'swr';
 
 import fetcher from 'lib/fetcher';
@@ -9,37 +9,90 @@ import LoadingSpinner from 'components/LoadingSpinner';
 import { GLOBAL_CONFIG } from './Resources';
 import { apiService } from 'lib/api';
 import { useGoogleLoginButton } from 'lib/hooks/use-google-login-button';
+import classNames from 'classnames';
 
-export function Questions({time}) {
+type Props = {
+    time: Date;
+    selected?: any;
+    handleSelection?: (question: any) => void;
+};
+
+export function Questions({ time, handleSelection, selected }: Props) {
     const [questions, setQuestions] = useState<any[]>(null);
 
     useEffect(() => {
         (async () => {
-            const questions = await apiService.getQuestions();
-            console.log(questions);
-            setQuestions(questions.sort((b, a) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+            await init();
         })();
     }, [time]);
 
-    if (!questions) return null;
+    const onSelect = (q) => {
+        if (!handleSelection) return;
+        // const question = questions.find((q) => q._id === e.currentTarget.id);
+        handleSelection(q);
+    };
+
+    const handleDelete = useCallback(
+        async (e) => {
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                await apiService.updateQuestion({
+                    id: selected._id,
+                    deleted: true,
+                });
+                await init();
+            }
+        },
+        [selected],
+    );
+
+    // Delete the selected on backspace or delete
+    useEffect(() => {
+        window.addEventListener('keydown', handleDelete);
+        return () => window.removeEventListener('keydown', handleDelete);
+    }, [handleDelete]);
+
+    if (!questions?.length) return null;
 
     return (
-        <div className="w-full flex flex-col mt-4 gap-2">
-            <h4 className="text-gray-600 font-semibold">Your questions</h4>
-                {questions.map((question) => (
-            <div className="w-full border-gray-200ra rounded border p-3 dark:border-gray-800 dark:bg-blue-opaque" key={question._id}>
-                    <div className="question gap-1" >
-                    {question.answer && <div className='mb-1'><SuccessMessage>Answered</SuccessMessage></div>}
-                        <p className="question-text text-sm text-black">{question.question}</p>
-                        <p className="question-visitor text-gray-500 text-xs">{question.answer}</p>
+        <div className="mt-4 flex w-full flex-col gap-2">
+            <h4 className="font-semibold text-gray-600 dark:text-white">Your questions</h4>
+            {questions.map((question) => (
+                <div key={question._id} className='flex flex-row'>
+                <div className='border-2 '></div>
+                <div
+                    onClick={() => onSelect(question)}
+                    className={classNames(
+                        'border-gray-200ra w-full rounded border p-3 dark:border-gray-800 dark:bg-blue-opaque',
+                        handleSelection ? 'cursor-pointer' : '',
+                        selected?._id === question._id && 'border-2 border-blue-400',
+                    )}
+                    key={question._id}
+                >
+                    <div className="question gap-1">
+                        {question.answer && (
+                            <div className="mb-1">
+                                <SuccessMessage>Answered</SuccessMessage>
+                            </div>
+                        )}
+                        <p className="question-text text-sm text-black dark:text-white">{question.question}</p>
+                        <p className="question-visitor text-xs text-gray-500 dark:text-gray-300">{question.answer}</p>
                     </div>
-            </div>
-                ))}
+                </div></div>
+            ))}
         </div>
     );
+
+    async function init() {
+        let questions = [];
+        if (!handleSelection) questions = await apiService.getQuestions();
+        else questions = await apiService.getAllQuestions();
+
+        console.log(questions);
+        setQuestions(questions.sort((b, a) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+    }
 }
 
-export default function Ask({added}) {
+export default function Ask({ added, selected }) {
     const [form, setForm] = useState<FormState>({ state: Form.Initial });
     const inputEl = useRef(null);
     const [ip, setIp] = useState();
@@ -82,6 +135,24 @@ export default function Ask({added}) {
             return;
         }
 
+        if (selected) {
+            try {
+                await apiService.updateQuestion({ id: selected._id, answer: question });
+                setForm({
+                    state: Form.Success,
+                    message: `Your answer has been submitted!`,
+                });
+            } catch (error) {
+                setForm({
+                    state: Form.Error,
+                    message: 'Oops! Something went wrong. 😔',
+                });
+            }
+            added();
+
+            return;
+        }
+
         try {
             const res = await apiService.createQuestion({ question: question, email, visitor: ip });
             // if (error) {
@@ -113,7 +184,7 @@ export default function Ask({added}) {
             });
         }
 
-        added()
+        added();
     };
 
     // const countText = subscriberCount > 0 ? subscriberCount.toLocaleString() : '-';
@@ -139,7 +210,7 @@ export default function Ask({added}) {
                 <div className="items-right flex w-full items-center justify-between">
                     <div className="message">{form.state === Form.Error ? <ErrorMessage>{form.message}</ErrorMessage> : <SuccessMessage>{form.message}</SuccessMessage>}</div>
                     <button
-                        className="flex h-8 w-28 items-center justify-center rounded border border-blue-100 bg-white px-4 pt-1 font-medium text-gray-900 dark:bg-gray-700 dark:text-gray-100"
+                        className="flex flex-row h-8 w-28 items-center justify-center rounded border border-blue-100 bg-white px-4 font-medium text-gray-900 dark:bg-gray-700 dark:text-gray-100"
                         type="submit"
                     >
                         {form.state === Form.Loading ? <LoadingSpinner /> : 'Submit'}
