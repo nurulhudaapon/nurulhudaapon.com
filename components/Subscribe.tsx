@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import useSWR from 'swr';
-
+import cn from 'classnames';
 import fetcher from 'lib/fetcher';
 import { Form, FormState, Subscribers } from 'lib/types';
 import SuccessMessage from 'components/SuccessMessage';
@@ -43,10 +43,10 @@ export default function Subscribe() {
     useEffect(() => {
         (async () => {
             const request = await fetch("https://ipinfo.io/json?token=18a8a8f700399d")
-const jsonResponse = await request.json()
+            const jsonResponse = await request.json()
 
-console.log(jsonResponse)
-setIp(jsonResponse)     
+            console.log(jsonResponse)
+            setIp(jsonResponse)
         })();
     }, []);
 
@@ -107,7 +107,9 @@ setIp(jsonResponse)
     };
     // const countText = subscriberCount > 0 ? subscriberCount.toLocaleString() : '-';
     return (
-        <div className="my-4 w-full rounded border border-blue-200 p-3 pt-0 dark:border-gray-800 dark:bg-blue-opaque">
+        <div
+            // className="my-4 w-full rounded border border-blue-200 p-3 pt-0 dark:border-gray-800 dark:bg-blue-opaque"
+            className={cn('my-4 w-full p-3 pt-0 transform transition-all hover:scale-[1.01]', 'w-full rounded-xl bg-gradient-to-r', 'border border-gray-400 dark:border-white')}>
             <form className="relative my-4" onSubmit={subscribe}>
                 <input
                     ref={inputEl}

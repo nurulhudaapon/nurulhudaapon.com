@@ -6,29 +6,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (req.method == 'POST') {
         const { email, ip } = JSON.parse(req.body);
 
-
         // get visitor id from cookie
-        let visitorId = req.cookies['visitor_id']
+        let visitorId = req.cookies['visitor_id'];
 
         // create visitor if not exists
-        if (!visitorId)
-        {
-        const createdVisitor = await createVisitor(
-            req.headers['x-forwarded-for'] as string,
-            ip,
-        )
+        if (!visitorId) {
+            const createdVisitor = await createVisitor(req.headers['x-forwarded-for'] as string, ip);
 
-        res.setHeader('Set-Cookie', `visitor_id=${createdVisitor.insertedId}; Path=/; SameSite=Strict`);
-        visitorId = createdVisitor.insertedId.toString();
+            res.setHeader('Set-Cookie', `visitor_id=${createdVisitor.insertedId}; Path=/; SameSite=Strict`);
+            visitorId = createdVisitor.insertedId.toString();
         }
 
         // const currentSubscriber = await apiService.getUserByEmail(email);
-        const currentSubscriber = await getSubscriberByEmail(email);
+        // const currentSubscriber = await getSubscriberByEmail(email);
 
-        if (currentSubscriber?._id) return res.status(200).json(currentSubscriber);
+        // if (currentSubscriber?._id) return res.status(200).json(currentSubscriber);
 
         // const subscriber = await apiService.registerSubscriber({ email });
-        const subscriber = await createSubscriber(email, visitorId, ip);
+        // const subscriber = await createSubscriber(email, visitorId, ip);
+
+        const subscriber = await apiService.subscribeToNewsletter({ email });
+
+        if (subscriber.errors?.some((msg) => msg?.message?.includes('already'))) return res.status(200).json(subscriber);
 
         return res.status(201).json(subscriber);
     }

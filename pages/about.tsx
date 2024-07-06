@@ -63,14 +63,14 @@ export default function About() {
           </ul>
           <h2>Bio</h2>
           <p>
-            Hello, I'm Nurul. I'm a Software Engineer at{' '}
+            Hello, I'm Nurul. I'm a Staff Engineer at{' '}
             <a href="https://voyagesms.com/">Voyage SMS</a>, where I build stuff
             using C#, .NET Core, React, TypeScript, PostgreSQL and many more.
             I'm also a Computer Science and Engineering student at Green
             University of Bangladesh.
           </p>
           <h3>Current Position</h3>
-          <p>Nurul Huda (Apon), Software Engineer at Voyage SMS</p>
+          <p>Nurul Huda (Apon), Staff Engineer at Voyage SMS</p>
           <h3>Education</h3>
           <p>
             Currently enrolling Bachelor of Computer Science and Engineering at

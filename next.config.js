@@ -8,6 +8,7 @@ module.exports = {
             'pbs.twimg.com', // Twitter Profile Picture
             'res.cloudinary.com',
             'cdn.jsdelivr.net',
+            'cdn.hashnode.com',
         ],
     },
     // redirect old blog posts to medium
@@ -17,24 +18,24 @@ module.exports = {
         // https://nurulhudaapon.medium.com/learn-to-type-fast-2301e4ce0a2
 
         return [
-            {
-                // https://nurulhudaapon.com/blog/stay-focused?fbclid=IwAR1UxcE1jKdIsiIO0lfYAuRv5XL4hR3cGdHK7XsaJv0BJdBQxcAC6fiY-g0
-                source: '/blog/stay-focused',
-                destination: 'https://nurulhudaapon.medium.com/tips-on-staying-focused-53e42eed981c',
-                permanent: true,
-            },
-            {
-                // https://nurulhudaapon.com/blog/study-while-working-full-time?fbclid=IwAR3mX2js2CdumrzBtUMZUInn08nj0bbzs_htCEuGSZ-5IGdwhZnGaeXMKiw
-                source: '/blog/study-while-working-full-time',
-                destination: 'https://nurulhudaapon.medium.com/how-i-study-while-working-full-time-e8c6a511cb4a',
-                permanent: true,
-            },
-            {
-                // https://nurulhudaapon.com/blog/learn-typing-fast?fbclid=IwAR1IrzViB_jfCHNBvD6--D1NNtRDx6wIBZu4tAwtBxQ_cwsLYKc7QOear0A
-                source: '/blog/learn-typing-fast',
-                destination: 'https://nurulhudaapon.medium.com/learn-to-type-fast-2301e4ce0a2',
-                permanent: true,
-            },
+            // {
+            //     // https://nurulhudaapon.com/blog/stay-focused?fbclid=IwAR1UxcE1jKdIsiIO0lfYAuRv5XL4hR3cGdHK7XsaJv0BJdBQxcAC6fiY-g0
+            //     source: '/blog/stay-focused',
+            //     destination: 'https://nurulhudaapon.medium.com/tips-on-staying-focused-53e42eed981c',
+            //     permanent: true,
+            // },
+            // {
+            //     // https://nurulhudaapon.com/blog/study-while-working-full-time?fbclid=IwAR3mX2js2CdumrzBtUMZUInn08nj0bbzs_htCEuGSZ-5IGdwhZnGaeXMKiw
+            //     source: '/blog/study-while-working-full-time',
+            //     destination: 'https://nurulhudaapon.medium.com/how-i-study-while-working-full-time-e8c6a511cb4a',
+            //     permanent: true,
+            // },
+            // {
+            //     // https://nurulhudaapon.com/blog/learn-typing-fast?fbclid=IwAR1IrzViB_jfCHNBvD6--D1NNtRDx6wIBZu4tAwtBxQ_cwsLYKc7QOear0A
+            //     source: '/blog/learn-typing-fast',
+            //     destination: 'https://nurulhudaapon.medium.com/learn-to-type-fast-2301e4ce0a2',
+            //     permanent: true,
+            // },
         ];
     },
 

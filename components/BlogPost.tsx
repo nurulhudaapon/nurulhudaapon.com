@@ -7,14 +7,14 @@ import { Views } from 'lib/types';
 export default function BlogPost({
   slug,
   title,
-  excerpt
+  excerpt,
+  views
 }: {
   slug: string;
   title: string;
   excerpt: string;
-}) {
-  const { data } = useSWR<Views>(`/api/views/${slug}`, fetcher);
-  const views = data?.total;
+    views?: number;
+  }) {
 
   return (
     (<Link href={`/blog/${slug}`} className="w-full">

@@ -39,8 +39,8 @@ export default function Container(props) {
   const { children, ...customMeta } = props;
   const router = useRouter();
   const meta = {
-    title: 'Nurul Huda (Apon) – Software Engineer, Tech-enthusiast',
-    description: `Software Engineer, Tech-enthusiast, and undergrad student.`,
+    title: 'Nurul Huda (Apon) – Staff Engineer, Tech-enthusiast',
+    description: `Staff Engineer, Tech-enthusiast, and undergrad student.`,
     image: 'https://nurulhudaapon.com/static/images/nurul-banner.png',
     type: 'website',
     ...customMeta

@@ -41,7 +41,8 @@ export default function Blog({
               key={post.title}
               slug={post.slug}
               title={post.title}
-              excerpt={post.excerpt}
+              views={post.views}
+              excerpt={post.brief}
             />
           ))}
         </Suspense>
@@ -51,7 +52,7 @@ export default function Blog({
 }
 
 export async function getStaticProps({ preview = false }) {
-  // const posts = await apiService.getPosts();
-  const posts = [];
-  return { props: { posts: posts?.map((p) => p.attributes) } };
+  const posts = await apiService.getPosts();
+  // const posts = [];
+  return { props: { posts } };
 }

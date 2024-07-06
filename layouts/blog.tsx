@@ -12,17 +12,14 @@ export default function BlogLayout({
   children,
   post
 }: PropsWithChildren<{ post: Post }>) {
-  const imageUrl = post.imageUrl?.data?.id
-    ? getStrapiMedia(post.imageUrl)
-    : null;
 
-  console.log(imageUrl);
+  const imageUrl = post.coverImage?.url;
   return (
     <Container
       title={`${post.title} – Nurul Huda (Apon)`}
       description={post.excerpt}
       image={imageUrl}
-      date={new Date(post.publishedAt).toISOString()}
+      date={post.publishedAt && new Date(post.publishedAt).toISOString()}
       type="article"
     >
       <article className="flex flex-col items-start justify-center w-full max-w-2xl mx-auto mb-16">
@@ -41,13 +38,14 @@ export default function BlogLayout({
             />
             <p className="ml-2 text-sm text-gray-700 dark:text-gray-300">
               {'Nurul Huda (Apon) / '}
-              {format(parseISO(post.createdAt as string), 'MMMM dd, yyyy')}
+              {post.publishedAt && format(parseISO(post.publishedAt as string), 'MMMM dd, yyyy')}
             </p>
           </div>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 min-w-32 md:mt-0">
             {post.readingTime}
             {` • `}
-            <ViewCounter slug={post.slug} />
+            {/* <ViewCounter slug={post.slug} /> */}
+            <span>{`${post.views > 0 ? post.views.toLocaleString() : '–––'} views`}</span>
           </p>
         </div>
         <Suspense fallback={null}>

@@ -1,4 +1,4 @@
-type GqlQueryNames = 'GetSimplePosts' | 'GetSimpleSnippets' | ('RegisterUser' & string);
+type GqlQueryNames = 'SubscribeToNewsletter' | 'GetPostBySlug' | 'GetPosts';
 
 declare module '*.gql' {
     import { DocumentNode } from 'graphql';

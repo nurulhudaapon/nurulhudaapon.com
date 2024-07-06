@@ -39,26 +39,22 @@ export async function getStaticPaths() {
 }
 
 export async function getStaticProps({ params, preview = false }) {
-  // const posts = await apiService.getPostBySlug(params.slug);
-  const posts = [];
-
-  if (!posts?.length) return { notFound: true };
-  const [postRaw] = posts;
-  const post = postRaw.attributes;
+  const post = await apiService.getPostBySlug(params.slug);
+  // const posts = [];
 
   if (!post) {
     return { notFound: true };
   }
 
-  const { html, tweetIDs, readingTime } = await mdxToHtml(post.content);
-  const tweets = await getTweets(tweetIDs);
+  const { html, tweetIDs, readingTime } = await mdxToHtml(post.content.markdown);
+  // const tweets = await getTweets(tweetIDs);
 
   return {
     props: {
       post: {
         ...post,
         content: html,
-        tweets,
+        // tweets,
         readingTime
       }
     }

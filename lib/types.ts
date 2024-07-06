@@ -3,18 +3,21 @@ import { MDXRemoteSerializeResult } from 'next-mdx-remote';
 
 
 export type Post = {
-  publishedAt: string | number | Date;
-  imageUrl: any;
-  createdAt: string | number | Date;
-  _id: string;
-  slug: string;
-  content: MDXRemoteSerializeResult;
-  title: string;
-  date: string;
-  excerpt: string;
-  coverImage: string;
-  readingTime: string;
-  tweets: any[];
+    publishedAt: string | number | Date;
+    imageUrl: any;
+    createdAt: string | number | Date;
+    _id: string;
+    slug: string;
+    content: MDXRemoteSerializeResult;
+    title: string;
+    date: string;
+    excerpt: string;
+    readingTime: string;
+    tweets: any[];
+    views: number;
+    coverImage: {
+        url: string;
+    };
 };
 
 export interface StrapiResponse<T> {

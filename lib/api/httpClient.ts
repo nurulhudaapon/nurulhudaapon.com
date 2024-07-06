@@ -1,6 +1,8 @@
 import qs from 'qs';
 import { StrapiQuery } from './interfaces';
 import { getAuthUrl, getUrl } from './utility';
+import { GQL_QUERIES } from './graphql';
+import { DocumentNode, print } from 'graphql';
 
 /**
  * Helper to make GET requests to Strapi API endpoints
@@ -39,3 +41,50 @@ export async function httpClient<T = unknown>(path, urlParamsObject: StrapiQuery
     const data = (await response.json()) as T;
     return data;
 }
+
+export const gqlClient =
+    <T = unknown>(query: TemplateStringsArray | DocumentNode) =>
+    async (variables: Record<string, any> = {}) => {
+        const queryStr = isDocumentNode(query) ? print(query) : query.join('');
+
+        const response = await fetch(process.env.HASHNODE_GQL_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                // Authorization: `Bearer ${getAuthUrl()}`,
+            },
+            body: JSON.stringify({ query: queryStr, variables }),
+        });
+
+        // Handle response
+        if (!response.ok) {
+        }
+        const data = (await response.json()) as T;
+        return data;
+    };
+
+const isDocumentNode = (query: any): query is DocumentNode => {
+    return query.kind === 'Document';
+}
+
+
+// type GraphQlQueryResult<TData = any> = {
+//     data?: TData;
+//     errors?: Error[];
+// };
+
+// type QueryDefaultVariables = {
+//     limit?: number;
+//     offset?: number;
+//     timezone?: string;
+// };
+
+// // type TypedDocumentNode<TData, TVariables> = typeof GQL_QUERIES;
+
+// type GraphQlQueryProps<TData, TVariables> = {
+//     operation: TypedDocumentNode<TData, TVariables> | string;
+//     variables?: TVariables & QueryDefaultVariables;
+//     signal?: AbortSignal;
+// };
+
+// export type GraphQlClientType = <TData, TVariables>(props: GraphQlQueryProps<TData, TVariables>) => Promise<GraphQlQueryResult<TData>>;

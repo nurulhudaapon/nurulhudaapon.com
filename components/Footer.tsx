@@ -36,7 +36,7 @@ export default function Footer() {
           <ExternalLink href="https://github.com/nurulhudaapon">
             GitHub
           </ExternalLink>
-          <ExternalLink href="https://linkedin.com/nurulhudaapon">
+          <ExternalLink href="https://linkedin.com/in/nurulhudaapon">
             LinkedIn
           </ExternalLink>
         </div>
@@ -44,7 +44,7 @@ export default function Footer() {
           <ExternalLink href="https://fb.me/nurulhudaapon">
             Facebook
           </ExternalLink>
-          <ExternalLink href="https://www.youtube.com/nurulhudaapon">
+          <ExternalLink href="https://www.youtube.com/@nurulhudaapon">
             YouTube
           </ExternalLink>
           <ExternalLink href="https://twitter.com/nurulhudaapon">

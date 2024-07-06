@@ -36,13 +36,13 @@ function ProfileSection({}) {
           Nurul Huda (Apon)
         </h1>
         <h2 className="text-gray-700 dark:text-gray-200 mb-4">
-          Software Engineer at <span className="font-semibold">Voyage SMS</span>
+          Staff Engineer at <span className="font-semibold">Voyage SMS</span>
         </h2>
         <p className="text-gray-600 dark:text-gray-400 mb-16">
           A tech enthusiast, enrolling in Computer Science and Engineering at{' '}
           <span className="font-semibold">Green University of Bangladesh</span>{' '}
           and working as a{' '}
-          <span className="font-semibold">Software Engineer</span>
+          <span className="font-semibold">Staff Engineer</span>
         </p>
       </div>
       <div className="w-[100px] sm:w-[276px] relative mb-8 sm:mb-0 mr-auto">
@@ -82,8 +82,9 @@ function BlogPostSection({}) {
         Blog Posts
       </h3>
       <div className="flex gap-6 flex-col md:flex-row">
+        <Card />
         {CONTENT.posts.map((post) => (
-          <BlogPostCard key={post.slug} {...post} />
+          <BlogPostCard key={post.slug} {...post} gradient={' from-[#ff0080] to-[#7928CA]'} />
         ))}
       </div>
     </section>
@@ -151,3 +152,20 @@ function VideoSection({}) {
     </section>
   );
 }
+
+
+const Card = () => {
+  return (
+    <div className="flex justify-center items-center h-screen">
+      <div className="relative group p-6 bg-white rounded-lg shadow-lg">
+        <div className="absolute inset-0 border-4 border-transparent rounded-lg 
+                        opacity-100 group-hover:opacity-100 
+                        before:absolute before:inset-0 before:bg-gradient-to-r before:from-pink-500 before:via-red-500 before:to-yellow-500 before:rounded-lg before:opacity-0 before:group-hover:opacity-100 before:animate-spin-slow"></div>
+        <div className="relative z-10 p-6 bg-white rounded-lg">
+          <h2 className="text-xl font-semibold mb-2">Your Card</h2>
+          <p className="text-gray-600">This is an example card with a revolving border on hover.</p>
+        </div>
+      </div>
+    </div>
+  );
+};

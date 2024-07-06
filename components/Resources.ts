@@ -8,7 +8,7 @@ export const MENU_ITEMS = [
     },
     {
         target: '_blank',
-        href: 'https://nurulhudaapon.medium.com',
+        href: '/blog',
         text: 'Blog',
     },
     // {
