@@ -17,7 +17,7 @@ const createSitemap = (slugs) => `<?xml version="1.0" encoding="UTF-8"?>
 let posts = [];
 export async function getServerSideProps({ res }) {
   try {
-    const allPosts = await apiService.getPosts(undefined, undefined, 3000);
+    const allPosts = await apiService.getPosts();
     posts = allPosts.map((post) => post.attributes.slug);
   } catch (error) {}
 

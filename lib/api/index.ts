@@ -6,15 +6,15 @@ export const apiService = {
     // Post
     // getPosts: async (...args) => (await httpClient<StrapiResponse<Post>>('/posts', ...args)).data,
     getPosts: async () => {
-        const posts = await gqlClient(GQL_QUERIES.GetPosts)({});
+        const posts: any = await gqlClient(GQL_QUERIES.GetPosts)({});
         // console.log(JSON.stringify(posts?.data?.publication?.posts, null, 2));
         const formattedPosts = posts?.data?.publication?.posts?.edges?.map((edge) => edge.node);
-        console.log(JSON.stringify(formattedPosts, null, 2));
+        // console.log(JSON.stringify(formattedPosts, null, 2));
         return formattedPosts;
     },
     getSimplePosts: async () => (await httpClient<StrapiResponse<Post>>('/posts')).data,
     getPostBySlug: async (slug: string) => {
-        const post = await gqlClient(GQL_QUERIES.GetPostBySlug)({ slug });
+        const post: any = await gqlClient(GQL_QUERIES.GetPostBySlug)({ slug });
         const formattedPosts = post?.data?.publication?.post;
         console.log(post, JSON.stringify(formattedPosts, null, 2));
         return formattedPosts;
@@ -35,7 +35,7 @@ export const apiService = {
     getUserByEmail: async (email: string) => await httpClient<{ user: { email: string } }[]>(`/users`, { filters: { email: { $eq: email } } }),
     getUserCount: async () => await httpClient('/users/count'),
     subscribeToNewsletter: async ({ email }: { email: string }) => {
-        const subscription = await gqlClient(GQL_QUERIES.SubscribeToNewsletter)({ email });
+        const subscription: any = await gqlClient(GQL_QUERIES.SubscribeToNewsletter)({ email });
         console.log(subscription);
         return subscription;
     },
