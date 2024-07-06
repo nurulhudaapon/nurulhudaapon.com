@@ -29,11 +29,11 @@ export default function PostPage({ post }: { post: Post }) {
 }
 
 export async function getStaticPaths() {
-  // const posts = await apiService.getPosts();
-  const posts = [];
+  const posts = await apiService.getPosts();
+  // const posts = [];
 
   return {
-    paths: posts.map((p) => ({ params: { slug: p.attributes.slug } })),
+    paths: posts.map((p) => ({ params: { slug: p.slug } })),
     fallback: 'blocking'
   };
 }
