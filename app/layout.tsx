@@ -33,8 +33,8 @@ export default function RootLayout({
         <div className="grid grid-rows-[1fr_auto] min-h-screen bg-neutral-950 text-white font-sans">
           {children}
           <footer className="sticky z-55 sm:static bottom-0 w-full flex flex-row items-center justify-between gap-4 py-3 sm:py-6 border-t border-neutral-800 bg-neutral-950 px-4 sm:px-8 text-sm">
-            <div className="text-neutral-500 text-xs sm:text-sm">© 2025 Nurul Huda (Apon).</div>
-            <div className="flex gap-2 sm:gap-4 items-center">
+            <div className="text-neutral-500 text-xs sm:text-sm line-clamp-1">© 2025 Nurul Huda (Apon).</div>
+            <div className="flex gap-3 sm:gap-4 items-center">
               {socialLinks.map((link) => (
                 <FooterLink key={link.label} {...link} />
               ))}

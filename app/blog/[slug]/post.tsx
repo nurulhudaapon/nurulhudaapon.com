@@ -17,7 +17,7 @@ export default function PostContent({ post, mdx }: PostContentProps) {
     }) : null;
 
     return (
-        <article className="prose prose-invert max-w-none">
+        <article className="max-w-none">
             <header className="mb-8">
                 <ViewTransition name={`post-title-${post.id}`}>
                     <h1 className="text-4xl font-bold mb-4">
@@ -25,7 +25,7 @@ export default function PostContent({ post, mdx }: PostContentProps) {
                     </h1>
                 </ViewTransition>
                 {post.coverImage && (
-                    <div className="relative w-full aspect-[2/1] mb-8 rounded-xl overflow-hidden">
+                    <div className="relative w-full  mb-8 rounded-xl overflow-hidden">
                         <img
                             src={post.coverImage.url}
                             alt={post.title}
@@ -63,7 +63,9 @@ export default function PostContent({ post, mdx }: PostContentProps) {
             </header>
 
             <ViewTransition name={`post-content-${post.id}`}>
-                {mdx}
+                <div className="prose prose-invert max-w-none">
+                    {mdx}
+                </div>
             </ViewTransition>
         </article>
     );

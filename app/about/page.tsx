@@ -1,25 +1,21 @@
-import Navigation from "../../components/navs";
-
 export default function About() {
   return (
-    <main className="flex flex-col items-center w-full max-w-4xl mx-auto py-4 sm:py-20 px-4">
-      <div className="w-full max-w-2xl space-y-8">
-        <Navigation />
-        
-        <div className="space-y-6">
-          <p className="text-lg text-neutral-400">
-            Hello, I'm Nurul. I'm a Staff Engineer at Voyage SMS, where I build stuff using C#, .NET Core, React, TypeScript, PostgreSQL and many more. I'm also a Computer Science and Engineering student at Green University of Bangladesh.
-          </p>
+    <div className="space-y-6">
+      <p className="text-lg text-neutral-400">
+        Hi, I'm Nurul. I work as a Staff Engineer at Voyage SMS. I build software using C#, .NET Core, React, TypeScript, and PostgreSQL. I started learning to code in 2019 when I was in college, and I've loved it ever since.
+      </p>
 
-          <p className="text-lg text-neutral-400">
-            Currently, I'm working as a Staff Engineer at Voyage SMS, where I focus on building robust and scalable solutions using modern technologies.
-          </p>
+      <p className="text-lg text-neutral-400">
+        I learned to code with JavaScript. My first big project was a small banking system for kids to help them learn about saving money. I like to build real things instead of just following tutorials. This helps me learn better and solve real problems.
+      </p>
 
-          <p className="text-lg text-neutral-400">
-            I'm currently pursuing my Bachelor's degree in Computer Science and Engineering at Green University of Bangladesh, with an expected graduation in 2026. This academic journey complements my professional experience, allowing me to stay at the forefront of technological advancements.
-          </p>
-        </div>
-      </div>
-    </main>
+      <p className="text-lg text-neutral-400">
+        Right now, I'm studying Computer Science at Green University of Bangladesh. I'll finish my degree in 2026. Working full-time while studying is hard, but it has taught me how to manage my time well and never give up.
+      </p>
+
+      <p className="text-lg text-neutral-400">
+        I started as a QA Engineer and worked my way up to Staff Engineer. I believe in learning new things every day and always trying to do my best. I love building software that helps people and makes a difference.
+      </p>
+    </div>
   );
 }

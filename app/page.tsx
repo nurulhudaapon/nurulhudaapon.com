@@ -14,7 +14,9 @@ export default function Home() {
             <span className="font-semibold text-white"> Green University of Bangladesh</span> and working as a <span className="font-semibold text-white">Staff Engineer</span>
           </div>
         </div>
-        <Navigation />
+        <div className="flex flex-col items-center sm:items-start text-center sm:text-left sm:order-2 justify-center">
+          <Navigation />
+        </div>
       </div>
       <div className="flex-shrink-0 mb-4 sm:mb-0 sm:order-1">
         <img
