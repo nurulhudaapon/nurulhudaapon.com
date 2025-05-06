@@ -8,8 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "deploy": "next build && bun run restart",
-    "restart": "docker compose restart portfolio",
-    "serve": "bunx serve out -l 3000"
+    "restart": "docker compose down && docker compose up -d",
+    "serve": "bun run build && bunx serve out -l 3000"
   },
   "dependencies": {
     "graphql": "^16.11.0",

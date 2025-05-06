@@ -1,5 +1,3 @@
-import { LucideIcon } from "lucide-react";
-
 interface FooterLinkProps {
   icon: React.ReactNode;
   href: string;

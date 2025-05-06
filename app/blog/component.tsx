@@ -1,8 +1,10 @@
 'use client';
 
-import { unstable_ViewTransition as ViewTransition } from 'react';
-import { Post } from '../types';
-import Image from 'next/image';
+import { PostEdge } from "./types";
+import { unstable_ViewTransition as ViewTransition } from "react";
+
+
+import { Post } from './types';
 
 interface PostContentProps {
     post: Post;
@@ -41,25 +43,7 @@ export default function PostContent({ post, mdx }: PostContentProps) {
                     </ViewTransition>
                 )}
 
-                <div className="flex items-center gap-4 text-sm text-neutral-500">
-                    {publishedDate && (
-                        <>
-                            <ViewTransition name={`post-published-date-${post.id}`}>
-                                <time dateTime={post.publishedAt}>{publishedDate}</time>
-                            </ViewTransition>
-                            <span>·</span>
-                        </>
-                    )}
-
-                    <ViewTransition name={`post-readtime-${post.id}`}>
-                        <span>{post.readTimeInMinutes} min read</span>
-                    </ViewTransition>
-                    <span>·</span>
-
-                    <ViewTransition name={`post-views-${post.id}`}>
-                        <span>{post.views} views</span>
-                    </ViewTransition>
-                </div>
+                <BlogPostMeta post={{ node: post }} />
             </header>
 
             <ViewTransition name={`post-content-${post.id}`}>
@@ -69,4 +53,26 @@ export default function PostContent({ post, mdx }: PostContentProps) {
             </ViewTransition>
         </article>
     );
-} 
+}
+
+export function BlogPostMeta({ post }: { post: PostEdge }) {
+    return (
+        <ViewTransition name={`post-meta-${post.node.id}`}>
+            <div className="flex items-center gap-4 text-sm text-neutral-400">
+                {post.node.publishedAt && (
+                    <time dateTime={post.node.publishedAt} className="text-sm text-neutral-400 order-1 sm:order-none">
+                        {new Date(post.node.publishedAt).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                        })}
+                    </time>
+                )}
+                <span className="order-2 sm:order-none">·</span>
+                <span className="order-3 sm:order-none">{post.node.readTimeInMinutes} min read</span>
+                <span className="order-4 sm:order-none">·</span>
+                <span className="order-5 sm:order-none">{post.node.views} views</span>
+            </div>
+        </ViewTransition>
+    )
+}

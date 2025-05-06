@@ -2,7 +2,8 @@ import { unstable_ViewTransition as ViewTransition } from 'react'
 import Link from "next/link";
 import { gqlClient } from "@/libs";
 import { queries } from "@/libs";
-import { Post, PostsResponse } from './types';
+import { PostsResponse } from './types';
+import { BlogPostMeta } from './component';
 
 export default async function Blog() {
   const response = await gqlClient(queries.getPosts)();
@@ -18,7 +19,7 @@ export default async function Blog() {
               <div className="flex justify-between items-start mb-2">
                 <ViewTransition name={`post-title-${post.node.id}`}>
                   <h2
-                    className="text-2xl font-semibold group-hover:text-neutral-300 transition"
+                    className="text-2xl font-semibold group-hover:text-neutral-200 transition"
                   >
                     {post.node.title}
                   </h2>
@@ -26,31 +27,11 @@ export default async function Blog() {
               </div>
 
               <ViewTransition name={`post-${post.node.subtitle ? 'subtitle' : 'content'}-${post.node.id}`}>
-                <p className="text-neutral-400 mb-4 line-clamp-2">
+                <p className="text-neutral-300 mb-4 line-clamp-2">
                   {post.node.subtitle || post.node.brief}
                 </p>
               </ViewTransition>
-              <div className="flex items-center gap-4 text-sm text-neutral-500">
-                {post.node.publishedAt && (
-                  <ViewTransition name={`post-published-date-${post.node.id}`}>
-                    <time dateTime={post.node.publishedAt} className="text-sm text-neutral-500 order-1 sm:order-none">
-                      {new Date(post.node.publishedAt).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      })}
-                    </time>
-                  </ViewTransition>
-                )}
-                <span className="order-2 sm:order-none">·</span>
-                <ViewTransition name={`post-readtime-${post.node.id}`}>
-                  <span className="order-3 sm:order-none">{post.node.readTimeInMinutes} min read</span>
-                </ViewTransition>
-                <span className="order-4 sm:order-none">·</span>
-                <ViewTransition name={`post-views-${post.node.id}`}>
-                  <span className="order-5 sm:order-none">{post.node.views} views</span>
-                </ViewTransition>
-              </div>
+              <BlogPostMeta post={post} />
             </Link>
           </article>
         ))}

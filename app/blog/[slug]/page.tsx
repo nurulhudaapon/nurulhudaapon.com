@@ -1,7 +1,7 @@
 import { gqlClient } from "@/libs";
 import { queries } from "@/libs";
 import { mdxToHtml } from './util';
-import PostContent from './post';
+import PostContent from '../component';
 import { PostResponse } from '../types';
 import './blog.css';
 
