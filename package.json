@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "deploy": "next build && cd ~/nginx-manager && docker compose restart portfolio"
+    "deploy": "next build && bun run restart",
+    "restart": "docker compose restart portfolio",
+    "serve": "bunx serve out -l 3000"
   },
   "dependencies": {
     "graphql": "^16.11.0",
