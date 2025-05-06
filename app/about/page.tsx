@@ -2,7 +2,7 @@ import Navigation from "../../components/navs";
 
 export default function About() {
   return (
-    <main className="flex flex-col items-center w-full max-w-4xl mx-auto py-24 px-4">
+    <main className="flex flex-col items-center w-full max-w-4xl mx-auto py-4 sm:py-20 px-4">
       <div className="w-full max-w-2xl space-y-8">
         <Navigation />
         

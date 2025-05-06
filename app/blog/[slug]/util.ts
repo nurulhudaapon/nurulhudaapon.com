@@ -1,4 +1,4 @@
-import { serialize } from 'next-mdx-remote/serialize';
+import { compileMDX } from 'next-mdx-remote/rsc';
 import remarkGfm from 'remark-gfm';
 import rehypeSlug from 'rehype-slug';
 import rehypeCodeTitles from 'rehype-code-titles';
@@ -16,26 +16,28 @@ export async function mdxToHtml(source: string) {
         return `![${alt}](${src}?auto=compress,format&format=webp)`;
     });
 
-    const mdxSource = await serialize(cleanedSource, {
-        mdxOptions: {
-            remarkPlugins: [remarkGfm],
-            rehypePlugins: [
-                rehypeSlug,
-                rehypeCodeTitles,
-                rehypePrism,
-                [
-                    rehypeAutolinkHeadings,
-                    {
-                        properties: {
-                            className: ['anchor'],
+    const { content } = await compileMDX({
+        source: cleanedSource,
+        options: {
+            parseFrontmatter: true,
+            mdxOptions: {
+                remarkPlugins: [remarkGfm],
+                rehypePlugins: [
+                    rehypeSlug,
+                    rehypeCodeTitles,
+                    rehypePrism,
+                    [
+                        rehypeAutolinkHeadings,
+                        {
+                            properties: {
+                                className: ['anchor'],
+                            },
                         },
-                    },
+                    ],
                 ],
-            ],
-            format: 'mdx',
+            },
         },
     });
 
-
-    return mdxSource;
+    return content;
 }

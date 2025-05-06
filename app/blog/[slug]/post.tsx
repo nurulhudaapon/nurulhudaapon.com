@@ -1,17 +1,12 @@
 'use client';
 
 import { unstable_ViewTransition as ViewTransition } from 'react';
-import { MDXRemote } from 'next-mdx-remote';
 import { Post } from '../types';
 import Image from 'next/image';
 
 interface PostContentProps {
     post: Post;
-    mdx: {
-        compiledSource: string;
-        scope: any;
-        frontmatter: any;
-    };
+    mdx: React.ReactNode;
 }
 
 export default function PostContent({ post, mdx }: PostContentProps) {
@@ -23,7 +18,6 @@ export default function PostContent({ post, mdx }: PostContentProps) {
 
     return (
         <article className="prose prose-invert max-w-none">
-
             <header className="mb-8">
                 <ViewTransition name={`post-title-${post.id}`}>
                     <h1 className="text-4xl font-bold mb-4">
@@ -56,22 +50,21 @@ export default function PostContent({ post, mdx }: PostContentProps) {
                             <span>·</span>
                         </>
                     )}
-                    <ViewTransition name={`post-views-${post.id}`}>
-                        <span>{post.views} views</span>
-                    </ViewTransition>
-                    <span>·</span>
+
                     <ViewTransition name={`post-readtime-${post.id}`}>
                         <span>{post.readTimeInMinutes} min read</span>
                     </ViewTransition>
-                </div>
+                    <span>·</span>
 
+                    <ViewTransition name={`post-views-${post.id}`}>
+                        <span>{post.views} views</span>
+                    </ViewTransition>
+                </div>
             </header>
 
-            <MDXRemote
-                compiledSource={mdx.compiledSource}
-                scope={mdx.scope}
-                frontmatter={mdx.frontmatter}
-            />
+            <ViewTransition name={`post-content-${post.id}`}>
+                {mdx}
+            </ViewTransition>
         </article>
     );
 } 

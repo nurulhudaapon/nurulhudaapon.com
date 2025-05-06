@@ -18,10 +18,10 @@ export default function Home() {
       </div>
       <div className="flex-shrink-0 mb-8 sm:mb-0 sm:order-1">
         <img
-          src="https://github.com/nurulhudaapon.png"
+          src="/nurulhudaapon.jpeg"
           alt="Nurul Huda (Apon)"
-          width={220}
-          height={220}
+          width={250}
+          height={250}
           className="rounded-full object-cover grayscale border-4 border-neutral-800 mx-auto"
         />
       </div>

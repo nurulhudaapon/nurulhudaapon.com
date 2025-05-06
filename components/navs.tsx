@@ -12,15 +12,17 @@ const navItems = [
 
 export default function Navigation() {
   return (
-    <ViewTransition name="navigation">
-    <nav className="flex gap-4 sm:gap-6 text-base sm:text-lg font-medium">
-      {navItems.map((item) => (
-        <NavItem key={item.href} href={item.href}>
-          {item.label}
-        </NavItem>
-      ))}
-    </nav>
-    </ViewTransition>
+    <div className="sticky top-0 z-50 py-4 bg-neutral-950/80 backdrop-blur-sm">
+      <ViewTransition name="navigation">
+        <nav className="flex gap-4 sm:gap-6 text-base sm:text-lg font-medium">
+          {navItems.map((item) => (
+            <NavItem key={item.href} href={item.href}>
+              {item.label}
+            </NavItem>
+          ))}
+        </nav>
+      </ViewTransition>
+    </div>
   );
 }
 
