@@ -18,6 +18,9 @@ export interface Post {
   content?: {
     markdown: string;
   };
+  author: {
+    name: string;
+  };
 }
 
 export interface PostEdge {

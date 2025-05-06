@@ -1,4 +1,3 @@
-
 const gql = String.raw;
 export const subscribeToNewsletter = gql`
     mutation SubscribeToNewsletter($email: String!) {
@@ -57,6 +56,9 @@ export const getPostBySlug = gql`
                 html
             }
             url
+            author {
+                name
+            }
         }
         }
     }

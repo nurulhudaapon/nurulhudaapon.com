@@ -3,6 +3,8 @@ import { queries } from "@/libs";
 import { mdxToHtml } from './util';
 import PostContent from '../component';
 import { PostResponse } from '../types';
+import { Metadata } from 'next';
+import { generateOGImage } from "@/libs/og";
 import './blog.css';
 
 export async function generateStaticParams() {
@@ -11,6 +13,47 @@ export async function generateStaticParams() {
     return posts.data.publication.posts.edges.map((post) => ({
         slug: post.node.slug,
     }));
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+    const slug = (await params).slug;
+    const response = await gqlClient<PostResponse>(queries.getPostBySlug)({ slug });
+    const post = response.data.publication.post;
+
+    post.author = {
+        name: 'Nurul Huda (Apon)',
+    }
+    await generateOGImage({ post, outputPath: `public/og/${post.slug}.png` });
+
+
+    if (!post) {
+        return {
+            title: 'Post Not Found',
+            description: 'The post you are looking for does not exist.',
+        };
+    }
+
+    const ogImage = `/og/${post.slug}.png`;
+
+    return {
+        title: post.title,
+        description: post.brief,
+        metadataBase: new URL('https://next.nuhu.dev'),
+        openGraph: {
+            title: post.title,
+            description: post.brief,
+            type: 'article',
+            publishedTime: post.publishedAt,
+            authors: [post.author.name],
+            images: [ogImage],
+        },
+        twitter: {
+            card: 'summary_large_image',
+            title: post.title,
+            description: post.brief,
+            images: [ogImage],
+        },
+    };
 }
 
 export default async function BlogPost({ params }: { params: Promise<{ slug: string }> }) {
