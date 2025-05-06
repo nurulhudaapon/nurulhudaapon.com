@@ -1,5 +1,4 @@
-import { Github, Linkedin, Twitter, Mail, Package, Youtube } from "lucide-react";
-import Navigation from "./components/navs";
+import Navigation from "../components/navs";
 
 export default function Home() {
   return (

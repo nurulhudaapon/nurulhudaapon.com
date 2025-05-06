@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { unstable_ViewTransition as ViewTransition } from 'react'
 
 const navItems = [
   { href: '/', label: 'Home' },
@@ -10,6 +12,7 @@ const navItems = [
 
 export default function Navigation() {
   return (
+    <ViewTransition name="navigation">
     <nav className="flex gap-4 sm:gap-6 text-base sm:text-lg font-medium">
       {navItems.map((item) => (
         <NavItem key={item.href} href={item.href}>
@@ -17,14 +20,24 @@ export default function Navigation() {
         </NavItem>
       ))}
     </nav>
+    </ViewTransition>
   );
 }
 
 function NavItem(props: { href: string; children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isActive = props.href === '/' 
+    ? pathname === '/' 
+    : pathname === props.href || pathname.startsWith(props.href + '/');
+  
   return (
     <Link 
       href={props.href} 
-      className="px-4 py-2 rounded-full bg-neutral-900 hover:bg-neutral-800 active:bg-neutral-800 active:text-white active:font-bold transition shadow-sm"
+      className={`px-4 py-2 rounded-full transition shadow-sm ${
+        isActive 
+          ? 'bg-neutral-800 text-white font-bold' 
+          : 'bg-neutral-900 hover:bg-neutral-800'
+      }`}
     >
       {props.children}
     </Link>

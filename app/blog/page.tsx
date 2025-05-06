@@ -1,35 +1,20 @@
-import Navigation from "../components/navs";
+import Navigation from "../../components/navs";
+import { unstable_ViewTransition as ViewTransition } from 'react'
+import Link from "next/link";
+import { gqlClient } from "@/libs";
+import { queries } from "@/libs";
+import { Post, PostsResponse } from './types';
 
-const posts = [
-  {
-    id: 1,
-    title: "Building Scalable Applications with .NET Core",
-    excerpt: "Learn how to build robust and scalable applications using .NET Core, focusing on best practices and modern architecture patterns.",
-    date: "2024-03-15",
-    readTime: "5 min read"
-  },
-  {
-    id: 2,
-    title: "TypeScript Best Practices for React Developers",
-    excerpt: "A comprehensive guide to using TypeScript effectively in React applications, covering type safety, interfaces, and advanced patterns.",
-    date: "2024-03-10",
-    readTime: "7 min read"
-  },
-  {
-    id: 3,
-    title: "PostgreSQL Performance Optimization Tips",
-    excerpt: "Essential tips and tricks for optimizing PostgreSQL database performance, including indexing strategies and query optimization.",
-    date: "2024-03-05",
-    readTime: "6 min read"
-  }
-];
+export default async function Blog() {
+  const response = await gqlClient(queries.getPosts)();
+  const posts = response as PostsResponse;
+  const postsData = posts.data.publication.posts.edges;
 
-export default function Blog() {
   return (
     <main className="flex flex-col items-center w-full max-w-4xl mx-auto py-24 px-4">
       <div className="w-full max-w-2xl space-y-8">
         <Navigation />
-        
+
         <div className="space-y-12">
           <div>
             <h1 className="text-4xl font-bold mb-4">Blog</h1>
@@ -39,21 +24,51 @@ export default function Blog() {
           </div>
 
           <div className="space-y-8">
-            {posts.map((post) => (
-              <article key={post.id} className="group">
-                <a href={`/blog/${post.id}`} className="block">
-                  <h2 className="text-2xl font-semibold mb-2 group-hover:text-neutral-300 transition">
-                    {post.title}
-                  </h2>
+            {postsData.map((post) => (
+              <article key={post.node.id} className="group">
+                <Link href={`/blog/${post.node.slug}`} className="block">
+                  <div className="flex justify-between items-start mb-2">
+                    <ViewTransition name={`post-title-${post.node.id}`}>
+                      <h2
+                        className="text-2xl font-semibold group-hover:text-neutral-300 transition"
+                      >
+                        {post.node.title}
+                      </h2>
+                    </ViewTransition>
+                    {post.node.publishedAt && (
+                      <ViewTransition name={`post-published-date-${post.node.id}`}>
+                        <time dateTime={post.node.publishedAt} className="text-sm text-neutral-500">
+                          {new Date(post.node.publishedAt).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}
+                        </time>
+                      </ViewTransition>
+                    )}
+                  </div>
+
                   <p className="text-neutral-400 mb-4">
-                    {post.excerpt}
+                    {post.node.brief}
                   </p>
                   <div className="flex items-center gap-4 text-sm text-neutral-500">
-                    <time dateTime={post.date}>{post.date}</time>
+                    <ViewTransition name={`post-readtime-${post.node.id}`}>
+                      <span>{post.node.readTimeInMinutes} min read</span>
+                    </ViewTransition>
                     <span>·</span>
-                    <span>{post.readTime}</span>
+                    <ViewTransition name={`post-views-${post.node.id}`}>
+                      <span>{post.node.views} views</span>
+                    </ViewTransition>
+                    {post.node.subtitle && (
+                      <>
+                        <span>·</span>
+                        <ViewTransition name={`post-subtitle-${post.node.id}`}>
+                          <span>{post.node.subtitle}</span>
+                        </ViewTransition>
+                      </>
+                    )}
                   </div>
-                </a>
+                </Link>
               </article>
             ))}
           </div>
@@ -62,3 +77,11 @@ export default function Blog() {
     </main>
   );
 } 
+
+export async function generateStaticParams() {
+  const response = await gqlClient(queries.getPosts)();
+  const posts = response as PostsResponse;
+  return posts.data.publication.posts.edges.map((post) => ({
+    slug: post.node.slug,
+  }));
+}

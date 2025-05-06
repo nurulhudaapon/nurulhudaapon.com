@@ -31,8 +31,8 @@ export default function RootLayout({
         <div className="grid grid-rows-[1fr_auto] min-h-screen bg-neutral-950 text-white font-sans">
           {children}
           <footer className="w-full flex flex-row items-center justify-between gap-4 py-6 border-t border-neutral-800 bg-neutral-950 px-4 sm:px-8 text-sm">
-            <div className="text-neutral-500">© 2025 Nurul Huda (Apon).</div>
-            <div className="flex gap-4 sm:gap-5 items-center">
+            <div className="text-neutral-500 text-xs sm:text-sm">© 2025 Nurul Huda (Apon).</div>
+            <div className="flex gap-2 sm:gap-4 items-center">
               <a href="https://github.com/nurulhudaapon" target="_blank" rel="noopener noreferrer" aria-label="GitHub" className="text-neutral-400 hover:text-white transition"><Github className="w-4 h-4" /></a>
               <a href="https://linkedin.com/in/nurulhudaapon" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn" className="text-neutral-400 hover:text-white transition"><Linkedin className="w-4 h-4" /></a>
               <a href="https://twitter.com/nurulhudaapon" target="_blank" rel="noopener noreferrer" aria-label="Twitter" className="text-neutral-400 hover:text-white transition"><Twitter className="w-4 h-4" /></a>
