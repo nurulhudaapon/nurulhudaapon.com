@@ -45,4 +45,4 @@ export interface PostResponse {
       post: Post;
     };
   };
-} 
+}

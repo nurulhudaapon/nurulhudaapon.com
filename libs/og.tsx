@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { Post } from '@/app/blog/types';
 
-export async function generateOGImage(props: { post: Post, outputPath: string }) {
+export async function generateOGImage(props: { post: Post; outputPath: string }) {
   const post = props.post;
 
   try {
@@ -47,16 +47,18 @@ export async function generateOGImage(props: { post: Post, outputPath: string })
               {props.post.title}
             </h1>
 
-            <div style={{
-              display: 'flex',
-              flexDirection: 'row',
-              color: '#888',
-              // gap: '12px',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              width: '100%',
-              fontSize: '48px',
-            }}>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                color: '#888',
+                // gap: '12px',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                fontSize: '48px',
+              }}
+            >
               <div
                 style={{
                   display: 'flex',
@@ -67,13 +69,11 @@ export async function generateOGImage(props: { post: Post, outputPath: string })
                 }}
               >
                 {post.publishedAt && (
-                  <span
-                    style={{ order: '1' }}
-                  >
+                  <span style={{ order: '1' }}>
                     {new Date(post.publishedAt).toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'short',
-                      day: 'numeric'
+                      day: 'numeric',
                     })}
                   </span>
                 )}
@@ -98,12 +98,10 @@ export async function generateOGImage(props: { post: Post, outputPath: string })
                     borderRadius: '50%',
                   }}
                 />
-                <div style={{ display: 'flex', flexDirection: 'column', }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <span style={{ color: 'white', fontSize: '36px' }}>{props.post.author.name}</span>
                   <span style={{ fontSize: '30px', color: '#888' }}>{'nurulhudaapon.com'}</span>
                 </div>
-
-
               </div>
             </div>
           </div>
@@ -112,7 +110,7 @@ export async function generateOGImage(props: { post: Post, outputPath: string })
       {
         width: 1200,
         height: 630,
-      }
+      },
     );
 
     // Ensure the output directory exists
@@ -127,4 +125,4 @@ export async function generateOGImage(props: { post: Post, outputPath: string })
   } catch (error) {
     console.error(`Failed to generate OG image for ${props.post.title}:`, error);
   }
-} 
+}

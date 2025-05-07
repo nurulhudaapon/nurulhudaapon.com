@@ -9,7 +9,9 @@
     "lint": "next lint",
     "deploy": "next build && bun run restart",
     "restart": "docker compose down && docker compose up -d",
-    "serve": "bunx serve out -l 3000"
+    "serve": "bunx serve out -l 3000",
+    "format": "prettier --write .",
+    "prepare": "husky"
   },
   "dependencies": {
     "next": "canary",
@@ -19,10 +21,13 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react-dom": "^19",
     "@types/react": "^19",
+    "@types/react-dom": "^19",
     "@vercel/og": "^0.6.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
     "next-mdx-remote": "^5.0.0",
+    "prettier": "^3.5.3",
     "rehype-autolink-headings": "^7.1.0",
     "rehype-code-titles": "^1.2.0",
     "rehype-prism-plus": "^2.0.1",
@@ -31,5 +36,15 @@
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
     "typescript": "^5"
+  },
+  "lint-staged": {
+    "**/*": "prettier --write --ignore-unknown"
+  },
+  "prettier": {
+    "semi": true,
+    "singleQuote": true,
+    "trailingComma": "all",
+    "printWidth": 120,
+    "tabWidth": 2
   }
 }

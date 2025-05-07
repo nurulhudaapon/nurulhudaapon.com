@@ -1,4 +1,4 @@
-import Navigation from "../components/navs";
+import Navigation from '../components/navs';
 
 export default function Home() {
   return (
@@ -11,7 +11,8 @@ export default function Home() {
         <div className="text-lg sm:text-xl text-neutral-500 dark:text-neutral-400 max-h-[calc(100vh-20rem)] overflow-hidden">
           <div className="overflow-hidden">
             <span>A tech enthusiast, enrolling in Computer Science and Engineering at</span>
-            <span className="font-semibold text-black dark:text-white"> Green University of Bangladesh</span> and working as a <span className="font-semibold text-black dark:text-white">Staff Engineer</span>
+            <span className="font-semibold text-black dark:text-white"> Green University of Bangladesh</span> and
+            working as a <span className="font-semibold text-black dark:text-white">Staff Engineer</span>
           </div>
         </div>
         <div className="flex flex-col items-center sm:items-start text-center sm:text-left sm:order-2 justify-center">

@@ -1,10 +1,6 @@
-import Navigation from "./navs";
+import Navigation from './navs';
 
-export function MainLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function MainLayout({ children }: { children: React.ReactNode }) {
   return (
     <main className="flex flex-col items-center w-full max-w-4xl mx-auto py-4 sm:py-20 px-4">
       <div className="w-full max-w-3xl space-y-8">
@@ -13,4 +9,4 @@ export function MainLayout({
       </div>
     </main>
   );
-} 
+}

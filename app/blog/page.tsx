@@ -1,7 +1,7 @@
-import { unstable_ViewTransition as ViewTransition } from 'react'
-import Link from "next/link";
-import { gqlClient } from "@/libs";
-import { queries } from "@/libs";
+import { unstable_ViewTransition as ViewTransition } from 'react';
+import Link from 'next/link';
+import { gqlClient } from '@/libs';
+import { queries } from '@/libs';
 import { PostsResponse } from './types';
 import { BlogPostMeta } from './component';
 
@@ -18,9 +18,7 @@ export default async function Blog() {
             <Link href={`/blog/${post.node.slug}`} className="block">
               <div className="flex justify-between items-start mb-2">
                 <ViewTransition name={`post-title-${post.node.id}`}>
-                  <h2
-                    className="text-2xl font-semibold text-black dark:text-white group-hover:text-neutral-600 dark:group-hover:text-neutral-200 transition"
-                  >
+                  <h2 className="text-2xl font-semibold text-black dark:text-white group-hover:text-neutral-600 dark:group-hover:text-neutral-200 transition">
                     {post.node.title}
                   </h2>
                 </ViewTransition>
