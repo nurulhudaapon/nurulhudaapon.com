@@ -30,13 +30,13 @@ export async function generateOGImage(props: { post: Post, outputPath: string })
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'flex-start',
-              gap: '48px',
-              justifyContent: 'center',
+              gap: '58px',
+              justifyContent: 'space-between',
             }}
           >
             <h1
               style={{
-                fontSize: '72px',
+                fontSize: '128px',
                 fontWeight: 'bold',
                 color: 'white',
                 lineHeight: 1.1,
@@ -47,51 +47,64 @@ export async function generateOGImage(props: { post: Post, outputPath: string })
               {props.post.title}
             </h1>
 
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'row',
-                color: '#888',
-                gap: '12px',
-                fontSize: '24px',
-              }}
-            >
-              {post.publishedAt && (
-                <span
-                  style={{ order: '1' }}
-                >
-                  {new Date(post.publishedAt).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
-                  })}
-                </span>
-              )}
-              <span style={{ order: '2' }}>·</span>
-              <span style={{ order: '3' }}>{post.readTimeInMinutes} min read</span>
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-              }}
-            >
-              <img
-                src="https://github.com/nurulhudaapon.png"
-                width="48"
-                height="48"
+            <div style={{
+              display: 'flex',
+              flexDirection: 'row',
+              color: '#888',
+              // gap: '12px',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+              fontSize: '48px',
+            }}>
+              <div
                 style={{
-                  borderRadius: '50%',
+                  display: 'flex',
+                  flexDirection: 'row',
+                  color: '#888',
+                  gap: '12px',
+                  fontSize: '48px',
                 }}
-              />
-              <div style={{ display: 'flex', flexDirection: 'column', }}>
-                <span style={{ color: 'white', fontSize: '24px' }}>{props.post.author.name}</span>
-                <span style={{ color: 'white', fontSize: '16px' }}>{'nurulhudaapon.com'}</span>
+              >
+                {post.publishedAt && (
+                  <span
+                    style={{ order: '1' }}
+                  >
+                    {new Date(post.publishedAt).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    })}
+                  </span>
+                )}
+                <span style={{ order: '2' }}>·</span>
+                <span style={{ order: '3' }}>{post.readTimeInMinutes} min read</span>
               </div>
 
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'row',
+                  gap: '12px',
+                }}
+              >
+                <img
+                  src="https://github.com/nurulhudaapon.png"
+                  width="100"
+                  height="100"
+                  style={{
+                    borderRadius: '50%',
+                  }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', }}>
+                  <span style={{ color: 'white', fontSize: '36px' }}>{props.post.author.name}</span>
+                  <span style={{ fontSize: '30px', color: '#888' }}>{'nurulhudaapon.com'}</span>
+                </div>
 
+
+              </div>
             </div>
           </div>
         </div>

@@ -13,10 +13,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-
+const ogImage = "/social.webp";
 export const metadata: Metadata = {
   title: "Nurul Huda (Apon)",
   description: "A tech enthusiast, enrolling in Computer Science and Engineering at Green University of Bangladesh and working as a Staff Engineer",
+  metadataBase: new URL('https://next.nuhu.dev'),
+  openGraph: {
+    title: "Nurul Huda (Apon)",
+    description: "A tech enthusiast, enrolling in Computer Science and Engineering at Green University of Bangladesh and working as a Staff Engineer",
+    type: 'website',
+    images: [ogImage],
+},
+twitter: {
+    card: 'summary_large_image',
+    title: "Nurul Huda (Apon)",
+    description: "A tech enthusiast, enrolling in Computer Science and Engineering at Green University of Bangladesh and working as a Staff Engineer",
+    images: [ogImage],
+},
 };
 
 export default function RootLayout({
