@@ -38,14 +38,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="[color-scheme:light_dark]">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased dark:bg-neutral-950 dark:text-white bg-white text-black font-sans`}
       >
-        <div className="grid grid-rows-[1fr_auto] min-h-screen bg-neutral-950 text-white font-sans">
+        <div className="grid grid-rows-[1fr_auto] min-h-screen dark:bg-neutral-950 bg-white dark:text-white text-black font-sans">
           {children}
-          <footer className="sticky z-55 sm:static bottom-0 w-full flex flex-row items-center justify-between gap-4 py-3 sm:py-6 border-t border-neutral-800 bg-neutral-950 px-4 sm:px-8 text-sm">
-            <div className="text-neutral-400 text-xs sm:text-sm line-clamp-1">© 2025 Nurul Huda (Apon).</div>
+          <footer className="sticky z-55 sm:static bottom-0 w-full flex flex-row items-center justify-between gap-4 py-3 sm:py-6 border-t dark:border-neutral-800 border-neutral-200 dark:bg-neutral-950 bg-white px-4 sm:px-8 text-sm">
+            <div className="dark:text-neutral-400 text-neutral-600 text-xs sm:text-sm line-clamp-1">© 2025 Nurul Huda (Apon).</div>
             <div className="flex gap-3 sm:gap-4 items-center">
               {socialLinks.map((link) => (
                 <FooterLink key={link.label} {...link} />

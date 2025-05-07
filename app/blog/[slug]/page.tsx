@@ -64,8 +64,8 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
     if (!post || !post.content) {
         return (
             <div className="w-full max-w-2xl space-y-8">
-                <h1 className="text-4xl font-bold mb-4">Post Not Found</h1>
-                <p className="text-lg text-neutral-400">The post you're looking for doesn't exist.</p>
+                <h1 className="text-4xl font-bold mb-4 text-black dark:text-white">Post Not Found</h1>
+                <p className="text-lg text-neutral-600 dark:text-neutral-400">The post you're looking for doesn't exist.</p>
             </div>
         );
     }

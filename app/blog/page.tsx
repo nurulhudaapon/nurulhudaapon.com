@@ -19,7 +19,7 @@ export default async function Blog() {
               <div className="flex justify-between items-start mb-2">
                 <ViewTransition name={`post-title-${post.node.id}`}>
                   <h2
-                    className="text-2xl font-semibold group-hover:text-neutral-200 transition"
+                    className="text-2xl font-semibold text-black dark:text-white group-hover:text-neutral-600 dark:group-hover:text-neutral-200 transition"
                   >
                     {post.node.title}
                   </h2>
@@ -27,7 +27,7 @@ export default async function Blog() {
               </div>
 
               <ViewTransition name={`post-${post.node.subtitle ? 'subtitle' : 'content'}-${post.node.id}`}>
-                <p className="text-neutral-300 mb-4 line-clamp-2">
+                <p className="text-neutral-600 dark:text-neutral-300 mb-4 line-clamp-2">
                   {post.node.subtitle || post.node.brief}
                 </p>
               </ViewTransition>
