@@ -4,6 +4,12 @@ import { gqlClient } from '@/libs';
 import { queries } from '@/libs';
 import { PostsResponse } from './types';
 import { BlogPostMeta } from './component';
+import { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'NH | Blog',
+  description: 'All blogs from Nurul Huda (Apon)',
+};
 
 export default async function Blog() {
   const response = await gqlClient(queries.getPosts)();
