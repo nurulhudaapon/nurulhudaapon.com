@@ -2,25 +2,32 @@ export default function About() {
   return (
     <div className="space-y-6 text-lg text-neutral-600 dark:text-neutral-400">
       <p>
-        Hi, I'm Nurul. I work as a Staff Engineer at Voyage SMS. I build software using C#, .NET Core, React,
-        TypeScript, and PostgreSQL. I started learning to code in 2019 when I was in college, and I've loved it ever
-        since.
+        I currently live in Dhaka, Bangladesh and work remotely as a Staff Engineer at{' '}
+        <a href="https://vyg.ai" target="_blank" className="text-green-500 underline" rel="noopener noreferrer">
+          VYG.AI
+        </a>
+        , while being a 4th year undergraduate student at{' '}
+        <a href="https://green.edu.bd" target="_blank" className="text-green-500 underline" rel="noopener noreferrer">
+          Green University of Bangladesh
+        </a>
+        .
       </p>
 
       <p>
-        I learned to code with JavaScript. My first big project was a small banking system for kids to help them learn
-        about saving money. I like to build real things instead of just following tutorials. This helps me learn better
-        and solve real problems.
+        I've been interested in hardware since I was a kid, and I started programming late in high school back in 2019.
+        However, I began my professional career early that same year. I started with JavaScript/TypeScript and mostly
+        wrote automation tests in C# using Selenium. Fast forward to 2025, I still work at the same company but now as a
+        Staff Engineer.
       </p>
 
       <p>
-        Right now, I'm studying Computer Science at Green University of Bangladesh. I'll finish my degree in 2026.
-        Working full-time while studying is hard, but it has taught me how to manage my time well and never give up.
+        Working full-time while studying is challenging, but it has taught me valuable time management skills and
+        perseverance.
       </p>
 
       <p>
-        I started as a QA Engineer and worked my way up to Staff Engineer. I believe in learning new things every day
-        and always trying to do my best. I love building software that helps people and makes a difference.
+        In my free time, I mostly spend learning and exploring new technologies. I'm a conservative but friendly person
+        who loves meeting new people.
       </p>
     </div>
   );

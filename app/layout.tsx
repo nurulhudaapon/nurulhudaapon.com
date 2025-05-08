@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { FooterLink } from './components/footer-link';
+import { GoogleTagManager } from '@next/third-parties/google';
+
 import './globals.css';
 
 const geistSans = Geist({
@@ -42,6 +44,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="[color-scheme:light_dark]">
+      <GoogleTagManager gtmId="GTM-K4HPMTZ4" />
+
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased dark:bg-neutral-950 dark:text-white bg-white text-black font-sans`}
       >
