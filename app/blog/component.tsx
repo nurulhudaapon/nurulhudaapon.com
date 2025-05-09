@@ -21,12 +21,12 @@ export default function PostContent({ post, mdx }: PostContentProps) {
 
   return (
     <article className="max-w-none">
-      <header className="mb-8">
+      <header className="mb-3">
         <ViewTransition name={`post-title-${post.id}`}>
           <h1 className="text-4xl font-bold mb-4 text-black dark:text-white">{post.title}</h1>
         </ViewTransition>
         {post.coverImage && (
-          <div className="relative w-full mb-8 rounded-xl overflow-hidden">
+          <div className="relative w-full mb-4 rounded-xl overflow-hidden">
             <img src={post.coverImage.url} alt={post.title} className="object-cover" />
           </div>
         )}

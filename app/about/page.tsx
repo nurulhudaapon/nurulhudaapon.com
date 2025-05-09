@@ -14,20 +14,15 @@ export default function About() {
       </p>
 
       <p>
-        I've been interested in hardware since I was a kid, and I started programming late in high school back in 2019.
-        However, I began my professional career early that same year. I started with JavaScript/TypeScript and mostly
-        wrote automation tests in C# using Selenium. Fast forward to 2025, I still work at the same company but now as a
-        Staff Engineer.
+        I started programming in 2019, near the end of high school. Around the same time, I started my professional
+        career as a QA Engineer. I've grown with the same company and now working as a Staff Engineer.
       </p>
 
-      <p>
-        Working full-time while studying is challenging, but it has taught me valuable time management skills and
-        perseverance.
-      </p>
+      <p>Working full-time while studying is tough, but it has taught me good time management and how to keep going.</p>
 
       <p>
-        In my free time, I mostly spend learning and exploring new technologies. I'm a conservative but friendly person
-        who loves meeting new people.
+        In my free time, I enjoy learning about new technologies. I'm a friendly person who likes meeting new people,
+        but I can also be a bit quiet.
       </p>
     </div>
   );
