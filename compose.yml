@@ -1,7 +1,7 @@
 services:
   portfolio:
     image: nginx:latest
-    container_name: 'next.nuhu.dev'
+    container_name: 'nurulhudaapon.com'
     volumes:
       - ./out:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
