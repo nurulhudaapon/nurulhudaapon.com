@@ -64,8 +64,8 @@ export function BlogPostMeta({ post }: { post: PostEdge }) {
         )}
         <span className="order-2 sm:order-none">·</span>
         <span className="order-3 sm:order-none">{post.node.readTimeInMinutes} min read</span>
-        <span className="order-4 sm:order-none">·</span>
-        <span className="order-5 sm:order-none">{post.node.views} views</span>
+        {/* <span className="order-4 sm:order-none">·</span> */}
+        {/* <span className="order-5 sm:order-none">{post.node.views} views</span> */}
       </div>
     </ViewTransition>
   );

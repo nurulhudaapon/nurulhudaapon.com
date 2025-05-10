@@ -14,7 +14,7 @@ const navItems: NavItemData[] = [
 
 export default function Navigation() {
   return (
-    <div className="sticky top-0 z-50 py-4 bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm w-full">
+    <div className="sticky top-0 z-50 py-3 bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm w-full">
       <ViewTransition name="navigation">
         <nav className="flex gap-3 sm:gap-5 text-base sm:text-lg font-medium">
           {navItems.map((item) => (

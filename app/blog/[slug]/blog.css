@@ -108,7 +108,7 @@
 .prose pre {
   color: #e5e7eb;
   background-color: #1f2937;
-  overflow-x: auto;
+  overflow-x: hidden;
   font-size: 0.875em;
   line-height: 1.7142857;
   margin-top: 1.7142857em;
@@ -119,6 +119,15 @@
   max-width: 100%;
   position: relative;
   box-sizing: border-box;
+  word-break: break-all;
+}
+
+.prose pre > code {
+  display: block;
+  width: 100%;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .prose img {
@@ -188,6 +197,7 @@ pre {
   overflow-x: auto;
   max-width: 100%;
   width: 100%;
+  word-break: break-all;
 }
 
 /**
@@ -203,6 +213,7 @@ pre {
   overflow-x: auto;
   overflow-y: hidden;
   display: block;
+  word-break: break-all;
 }
 
 .code-line {
@@ -216,6 +227,7 @@ pre {
   word-break: break-word;
   word-wrap: break-word;
   position: relative;
+  word-break: break-all;
 }
 
 .code-line.inserted {
@@ -256,6 +268,7 @@ pre[class*='language-'] {
   max-width: 100%;
   overflow-x: hidden;
   box-sizing: border-box;
+  word-break: break-all;
 }
 
 pre[class*='language-']::-moz-selection,
@@ -279,6 +292,7 @@ pre[class*='language-'] {
   max-width: 100%;
   white-space: pre-wrap;
   box-sizing: border-box;
+  word-break: break-all;
 }
 
 :not(pre) > code[class*='language-'],
@@ -433,13 +447,6 @@ div[data-rehype-pretty-code-fragment] {
   overflow: hidden;
   position: relative;
   box-sizing: border-box;
-}
-
-/* Make sure pre elements inside the prose class behave properly */
-.prose pre > code {
-  display: block;
-  width: 100%;
-  overflow-x: auto;
 }
 
 /* Fix any potential nested scroll issues */

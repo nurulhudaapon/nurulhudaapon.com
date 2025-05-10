@@ -12,16 +12,17 @@ export async function generateOGImage(props: { post: Post; outputPath: string })
       (
         <div
           style={{
+            fontFamily: 'Inter',
             height: '100%',
             width: '100%',
             display: 'flex',
-            border: '10px solid white',
-            borderRadius: '10px',
+            // border: '10px solid white',
+            // borderRadius: '10px',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: 'black',
-            padding: '48px',
+            padding: '128px',
           }}
         >
           <div
@@ -36,7 +37,7 @@ export async function generateOGImage(props: { post: Post; outputPath: string })
           >
             <h1
               style={{
-                fontSize: '128px',
+                fontSize: '98px',
                 fontWeight: 'bold',
                 color: 'white',
                 lineHeight: 1.1,
@@ -65,7 +66,7 @@ export async function generateOGImage(props: { post: Post; outputPath: string })
                   flexDirection: 'row',
                   color: '#888',
                   gap: '12px',
-                  fontSize: '48px',
+                  fontSize: '32px',
                 }}
               >
                 {post.publishedAt && (
@@ -92,15 +93,15 @@ export async function generateOGImage(props: { post: Post; outputPath: string })
               >
                 <img
                   src="https://github.com/nurulhudaapon.png"
-                  width="100"
-                  height="100"
+                  width="80"
+                  height="80"
                   style={{
                     borderRadius: '50%',
                   }}
                 />
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ color: 'white', fontSize: '36px' }}>{props.post.author.name}</span>
-                  <span style={{ fontSize: '30px', color: '#888' }}>{'nurulhudaapon.com'}</span>
+                  <span style={{ color: 'white', fontSize: '30px' }}>{props.post.author.name}</span>
+                  <span style={{ fontSize: '24px', color: '#888' }}>{'nurulhudaapon.com'}</span>
                 </div>
               </div>
             </div>

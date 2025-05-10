@@ -37,7 +37,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return {
     title: post.title,
     description: post.brief,
-    metadataBase: new URL('https://next.nuhu.dev'),
+    metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL),
     openGraph: {
       title: post.title,
       description: post.brief,

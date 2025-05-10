@@ -2,7 +2,7 @@ import Navigation from '../components/navs';
 
 export default function Home() {
   return (
-    <main className="h-[calc(100vh-3rem)] sm:h-[calc(100vh-6rem)] flex flex-col-reverse sm:flex-row items-center justify-center w-full max-w-4xl mx-auto px-4 gap-8 sm:gap-12">
+    <main className="flex flex-col-reverse sm:flex-row items-center justify-center w-full max-w-4xl mx-auto px-4 gap-8 sm:gap-12">
       <div className="flex flex-col gap-4 sm:gap-6 items-center sm:items-start text-center sm:text-left sm:order-2 justify-center">
         <h1 className="text-4xl sm:text-6xl font-bold">Nurul Huda (Apon)</h1>
         <h2 className="text-xl sm:text-2xl font-medium text-neutral-600 dark:text-neutral-300">

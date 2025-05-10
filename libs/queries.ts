@@ -27,6 +27,9 @@ export const getPosts = gql`
             title
             brief
             url
+            author {
+              name
+            }
           }
         }
       }

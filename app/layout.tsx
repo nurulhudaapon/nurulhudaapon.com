@@ -23,7 +23,7 @@ const title = 'Nurul Huda (Apon)';
 export const metadata: Metadata = {
   title,
   description,
-  metadataBase: new URL('https://next.nuhu.dev'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL),
   openGraph: {
     title,
     description,
