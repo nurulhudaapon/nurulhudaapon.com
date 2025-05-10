@@ -35,6 +35,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily' as const,
       priority: 0.9,
     },
+    // feed.xml, sitemap.xml, robots.txt
+    {
+      url: `${baseUrl}/feed.xml`,
+      lastModified: new Date(),
+      changeFrequency: 'daily' as const,
+      priority: 0.9,
+    },
+    {
+      url: `${baseUrl}/sitemap.xml`,
+      lastModified: new Date(),
+      changeFrequency: 'daily' as const,
+      priority: 0.9,
+    },
+    {
+      url: `${baseUrl}/robots.txt`,
+      lastModified: new Date(),
+      changeFrequency: 'daily' as const,
+      priority: 0.9,
+    },
   ];
 
   return [...staticPages, ...blogEntries];
