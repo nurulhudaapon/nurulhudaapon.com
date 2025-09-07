@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@next/third-parties": "^15.3.2",
+    "mongodb": "^6.19.0",
     "next": "canary",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

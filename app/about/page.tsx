@@ -4,7 +4,7 @@ export default function About() {
       <p>
         I currently live in Dhaka, Bangladesh and work remotely as a Staff Engineer at{' '}
         <a href="https://vyg.ai" target="_blank" className="text-green-500 underline" rel="noopener noreferrer">
-          VYG.AI
+          Voyage Mobile Inc
         </a>
         , while being a 4th year undergraduate student at{' '}
         <a href="https://green.edu.bd" target="_blank" className="text-green-500 underline" rel="noopener noreferrer">

@@ -27,8 +27,9 @@ body {
 
 /* Modern Scrollbar Styles */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-track {
@@ -36,17 +37,23 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 5px;
+  background: rgba(136, 136, 136, 0.5);
+  border-radius: 4px;
   transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #666;
+  background: rgba(102, 102, 102, 0.8);
 }
 
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #888 transparent;
+  scrollbar-color: rgba(136, 136, 136, 0.5) transparent;
+}
+
+/* Prevent layout shift from scrollbar */
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
 }
