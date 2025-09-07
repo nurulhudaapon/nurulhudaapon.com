@@ -161,6 +161,14 @@ export async function submitQuestionServerAction(
     if (!visitorId) {
       const createdVisitor = await createVisitor(clientIp, visitor);
       visitorId = createdVisitor.insertedId.toString();
+
+      // Set the visitor ID as a cookie for future requests
+      cookieStore.set('visitor_id', visitorId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 365, // 1 year
+      });
     }
 
     await createQuestion(question, email || '', visitorId, visitor);
