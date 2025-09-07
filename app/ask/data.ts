@@ -79,7 +79,6 @@ async function getAllQuestions() {
     .collection('questions')
     .find({ deleted: { $ne: true } })
     .sort({
-      answer: 1, // Sort by answer field: null/undefined (unanswered) first, then answered
       createdAt: -1, // Then by creation date, newest first
     })
     .toArray();

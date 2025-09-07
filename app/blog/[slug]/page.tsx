@@ -6,6 +6,7 @@ import { PostResponse } from '../types';
 import { Metadata } from 'next';
 import { generateOGImage } from '@/libs/og';
 import './blog.css';
+import Link from 'next/link';
 
 export async function generateStaticParams() {
   const response = await gqlClient(queries.getPosts)();
@@ -71,5 +72,32 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
 
   const mdx = await mdxToHtml(post.content.markdown);
 
-  return <PostContent post={post} mdx={mdx} />;
+  return (
+    <div>
+      <div className="flex items-center mb-4">
+        <Link
+          href="/blog"
+          className="inline-flex items-center gap-2 py-2 text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white transition-colors"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="w-4 h-4"
+          >
+            <path d="m12 19-7-7 7-7" />
+            <path d="M19 12H5" />
+          </svg>
+          Back to Blog
+        </Link>
+      </div>
+      <PostContent post={post} mdx={mdx} />
+    </div>
+  );
 }

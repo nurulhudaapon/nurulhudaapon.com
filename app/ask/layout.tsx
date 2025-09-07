@@ -4,7 +4,7 @@ import { Metadata } from 'next';
 const ogImage = '/ask.png';
 const description =
   'Anonymously ask Nurul Huda (Apon) anything. Answers will be provided via social media or you can find the answer by revisiting the ask page.';
-const title = 'NH | Ask';
+const title = 'Ask Nurul Huda (Apon)';
 
 export const metadata: Metadata = {
   title,
