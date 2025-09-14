@@ -1,7 +1,7 @@
 'use client';
-import { useActionState, useState, useEffect, useRef } from 'react';
+import { useActionState, useState, useEffect } from 'react';
 import { useFormStatus } from 'react-dom';
-import { handleQuestionSubmit, handleAnswerSeenSubmit } from './action';
+import { handleQuestionSubmit } from './action';
 
 export function Ask({
   isAdmin = false,
