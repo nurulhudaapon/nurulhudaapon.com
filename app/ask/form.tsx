@@ -1,20 +1,22 @@
 'use client';
-import { useActionState, useState, useEffect } from 'react';
+import { useActionState, useState, useEffect, useRef } from 'react';
 import { useFormStatus } from 'react-dom';
-import { handleQuestionSubmit } from './action';
+import { handleQuestionSubmit, handleAnswerSeenSubmit } from './action';
 
 export function Ask({
   isAdmin = false,
   questionId,
   adminCredential,
   existingAnswer,
+  questionText,
 }: {
   isAdmin?: boolean;
   questionId?: string;
   adminCredential?: string;
   existingAnswer?: string;
+  questionText?: string;
 }) {
-  const [state, formAction] = useActionState(handleQuestionSubmit, { success: false });
+  const [_state, formAction] = useActionState(handleQuestionSubmit, { success: false });
   const [ip, setIp] = useState();
 
   useEffect(() => {
@@ -27,6 +29,12 @@ export function Ask({
 
   return (
     <div className="w-full rounded border border-blue-200 p-3 dark:border-gray-800 dark:bg-blue-opaque">
+      {isAdmin && questionId && questionText && (
+        <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded border">
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Question:</p>
+          <p className="text-sm text-gray-900 dark:text-gray-100">{questionText}</p>
+        </div>
+      )}
       <form action={formAction} className="relative flex w-full flex-col gap-3">
         <div>
           <FormTextarea
@@ -44,7 +52,7 @@ export function Ask({
           <input type="hidden" name="isAdmin" value={isAdmin.toString()} />
           {adminCredential && <input type="hidden" name="adminCredential" value={adminCredential} />}
           {questionId && <input type="hidden" name="questionId" value={questionId} />}
-          <input type="hidden" name="ip" value={JSON.stringify(ip)} />
+          <input type="hidden" name="ip" value={JSON.stringify(ip || {})} />
         </div>
         <div className="items-right flex w-full items-center justify-between">
           <div className="message">{/* Success/error messages will be handled via URL params */}</div>

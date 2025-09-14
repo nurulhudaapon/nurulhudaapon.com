@@ -30,6 +30,8 @@ export interface Question {
   createdAt: string;
   visitorId?: string;
   visitor?: any;
+  seen?: boolean;
+  seenAt?: string;
 }
 
 // Database functions
@@ -44,11 +46,13 @@ async function createQuestion(question: string, email: string, visitorId: string
   });
 }
 
-async function updateQuestion(id: string, answer?: string, deleted?: boolean) {
+async function updateQuestion(id: string, answer?: string, deleted?: boolean, seen?: boolean) {
   const client = await clientPromise;
   const updateData: any = { updatedAt: new Date() };
   if (answer !== undefined) updateData.answer = answer;
   if (deleted !== undefined) updateData.deleted = deleted;
+  if (seen !== undefined) updateData.seen = seen;
+  if (seen !== undefined) updateData.seenAt = new Date();
 
   return await client
     .db('test')
@@ -64,11 +68,24 @@ async function getQuestions(visitorId: string) {
     .find({ visitorId })
     .sort({ createdAt: -1 }) // Sort by creation date, newest first
     .toArray();
+
+  // Mark all answered questions as seen for this visitor
+  const answeredQuestionIds = questions.filter((q) => q.answer && !q.seen).map((q) => q._id);
+
+  if (answeredQuestionIds.length > 0) {
+    await client
+      .db('test')
+      .collection('questions')
+      .updateMany({ _id: { $in: answeredQuestionIds } }, { $set: { seen: true, seenAt: new Date() } });
+  }
+
   return questions.map((question) => ({
     ...question,
     _id: question._id.toString(),
     question: question.question,
     createdAt: question.createdAt.toISOString(),
+    seen: question.seen, // Use the actual seen value from database
+    seenAt: question.seenAt ? question.seenAt.toISOString() : undefined,
   }));
 }
 

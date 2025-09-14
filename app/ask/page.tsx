@@ -2,6 +2,7 @@ import { Questions } from './component';
 import { Ask } from './form';
 import { getQuestionsForVisitor } from './data';
 import { Cmd } from '@/components/cmd';
+import { cookies } from 'next/headers';
 
 interface AskPageProps {
   searchParams: Promise<{
@@ -19,6 +20,8 @@ export default async function AskPage(props: AskPageProps) {
   const questionId = q_id;
   const isAdmin = !!adminParam;
   const isAnswering = isAdmin && questionId;
+  const cookieStore = await cookies();
+  const visitorId = cookieStore.get('visitor_id')?.value;
 
   // Fetch questions server-side
   const questions = await getQuestionsForVisitor(adminParam);
@@ -42,9 +45,17 @@ export default async function AskPage(props: AskPageProps) {
         questionId={questionId}
         adminCredential={adminParam}
         existingAnswer={questionToAnswer?.answer}
+        questionText={questionToAnswer?.question}
       />
 
-      <Questions time={new Date()} questions={questions} isAdmin={isAdmin} mode={mode} adminCredential={adminParam} />
+      <Questions
+        time={new Date()}
+        questions={questions}
+        isAdmin={isAdmin}
+        mode={mode}
+        adminCredential={adminParam}
+        visitorId={visitorId}
+      />
       <Cmd
         params={{ mode: mode === 'screenshots' ? 'answer' : 'screenshots' }}
         cmd={{ key: '.', altKey: false, ctrlKey: true, metaKey: false, shiftKey: false }}
