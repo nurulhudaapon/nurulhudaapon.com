@@ -10,10 +10,12 @@ import Link from 'next/link';
 
 export async function generateStaticParams() {
   const response = await gqlClient(queries.getPosts)();
-  const posts = response as { data: { publication: { posts: { edges: { node: { slug: string } }[] } } } };
-  return posts.data.publication.posts.edges.map((post) => ({
-    slug: post.node.slug,
-  }));
+  const posts = response as { data?: { publication?: { posts?: { edges?: { node: { slug: string } }[] } } } };
+  return (
+    posts.data?.publication?.posts?.edges?.map((post) => ({
+      slug: post.node.slug,
+    })) ?? []
+  );
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
