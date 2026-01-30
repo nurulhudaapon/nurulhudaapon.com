@@ -53,7 +53,7 @@ export function NewsletterSubscribe() {
   };
 
   return (
-    <div className="bg-white dark:bg-neutral-900 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800">
+    <>
       <form onSubmit={handleSubmit} className="relative">
         <div className="relative">
           <label htmlFor="email" className="sr-only">
@@ -80,6 +80,6 @@ export function NewsletterSubscribe() {
       {message && (
         <p className={`mt-2 text-sm ${status === 'success' ? 'text-green-600' : 'text-red-600'}`}>{message}</p>
       )}
-    </div>
+    </>
   );
 }

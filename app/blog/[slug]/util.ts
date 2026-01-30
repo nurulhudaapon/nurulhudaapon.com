@@ -7,14 +7,23 @@ import rehypePrism from 'rehype-prism-plus';
 
 export async function mdxToHtml(source: string) {
   // Preserve query parameters while removing align attribute from markdown images
-  const cleanedSource = source.replace(/!\[(.*?)\]\((.*?)(?:\s+align=["'][^"']*["'])?\)/g, (match, alt, src) => {
-    // If src already has query params, append format and auto
+  let cleanedSource = source.replace(/!\[(.*?)\]\((.*?)(?:\s+align=["'][^"']*["'])?\)/g, (match, alt, src) => {
     if (src.includes('?')) {
       return `![${alt}](${src}&auto=compress,format&format=webp)`;
     }
-    // If no query params, add them with ?
     return `![${alt}](${src}?auto=compress,format&format=webp)`;
   });
+
+  // Replace YouTube links of the form %[https://youtu.be/VIDEO_ID] or %[https://www.youtube.com/watch?v=VIDEO_ID] with responsive embed
+  cleanedSource = cleanedSource.replace(
+    /%\[(https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)[^\]]*)\]/g,
+    (match, url, videoId) => {
+      let id = videoId;
+      if (id.includes('&')) id = id.split('&')[0];
+      // Responsive full-width embed with 16:9 aspect ratio
+      return `\n<div className=\"youtube-embed\"><iframe src=\"https://www.youtube.com/embed/${id}\" frameBorder=\"0\" allowFullScreen loading=\"lazy\"></iframe></div>\n`;
+    },
+  );
 
   const { content } = await compileMDX({
     source: cleanedSource,
