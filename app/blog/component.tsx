@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { PostEdge } from './types';
 import { ViewTransition } from 'react';
 
@@ -26,8 +27,15 @@ export default function PostContent({ post, mdx }: PostContentProps) {
           <h1 className="text-4xl font-bold mb-4 text-black dark:text-white">{post.title}</h1>
         </ViewTransition>
         {post.coverImage && (
-          <div className="relative w-full mb-4 rounded-xl overflow-hidden">
-            <img src={post.coverImage.url} alt={post.title} className="object-cover" />
+          <div className="relative w-full mb-4 rounded-xl overflow-hidden aspect-[16/9]">
+            <Image
+              src={post.coverImage.url}
+              alt={post.title}
+              fill
+              className="object-cover"
+              sizes="(max-width: 768px) 100vw, 768px"
+              priority
+            />
           </div>
         )}
         {post.subtitle && (

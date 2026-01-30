@@ -5,6 +5,14 @@ const nextConfig: NextConfig = {
     removeConsole: process.env.NODE_ENV === 'production',
   },
   reactCompiler: true,
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'cdn.hashnode.com',
+      },
+    ],
+  },
 };
 
 export default nextConfig;

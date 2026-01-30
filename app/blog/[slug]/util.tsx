@@ -1,9 +1,24 @@
+import Image from 'next/image';
 import { compileMDX } from 'next-mdx-remote/rsc';
 import remarkGfm from 'remark-gfm';
 import rehypeSlug from 'rehype-slug';
 import rehypeCodeTitles from 'rehype-code-titles';
 import rehypeAutolinkHeadings from 'rehype-autolink-headings';
 import rehypePrism from 'rehype-prism-plus';
+
+function MdxImage({ src, alt }: { src?: string; alt?: string }) {
+  if (!src) return null;
+  return (
+    <Image
+      src={src}
+      alt={alt || ''}
+      width={800}
+      height={600}
+      className="rounded-lg my-4 w-full h-auto"
+      sizes="(max-width: 768px) 100vw, 768px"
+    />
+  );
+}
 
 export async function mdxToHtml(source: string) {
   // Preserve query parameters while removing align attribute from markdown images
@@ -27,6 +42,9 @@ export async function mdxToHtml(source: string) {
 
   const { content } = await compileMDX({
     source: cleanedSource,
+    components: {
+      img: MdxImage,
+    },
     options: {
       parseFrontmatter: true,
       mdxOptions: {
