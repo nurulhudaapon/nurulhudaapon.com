@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) !void {
     const exe = b.addExecutable(.{
         .name = "zx_site",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("site/main.zig"),
+            .root_source_file = b.path("app/main.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -21,7 +21,8 @@ pub fn build(b: *std.Build) !void {
             },
         }),
     });
-    _ = try zx.init(b, exe, .{ .experimental = .{
-        .enabled_csr = true,
-    } });
+
+    const zx_build = try zx.init(b, exe, .{});
+    var client = zx_build.client.?;
+    client.root_module.addImport("zx_site_mod", mod);
 }

@@ -2,8 +2,13 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const slug = ctx.request.getParam("id") orelse return error.MissingParameter;
     const post = try zx_site_mod.getPostBySlug(ctx.arena, slug);
 
+    const date_str = post.publishedAt;
+
     return (
         <main @allocator={ctx.arena} class="post-page">
+            // Client componenbt only for demonstration, currently marked as display none, remove that style to see it in action
+            <ClientComponent @rendering={.client} post={post} />
+            
             <a href="/blog" class="back-to-blog">← Back to Blog</a>
             <article>
                 {if (post.coverImage) |coverImage| (
@@ -16,7 +21,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     )}
                     <div class="post-meta">
                         <span class="post-author">By {post.author.name}</span>
-                        <span class="post-date">{post.publishedAt}</span>
+                        <span class="post-date">{date_str}</span>
                         <span class="post-read-time">{post.readTimeInMinutes} min read</span>
                     </div>
                 </header>
@@ -33,6 +38,29 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             </article>
         </main>
     );
+}
+
+pub fn ClientComponent(ctx: *zx.ComponentCtx(struct { post: zx_site_mod.Post })) !zx.Component {
+    const post = ctx.props.post;
+
+    const local_count = ctx.Signal(i32).init(0);
+    const handler = local_count.bind(transform);
+
+    return (
+        <div @allocator={ctx.allocator} class="client-component" style="display: none">
+            <button onclick={handler}>Click me {local_count.signal}</button>
+            {post.title}
+        </div>
+    );
+}
+
+fn transform(count: i32) i32 {
+    std.log.info("Transform called with count: {d}", .{count});
+    return count + 1;
+}
+
+fn onClick(_: zx.EventContext) void {
+    std.log.info("comptime format: []const u8", .{});
 }
 
 pub const options: zx.PageOptions = .{
@@ -53,6 +81,6 @@ fn getStaticParams(allocator: zx.Allocator) ![]const []const zx.PageOptions.Stat
     return params.items;
 }
 
-const zx = @import("zx");
 const zx_site_mod = @import("zx_site_mod");
+const zx = @import("zx");
 const std = @import("std");
