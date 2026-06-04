@@ -1,14 +1,11 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const slug = ctx.request.getParam("id") orelse return error.MissingParameter;
-    const post = try zx_site_mod.getPostBySlug(ctx.arena, slug);
+    const slug = ctx.request.params.get("id") orelse return error.MissingParameter;
+    const post = try zx_site_mod.getPostBySlug(ctx.arena, zx.io(), slug);
 
     const date_str = post.publishedAt;
 
     return (
         <main @allocator={ctx.arena} class="post-page">
-            // Client componenbt only for demonstration, currently marked as display none, remove that style to see it in action
-            <ClientComponent @rendering={.client} post={post} />
-            
             <a href="/blog" class="back-to-blog">← Back to Blog</a>
             <article>
                 {if (post.coverImage) |coverImage| (
@@ -40,20 +37,6 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     );
 }
 
-pub fn ClientComponent(ctx: *zx.ComponentCtx(struct { post: zx_site_mod.Post })) !zx.Component {
-    const post = ctx.props.post;
-
-    const local_count = ctx.Signal(i32).init(0);
-    const handler = local_count.bind(transform);
-
-    return (
-        <div @allocator={ctx.allocator} class="client-component" style="display: none">
-            <button onclick={handler}>Click me {local_count.signal}</button>
-            {post.title}
-        </div>
-    );
-}
-
 fn transform(count: i32) i32 {
     std.log.info("Transform called with count: {d}", .{count});
     return count + 1;
@@ -72,7 +55,7 @@ pub const options: zx.PageOptions = .{
 
 fn getStaticParams(allocator: zx.Allocator) ![]const []const zx.PageOptions.StaticParam {
     var params = std.ArrayList([]const zx.PageOptions.StaticParam).empty;
-    const posts = try zx_site_mod.getPosts(allocator);
+    const posts = try zx_site_mod.getPosts(allocator, zx.io());
     for (posts) |post| {
         const sp = try allocator.alloc(zx.PageOptions.StaticParam, 1);
         sp[0] = .{ .key = "id", .value = post.slug };

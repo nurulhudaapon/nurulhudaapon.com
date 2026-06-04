@@ -1,5 +1,5 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const posts = try zx_site_mod.getPosts(ctx.arena);
+    const posts = try zx_site_mod.getPosts(ctx.arena, zx.io());
 
     return (
         <main @allocator={ctx.arena}>

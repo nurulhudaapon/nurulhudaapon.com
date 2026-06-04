@@ -6,8 +6,8 @@ const HASHNODE_API_KEY = "YOUR_HASHNODE_API_KEY";
 
 const GetPostError = error{ FailedToFetchPosts, FailedToParsePosts, OutOfMemory, PostNotFound };
 
-pub fn getPosts(allocator: std.mem.Allocator) GetPostError![]Post {
-    var client = std.http.Client{ .allocator = allocator };
+pub fn getPosts(allocator: std.mem.Allocator, io: std.Io) GetPostError![]Post {
+    var client = std.http.Client{ .allocator = allocator, .io = io };
     defer client.deinit();
 
     const get_posts_query = @embedFile("queries/get_posts.gql");
@@ -71,8 +71,8 @@ fn parsePostsFromJson(allocator: std.mem.Allocator, json_text: []const u8) ![]Po
     return posts;
 }
 
-pub fn getPostBySlug(allocator: std.mem.Allocator, slug: []const u8) GetPostError!Post {
-    var client = std.http.Client{ .allocator = allocator };
+pub fn getPostBySlug(allocator: std.mem.Allocator, io: std.Io, slug: []const u8) GetPostError!Post {
+    var client = std.http.Client{ .allocator = allocator, .io = io };
     defer client.deinit();
 
     const get_post_query = @embedFile("queries/get_post.gql");

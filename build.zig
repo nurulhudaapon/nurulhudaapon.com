@@ -1,7 +1,8 @@
 const std = @import("std");
-const zx = @import("zx");
+const ziex = @import("ziex");
 
 pub fn build(b: *std.Build) !void {
+    // --- Target and Optimize from `zig build` arguments ---
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -10,19 +11,18 @@ pub fn build(b: *std.Build) !void {
         .target = target,
     });
 
-    const exe = b.addExecutable(.{
-        .name = "zx_site",
+    // --- Ziex App Executable ---
+    const app_exe = b.addExecutable(.{
+        .name = "ziex_app",
         .root_module = b.createModule(.{
             .root_source_file = b.path("app/main.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{
-                .{ .name = "zx_site_mod", .module = mod },
-            },
         }),
     });
+    app_exe.root_module.addImport("zx_site_mod", mod);
 
-    const zx_build = try zx.init(b, exe, .{});
-    var client = zx_build.client.?;
-    client.root_module.addImport("zx_site_mod", mod);
+    // --- Ziex setup: wires dependencies and adds `zx`/`dev` build steps ---
+    var ziex_b = try ziex.init(b, app_exe, .{});
+    ziex_b = ziex_b; // ignore unused
 }
