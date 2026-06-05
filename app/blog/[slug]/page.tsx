@@ -1,32 +1,21 @@
-import { gqlClient } from '@/libs';
-import { queries } from '@/libs';
+import { getAllPosts, getPostBySlug } from '@/libs';
 import { mdxToHtml } from './util';
 import PostContent from '../component';
-import { PostResponse } from '../types';
 import { Metadata } from 'next';
 import { generateOGImage } from '@/libs/og';
 import './blog.css';
 import Link from 'next/link';
 
 export async function generateStaticParams() {
-  const response = await gqlClient(queries.getPosts)();
-  const posts = response as { data?: { publication?: { posts?: { edges?: { node: { slug: string } }[] } } } };
-  return (
-    posts.data?.publication?.posts?.edges?.map((post) => ({
-      slug: post.node.slug,
-    })) ?? []
-  );
+  const posts = await getAllPosts();
+  return posts.map((post) => ({
+    slug: post.slug,
+  }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const slug = (await params).slug;
-  const response = await gqlClient<PostResponse>(queries.getPostBySlug)({ slug });
-  const post = response.data.publication.post;
-
-  post.author = {
-    name: 'Nurul Huda (Apon)',
-  };
-  await generateOGImage({ post, outputPath: `public/og/${post.slug}.png` });
+  const post = await getPostBySlug(slug);
 
   if (!post) {
     return {
@@ -34,6 +23,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       description: 'The post you are looking for does not exist.',
     };
   }
+
+  await generateOGImage({ post, outputPath: `public/og/${post.slug}.png` });
 
   const ogImage = `/og/${post.slug}.png`;
 
@@ -60,8 +51,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function BlogPost({ params }: { params: Promise<{ slug: string }> }) {
   const slug = (await params).slug;
-  const response = await gqlClient<PostResponse>(queries.getPostBySlug)({ slug });
-  const post = response.data.publication.post;
+  const post = await getPostBySlug(slug);
 
   if (!post || !post.content) {
     return (

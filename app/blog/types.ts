@@ -4,7 +4,7 @@ export interface CoverImage {
 
 export interface Post {
   id: string;
-  coverImage: CoverImage;
+  coverImage: CoverImage | null;
   slug: string;
   subtitle: string | null;
   views: number;
