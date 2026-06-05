@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { getAllPosts } from '@/libs';
 import { BlogPostMeta } from './component';
 import { Metadata } from 'next';
-import { NewsletterSubscribe } from '../components/newsletter-subscribe';
 
 export const metadata: Metadata = {
   title: 'NH | Blog',
@@ -15,8 +14,6 @@ export default async function Blog() {
 
   return (
     <div className="space-y-8">
-      <NewsletterSubscribe />
-
       <div className="space-y-4 sm:space-y-8">
         {posts.map((post) => (
           <article key={post.id} className="group">
