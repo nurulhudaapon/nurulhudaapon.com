@@ -11,3 +11,4 @@ zig-pkg
 node_modules
 
 bench
+.DS_Store

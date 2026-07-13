@@ -6,11 +6,6 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const mod = b.addModule("zx_site_mod", .{
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-    });
-
     // --- Ziex App Executable ---
     const app_exe = b.addExecutable(.{
         .name = "ziex_app",
@@ -20,9 +15,18 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }),
     });
-    app_exe.root_module.addImport("zx_site_mod", mod);
+
+    const markz_dep = b.dependency("markz", .{ .target = target, .optimize = optimize });
+    app_exe.root_module.addImport("markz", markz_dep.module("markz"));
 
     // --- Ziex setup: wires dependencies and adds `zx`/`dev` build steps ---
-    var ziex_b = try ziex.init(b, app_exe, .{});
+    var ziex_b = try ziex.init(b, app_exe, .{
+        .cli = .{ .optimize = optimize },
+        .app = .{
+            .features = .{
+                .kv = .enabled,
+            },
+        },
+    });
     ziex_b = ziex_b; // ignore unused
 }

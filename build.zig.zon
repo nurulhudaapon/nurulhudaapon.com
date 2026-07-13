@@ -1,12 +1,16 @@
 .{
     .name = .zx_site_portfolio,
-    .version = "0.0.0",
+    .version = "3.0.0",
     .fingerprint = 0xf74ff4be25271f5a,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0-dev.1158+1d1193aa7",
     .dependencies = .{
         .ziex = .{
-            .url = "git+https://github.com/ziex-dev/ziex#05444f3583298fe3bf99b2e771dba26ae229c000",
-            .hash = "ziex-0.1.0-dev.1103-Z3YcvWoDnQEp9-8ePV7xqJ322v7_IXCQW1-hTzlcXluC",
+            .url = "git+https://github.com/ziex-dev/ziex#28a43a098e07db1a1d94eda6b9dbd4bb6c624586",
+            .hash = "ziex-0.1.0-dev-Z3YcvSKmkwGYRCi_C97lhbL8M0RI9XdH3bRPNWT5yu-X",
+        },
+        .markz = .{
+            .url = "git+https://codeberg.org/nurulhudaapon/markz.git?ref=zig-0.17#19af600075fc60775e89a3430dadd94299b13e14",
+            .hash = "markz-0.1.0-53lpvCGhBgD-cT9CdpZAx065JqAJ75JavcvhPwyU5z8G",
         },
     },
     .paths = .{
