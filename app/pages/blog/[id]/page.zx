@@ -1,6 +1,6 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
     const slug = ctx.request.params.get("id") orelse return error.MissingParameter;
-    const post = try zx_site_mod.getPostBySlug(ctx.arena, zx.io(), slug);
+    const post = try posts_mod.getPostBySlug(ctx.arena, slug);
 
     const date_str = post.publishedAt;
 
@@ -28,7 +28,6 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     ) else (
                         <div>
                             <p>{post.brief}</p>
-                            <p><a href={post.url} target="_blank" rel="noopener noreferrer">Read full article on Hashnode →</a></p>
                         </div>
                     )}
                 </div>
@@ -37,33 +36,17 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     );
 }
 
-fn transform(count: i32) i32 {
-    std.log.info("Transform called with count: {d}", .{count});
-    return count + 1;
-}
-
-fn onClick(_: zx.EventContext) void {
-    std.log.info("comptime format: []const u8", .{});
+fn staticParams(ctx: *zx.StaticContext) !void {
+    const posts = try posts_mod.getPosts(ctx.arena);
+    for (posts) |post| {
+        try ctx.params.add(.{ .id = post.slug });
+    }
 }
 
 pub const options: zx.PageOptions = .{
     .caching = .tag("7d"),
-    .static = .{
-        .getParams = getStaticParams,
-    },
+    .static = staticParams,
 };
 
-fn getStaticParams(allocator: zx.Allocator) ![]const []const zx.PageOptions.StaticParam {
-    var params = std.ArrayList([]const zx.PageOptions.StaticParam).empty;
-    const posts = try zx_site_mod.getPosts(allocator, zx.io());
-    for (posts) |post| {
-        const sp = try allocator.alloc(zx.PageOptions.StaticParam, 1);
-        sp[0] = .{ .key = "id", .value = post.slug };
-        try params.append(allocator, sp);
-    }
-    return params.items;
-}
-
-const zx_site_mod = @import("zx_site_mod");
+const posts_mod = @import("../posts.zig");
 const zx = @import("zx");
-const std = @import("std");

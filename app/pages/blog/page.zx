@@ -1,5 +1,5 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const posts = try zx_site_mod.getPosts(ctx.arena, zx.io());
+    const posts = try posts_mod.getPosts(ctx.arena);
 
     return (
         <main @allocator={ctx.arena}>
@@ -23,4 +23,4 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 pub const options: zx.PageOptions = .{ .caching = .tag("1h") };
 
 const zx = @import("zx");
-const zx_site_mod = @import("zx_site_mod");
+const posts_mod = @import("posts.zig");

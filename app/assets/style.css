@@ -288,6 +288,33 @@ div {
     height: auto;
 }
 
+/* Hashnode `%[youtube]` embeds */
+.post-content .video-embed {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    margin: var(--spacing-xl) 0;
+    overflow: hidden;
+    border-radius: 8px;
+}
+
+.post-content .video-embed iframe,
+.post-content iframe.video-embed {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.post-content iframe.video-embed {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    height: auto;
+}
+
 /* Footer */
 .site-footer {
     padding: var(--spacing-lg) var(--spacing-lg);
