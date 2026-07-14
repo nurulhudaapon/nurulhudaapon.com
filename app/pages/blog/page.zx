@@ -11,7 +11,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     {for (posts) |post| (
                         <a class="blog-item" href=`/blog/{post.slug}`>
                             <h2 class="blog-item-title">{post.title}</h2>
-                            <p class="blog-item-brief">{post.subtitle orelse post.brief}</p>
+                            <p class="blog-item-brief">{post.brief}</p>
                             <div class="blog-item-meta">
                                 <span>{post.publishedAt}</span>
                                 <span>·</span>

@@ -35,6 +35,7 @@ const Frontmatter = struct {
     cuid: ?[]const u8 = null,
     date_published: ?[]const u8 = null,
     cover: ?[]const u8 = null,
+    excerpt: ?[]const u8 = null,
     seo_description: ?[]const u8 = null,
     seo_title: ?[]const u8 = null,
 };
@@ -124,8 +125,8 @@ fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const
     const published_raw = fm.date_published orelse "Draft";
 
     const body = std.mem.trim(u8, split.body, " \t\r\n");
-    const brief = if (fm.seo_description) |desc|
-        try allocator.dupe(u8, desc)
+    const brief = if (fm.excerpt) |excerpt|
+        try formatExcerpt(allocator, excerpt)
     else
         try makeBrief(allocator, body);
 
@@ -142,7 +143,8 @@ fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const
         .slug = try allocator.dupe(u8, slug),
         .publishedAt = try formatPublishedDate(allocator, published_raw),
         .readTimeInMinutes = estimateReadTime(body),
-        .subtitle = if (fm.seo_title) |st| try allocator.dupe(u8, st) else null,
+        // Only surface a dedicated subtitle when frontmatter provides `excerpt`.
+        .subtitle = if (fm.excerpt != null) brief else null,
         .coverImage = if (fm.cover) |c| blk: {
             break :blk (try hashnode.localizeUrl(allocator, c)) orelse try allocator.dupe(u8, c);
         } else null,
@@ -194,6 +196,8 @@ fn parseFrontmatterFields(meta: []const u8) !Frontmatter {
             fm.date_published = value;
         } else if (std.mem.eql(u8, key, "cover")) {
             fm.cover = value;
+        } else if (std.mem.eql(u8, key, "excerpt")) {
+            fm.excerpt = value;
         } else if (std.mem.eql(u8, key, "seoDescription")) {
             fm.seo_description = value;
         } else if (std.mem.eql(u8, key, "seoTitle")) {
@@ -217,26 +221,152 @@ fn slugFromFilename(filename: []const u8) ?[]const u8 {
     return stem;
 }
 
+fn formatExcerpt(allocator: std.mem.Allocator, excerpt: []const u8) ![]const u8 {
+    const trimmed = std.mem.trim(u8, excerpt, " \t\r\n");
+    if (trimmed.len == 0) return try allocator.dupe(u8, "...");
+    if (std.mem.endsWith(u8, trimmed, "...")) return try allocator.dupe(u8, trimmed);
+    return try std.fmt.allocPrint(allocator, "{s}...", .{trimmed});
+}
+
+/// Plain-text preview from markdown: skip headings, embeds, images, code; end with `...`.
 fn makeBrief(allocator: std.mem.Allocator, body: []const u8) ![]const u8 {
-    var start: usize = 0;
-    while (start < body.len and std.ascii.isWhitespace(body[start])) : (start += 1) {}
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
 
-    var end = start;
-    while (end < body.len and body[end] != '\n') : (end += 1) {}
+    const target_len: usize = 180;
+    var in_fence = false;
+    var lines = std.mem.splitScalar(u8, body, '\n');
+    while (lines.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
 
-    var excerpt = std.mem.trim(u8, body[start..end], " \t\r");
-    // Strip simple markdown heading markers / emphasis for the listing brief.
-    if (std.mem.startsWith(u8, excerpt, "#")) {
-        excerpt = std.mem.trimStart(u8, excerpt, "# ");
+        if (std.mem.startsWith(u8, line, "```")) {
+            in_fence = !in_fence;
+            continue;
+        }
+        if (in_fence) continue;
+        if (line.len == 0) continue;
+        if (shouldSkipBriefLine(line)) continue;
+
+        const plain = try stripMarkdownInline(allocator, line);
+        defer allocator.free(plain);
+        const text = std.mem.trim(u8, plain, " \t");
+        if (text.len == 0) continue;
+
+        if (out.items.len > 0) try out.append(allocator, ' ');
+        try out.appendSlice(allocator, text);
+        if (out.items.len >= target_len) break;
     }
 
-    const max_len: usize = 220;
-    if (excerpt.len <= max_len) return try allocator.dupe(u8, excerpt);
+    if (out.items.len == 0) return try allocator.dupe(u8, "...");
+
+    const max_len: usize = 160;
+    if (out.items.len <= max_len) {
+        return try std.fmt.allocPrint(allocator, "{s}...", .{out.items});
+    }
 
     var cut = max_len;
-    while (cut > 0 and !std.ascii.isWhitespace(excerpt[cut])) : (cut -= 1) {}
+    while (cut > 0 and !std.ascii.isWhitespace(out.items[cut])) : (cut -= 1) {}
     if (cut == 0) cut = max_len;
-    return try std.fmt.allocPrint(allocator, "{s}…", .{excerpt[0..cut]});
+    while (cut > 0 and std.ascii.isWhitespace(out.items[cut - 1])) : (cut -= 1) {}
+    return try std.fmt.allocPrint(allocator, "{s}...", .{out.items[0..cut]});
+}
+
+fn shouldSkipBriefLine(line: []const u8) bool {
+    if (line.len == 0) return true;
+    if (line[0] == '#') return true;
+    if (std.mem.startsWith(u8, line, "%[")) return true;
+    if (std.mem.startsWith(u8, line, "![")) return true;
+    if (std.mem.startsWith(u8, line, "<")) return true;
+    if (isHrLine(line)) return true;
+    return false;
+}
+
+fn isHrLine(line: []const u8) bool {
+    if (line.len < 3) return false;
+    const ch = line[0];
+    if (ch != '-' and ch != '*' and ch != '_') return false;
+    for (line) |c| {
+        if (c != ch and c != ' ') return false;
+    }
+    return true;
+}
+
+fn stripMarkdownInline(allocator: std.mem.Allocator, line: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    var i: usize = 0;
+    // Drop common list / quote prefixes.
+    while (i < line.len) {
+        if (line[i] == '>' or line[i] == '-' or line[i] == '*') {
+            i += 1;
+            while (i < line.len and line[i] == ' ') : (i += 1) {}
+            continue;
+        }
+        if (std.mem.startsWith(u8, line[i..], "→") or std.mem.startsWith(u8, line[i..], "•")) {
+            i += if (std.mem.startsWith(u8, line[i..], "→")) "→".len else "•".len;
+            while (i < line.len and line[i] == ' ') : (i += 1) {}
+            continue;
+        }
+        if (std.ascii.isDigit(line[i])) {
+            var j = i;
+            while (j < line.len and std.ascii.isDigit(line[j])) : (j += 1) {}
+            if (j < line.len and line[j] == '.') {
+                i = j + 1;
+                while (i < line.len and line[i] == ' ') : (i += 1) {}
+                continue;
+            }
+        }
+        break;
+    }
+
+    while (i < line.len) {
+        // [label](url) or ![alt](url) residual
+        if (line[i] == '[') {
+            if (std.mem.indexOfScalarPos(u8, line, i + 1, ']')) |close| {
+                if (close + 1 < line.len and line[close + 1] == '(') {
+                    if (std.mem.indexOfScalarPos(u8, line, close + 2, ')')) |paren| {
+                        try out.appendSlice(allocator, line[i + 1 .. close]);
+                        i = paren + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // Bare URLs
+        if (std.mem.startsWith(u8, line[i..], "http://") or std.mem.startsWith(u8, line[i..], "https://")) {
+            while (i < line.len and !std.ascii.isWhitespace(line[i]) and line[i] != ')' and line[i] != ']') : (i += 1) {}
+            continue;
+        }
+
+        // Emphasis / code markers
+        if (line[i] == '*' or line[i] == '_' or line[i] == '`' or line[i] == '~') {
+            i += 1;
+            continue;
+        }
+
+        try out.append(allocator, line[i]);
+        i += 1;
+    }
+
+    // Collapse repeated whitespace.
+    var cleaned: std.ArrayList(u8) = .empty;
+    errdefer cleaned.deinit(allocator);
+    var prev_space = false;
+    for (out.items) |c| {
+        if (std.ascii.isWhitespace(c)) {
+            if (!prev_space and cleaned.items.len > 0) {
+                try cleaned.append(allocator, ' ');
+                prev_space = true;
+            }
+        } else {
+            try cleaned.append(allocator, c);
+            prev_space = false;
+        }
+    }
+    out.deinit(allocator);
+    return try cleaned.toOwnedSlice(allocator);
 }
 
 fn estimateReadTime(body: []const u8) u32 {
