@@ -2,36 +2,40 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const slug = ctx.request.params.get("id") orelse return error.MissingParameter;
     const post = try posts_mod.getPostBySlug(ctx.arena, slug);
 
-    const date_str = post.publishedAt;
-
     return (
-        <main @allocator={ctx.arena} class="post-page">
-            <a href="/blog" class="back-to-blog">← Back to Blog</a>
-            <article>
-                {if (post.coverImage) |coverImage| (
-                    <img src={coverImage} alt={post.title} class="post-cover" />
-                )}
-                <header class="post-header">
-                    <h1 class="post-title">{post.title}</h1>
-                    {if (post.subtitle) |subtitle| (
-                        <p class="post-subtitle">{subtitle}</p>
-                    )}
-                    <div class="post-meta">
-                        <span class="post-author">By {post.author.name}</span>
-                        <span class="post-date">{date_str}</span>
-                        <span class="post-read-time">{post.readTimeInMinutes} min read</span>
-                    </div>
-                </header>
-                <div class="post-content">
-                    {if (post.content) |content| (
-                        <div @escaping={.none}>{content}</div>
-                    ) else (
-                        <div>
-                            <p>{post.brief}</p>
-                        </div>
-                    )}
+        <main @allocator={ctx.arena} class="page-inner page-post">
+            <div class="page-inner-content">
+                <div class="page-nav">
+                    <Navbar />
                 </div>
-            </article>
+                <a href="/blog" class="back-to-blog">
+                    {icons.ArrowLeft(ctx.arena)}
+                    Back to Blog
+                </a>
+                <article>
+                    <header class="post-header">
+                        <h1 class="post-title">{post.title}</h1>
+                        {if (post.coverImage) |coverImage| (
+                            <img src={coverImage} alt={post.title} class="post-cover" />
+                        )}
+                        {if (post.subtitle) |subtitle| (
+                            <p class="post-subtitle">{subtitle}</p>
+                        )}
+                        <div class="post-meta">
+                            <span>{post.publishedAt}</span>
+                            <span>·</span>
+                            <span>{post.readTimeInMinutes} min read</span>
+                        </div>
+                    </header>
+                    <div class="post-content">
+                        {if (post.content) |content| (
+                            <div @escaping={.none}>{content}</div>
+                        ) else (
+                            <p>{post.brief}</p>
+                        )}
+                    </div>
+                </article>
+            </div>
         </main>
     );
 }
@@ -50,3 +54,5 @@ pub const options: zx.PageOptions = .{
 
 const posts_mod = @import("../posts.zig");
 const zx = @import("zx");
+const Navbar = @import("../../component.zx").Navbar;
+const icons = @import("../../component.zx").icons;

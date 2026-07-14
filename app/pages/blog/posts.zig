@@ -121,7 +121,7 @@ fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const
     const title = fm.title orelse return error.FailedToParsePosts;
     const slug = fm.slug orelse slugFromFilename(filename) orelse return error.FailedToParsePosts;
     const id = fm.cuid orelse slug;
-    const published_at = fm.date_published orelse "Draft";
+    const published_raw = fm.date_published orelse "Draft";
 
     const body = std.mem.trim(u8, split.body, " \t\r\n");
     const brief = if (fm.seo_description) |desc|
@@ -140,7 +140,7 @@ fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const
         .brief = brief,
         .url = try std.fmt.allocPrint(allocator, "/blog/{s}", .{slug}),
         .slug = try allocator.dupe(u8, slug),
-        .publishedAt = try allocator.dupe(u8, published_at),
+        .publishedAt = try formatPublishedDate(allocator, published_raw),
         .readTimeInMinutes = estimateReadTime(body),
         .subtitle = if (fm.seo_title) |st| try allocator.dupe(u8, st) else null,
         .coverImage = if (fm.cover) |c| blk: {
@@ -269,8 +269,26 @@ fn comparePublishedDesc(a: []const u8, b: []const u8) bool {
     return std.mem.order(u8, a, b) == .gt;
 }
 
-/// Sort key from `datePublished` like `Fri Apr 28 2023 15:40:38 GMT+0000 (...)`.
+/// Sort key from published date strings (JS Date, ISO, or display `Jan 30, 2026`).
 fn parsePublishedSortKey(date: []const u8) u64 {
+    if (date.len >= 10 and date[4] == '-' and date[7] == '-') {
+        const year = std.fmt.parseInt(u64, date[0..4], 10) catch return 0;
+        const month = std.fmt.parseInt(u64, date[5..7], 10) catch return 0;
+        const day = std.fmt.parseInt(u64, date[8..10], 10) catch return 0;
+        return ((year * 100 + month) * 100 + day) * 1000000;
+    }
+
+    if (std.mem.indexOf(u8, date, ", ")) |_| {
+        var parts = std.mem.tokenizeAny(u8, date, " ,");
+        const month_name = parts.next() orelse return 0;
+        const day_s = parts.next() orelse return 0;
+        const year_s = parts.next() orelse return 0;
+        const month: u64 = monthIndex(month_name) orelse return 0;
+        const day = std.fmt.parseInt(u64, day_s, 10) catch return 0;
+        const year = std.fmt.parseInt(u64, year_s, 10) catch return 0;
+        return ((year * 100 + month) * 100 + day) * 1000000;
+    }
+
     var parts = std.mem.tokenizeAny(u8, date, " ");
     _ = parts.next(); // weekday
     const month_name = parts.next() orelse return 0;
@@ -288,6 +306,32 @@ fn parsePublishedSortKey(date: []const u8) u64 {
     const second = std.fmt.parseInt(u64, time_parts.next() orelse "0", 10) catch 0;
 
     return (((((year * 100 + month) * 100 + day) * 100 + hour) * 100 + minute) * 100 + second);
+}
+
+fn formatPublishedDate(allocator: std.mem.Allocator, raw: []const u8) ![]const u8 {
+    if (std.mem.eql(u8, raw, "Draft")) return try allocator.dupe(u8, raw);
+
+    if (raw.len >= 10 and raw[4] == '-' and raw[7] == '-') {
+        const year = raw[0..4];
+        const month = std.fmt.parseInt(u8, raw[5..7], 10) catch return try allocator.dupe(u8, raw);
+        const day = std.fmt.parseInt(u8, raw[8..10], 10) catch return try allocator.dupe(u8, raw);
+        const month_name = monthName(month) orelse return try allocator.dupe(u8, raw);
+        return try std.fmt.allocPrint(allocator, "{s} {d}, {s}", .{ month_name, day, year });
+    }
+
+    var parts = std.mem.tokenizeAny(u8, raw, " ");
+    _ = parts.next(); // weekday
+    const month_name = parts.next() orelse return try allocator.dupe(u8, raw);
+    const day_s = parts.next() orelse return try allocator.dupe(u8, raw);
+    const year_s = parts.next() orelse return try allocator.dupe(u8, raw);
+    const day = std.fmt.parseInt(u32, day_s, 10) catch return try allocator.dupe(u8, raw);
+    return try std.fmt.allocPrint(allocator, "{s} {d}, {s}", .{ month_name, day, year_s });
+}
+
+fn monthName(index: u8) ?[]const u8 {
+    const months = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    if (index < 1 or index > 12) return null;
+    return months[index - 1];
 }
 
 fn monthIndex(name: []const u8) ?u64 {

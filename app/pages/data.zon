@@ -1,0 +1,16 @@
+.{
+    .title = "Nurul Huda (Apon)",
+    .description = "A tech enthusiast, enrolling in Computer Science and Engineering at Green University of Bangladesh and working as a Staff Engineer",
+    .author = "Nurul Huda (Apon)",
+    .url = "https://nurulhudaapon.com",
+    .og_image = "https://nurulhudaapon.com/social.png",
+    .copyright = "© 2026 Nurul Huda (Apon).",
+    .social = .{
+        .{ .label = "Email", .href = "mailto:me@nurulhudaapon.com", .icon = .email },
+        .{ .label = "GitHub", .href = "https://github.com/nurulhudaapon", .icon = .github },
+        .{ .label = "NPM", .href = "https://www.npmjs.com/~nurulhudaapon", .icon = .npm },
+        .{ .label = "X", .href = "https://x.com/nurulhudaapon", .icon = .x },
+        .{ .label = "LinkedIn", .href = "https://linkedin.com/in/nurulhudaapon", .icon = .linkedin },
+        .{ .label = "YouTube", .href = "https://youtube.com/@nurulhudaapon", .icon = .youtube },
+    },
+}

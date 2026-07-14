@@ -2,20 +2,25 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const posts = try posts_mod.getPosts(ctx.arena);
 
     return (
-        <main @allocator={ctx.arena}>
-            <h1>Blog</h1>
-            <ol>
-                {for (posts) |post| (
-                    <li>
-                        <div>
-                            <a href=`/blog/{post.slug}`>
-                                <h3>{post.title}</h3>
-                            </a>
-                            <p>{post.brief}</p>
-                        </div>
-                    </li>
-                )}
-            </ol>
+        <main @allocator={ctx.arena} class="page-inner page-blog">
+            <div class="page-inner-content">
+                <div class="page-nav">
+                    <Navbar />
+                </div>
+                <div class="blog-list">
+                    {for (posts) |post| (
+                        <a class="blog-item" href=`/blog/{post.slug}`>
+                            <h2 class="blog-item-title">{post.title}</h2>
+                            <p class="blog-item-brief">{post.subtitle orelse post.brief}</p>
+                            <div class="blog-item-meta">
+                                <span>{post.publishedAt}</span>
+                                <span>·</span>
+                                <span>{post.readTimeInMinutes} min read</span>
+                            </div>
+                        </a>
+                    )}
+                </div>
+            </div>
         </main>
     );
 }
@@ -24,3 +29,4 @@ pub const options: zx.PageOptions = .{ .caching = .tag("1h") };
 
 const zx = @import("zx");
 const posts_mod = @import("posts.zig");
+const Navbar = @import("../component.zx").Navbar;

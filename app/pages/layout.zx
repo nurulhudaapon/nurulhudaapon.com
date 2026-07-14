@@ -1,32 +1,88 @@
 pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
     return (
-        <html @allocator={ctx.arena} lang="en-US">
+        <html @allocator={ctx.arena} lang="en">
             <head>
                 <meta charset="UTF-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-                <title>Nurul Huda (Apon)</title>
-                <meta name="description" content="Staff Engineer at Voyage Mobile Inc. Tech enthusiast, Computer Science student at Green University of Bangladesh." />
-                <meta name="author" content="Nurul Huda (Apon)" />
-                <meta property="og:title" content="Nurul Huda (Apon)" />
-                <meta property="og:description" content="Staff Engineer at Voyage Mobile Inc. Tech enthusiast, Computer Science student at Green University of Bangladesh." />
+                <title>{data.title}</title>
+                <meta name="description" content={data.description} />
+                <meta name="author" content={data.author} />
+                <meta property="og:title" content={data.title} />
+                <meta property="og:description" content={data.description} />
                 <meta property="og:type" content="website" />
-                <meta property="og:url" content="https://nurulhudaapon.com" />
-                <meta name="twitter:card" content="summary" />
-                <meta name="twitter:title" content="Nurul Huda (Apon)" />
-                <meta name="twitter:description" content="Staff Engineer at Voyage Mobile Inc. Tech enthusiast, Computer Science student at Green University of Bangladesh." />
-                <link rel="icon" href="https://nurulhudaapon.com/favicon.ico" sizes="32x32" type="image/x-icon" />
+                <meta property="og:url" content={data.url} />
+                <meta property="og:image" content={data.og_image} />
+                <meta name="twitter:card" content="summary_large_image" />
+                <meta name="twitter:title" content={data.title} />
+                <meta name="twitter:description" content={data.description} />
+                <meta name="twitter:image" content={data.og_image} />
+                <link rel="icon" href="/favicon.ico" sizes="32x32" type="image/x-icon" />
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+                <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet" />
                 <link rel="stylesheet" href="/assets/style.css" />
             </head>
             <body>
-                <Navbar />
                 {children}
+                <footer class="site-footer">
+                    <div class="copyright">{data.copyright}</div>
+                    <div class="social-links">
+                        {for (data.social) |link| (
+                            if (std.mem.startsWith(u8, link.href, "mailto:")) (
+                                <a href={link.href} aria-label={link.label}>
+                                    {icon(ctx.arena, link.icon)}
+                                </a>
+                            ) else (
+                                <a href={link.href} target="_blank" rel="noopener noreferrer" aria-label={link.label}>
+                                    {icon(ctx.arena, link.icon)}
+                                </a>
+                            )
+                        )}
+                    </div>
+                </footer>
             </body>
         </html>
     );
 }
 
-const zx = @import("zx");
-const Navbar = @import("component.zx").Navbar;
-const NavbarProps = @import("component.zx").NavbarProps;
+fn icon(allocator: zx.Allocator, icon_type: IconType) zx.Component {
+    return switch (icon_type) {
+        .email => icons.Email(allocator),
+        .github => icons.GitHub(allocator),
+        .npm => icons.Npm(allocator),
+        .x => icons.X(allocator),
+        .linkedin => icons.LinkedIn(allocator),
+        .youtube => icons.YouTube(allocator),
+    };
+}
 
-const CSS_STYLES = @embedFile("../assets/style.css");
+const IconType = enum {
+    email,
+    github,
+    npm,
+    x,
+    linkedin,
+    youtube,
+};
+
+const Link = struct {
+    label: []const u8,
+    href: []const u8,
+    icon: IconType,
+};
+
+const SiteData = struct {
+    title: []const u8,
+    description: []const u8,
+    author: []const u8,
+    url: []const u8,
+    og_image: []const u8,
+    copyright: []const u8,
+    social: []const Link,
+};
+
+const data: SiteData = @import("data.zon");
+
+const icons = @import("component.zx").icons;
+const std = @import("std");
+const zx = @import("zx");

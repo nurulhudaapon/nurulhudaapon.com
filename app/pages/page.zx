@@ -1,15 +1,30 @@
 pub fn Page(ctx: zx.PageContext) zx.Component {
     return (
-        <main @allocator={ctx.arena} class="home-page">
-            <img class="profile-image" alt="Nurul Huda (Apon)" width="280" fetchpriority="high" src="https://nurulhudaapon.com/nurulhudaapon.webp" />
-            <h1 class="name-title">Nurul Huda (Apon)</h1>
-            <p class="job-title">Staff Engineer at <strong>Voyage Mobile Inc.</strong></p>
-            <p class="bio">A tech enthusiast, enrolling in Computer Science and Engineering at <strong>Green University of Bangladesh</strong> and working as a <strong>Staff Engineer</strong></p>
-            <Navbar />
+        <main @allocator={ctx.arena} class="page-home">
+            <div class="home-copy">
+                <h1 class="home-name">Nurul Huda (Apon)</h1>
+                <h2 class="home-role">
+                    Staff Engineer at{" "}
+                    <a href="https://vyg.ai" target="_blank" rel="noopener noreferrer">Voyage Mobile, Inc.</a>
+                </h2>
+                <p class="home-bio">
+                    Scaling <a href="https://liverecover.com" target="_blank" rel="noopener noreferrer">LiveRecover</a>'s human-powered SMS recovery engine at <a href="https://vyg.ai" target="_blank" rel="noopener noreferrer">VYG</a> and crafting <a href="https://ziex.dev" target="_blank" rel="noopener noreferrer">Ziex</a>, a full-stack web framework for <a href="https://ziglang.org" target="_blank" rel="noopener noreferrer">Zig</a>
+                </p>
+                <Navbar />
+            </div>
+            <div class="home-portrait">
+                <img
+                    class="profile-image"
+                    alt="Nurul Huda (Apon)"
+                    width="280"
+                    height="280"
+                    fetchpriority="high"
+                    src="/nurulhudaapon.webp"
+                />
+            </div>
         </main>
     );
 }
 
 const zx = @import("zx");
 const Navbar = @import("component.zx").Navbar;
-const NavbarProps = @import("component.zx").NavbarProps;
