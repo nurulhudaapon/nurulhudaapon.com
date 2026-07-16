@@ -1,0 +1,23 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "next",
+	"main": "app/main.ts",
+	"compatibility_date": "2026-03-10",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"kv_namespaces": [
+		{
+			"binding": "KV",
+			"id": "5de66b89266a4b40a98f8bc1d796c629"
+		},
+	],
+	"build": {
+		"watch_dir": "./app",
+		"command": "zig build -Dtarget=wasm32-wasi",
+	},
+	"assets": {
+		"directory": "./zig-out/static",
+		"binding": "ASSETS",
+	},
+}
