@@ -46,17 +46,42 @@ pub fn fetchTarballCached(allocator: std.mem.Allocator, repo: Repository) ![]u8 
 
     const blogs_kv = zx.kv.scoped(.blogs);
     if (try blogs_kv.get(allocator, cache_key)) |cached| {
+        defer allocator.free(cached);
         zx.log.debug("git.fetchTarballCached: kv hit key={s} bytes={d}", .{ cache_key, cached.len });
-        return cached;
+        if (decodeCachedTarball(allocator, cached)) |gz| {
+            return gz;
+        } else |err| {
+            zx.log.warn("git.fetchTarballCached: invalid cache entry key={s} err={any}, refetching", .{ cache_key, err });
+            blogs_kv.delete(cache_key) catch {};
+        }
     }
 
     zx.log.debug("git.fetchTarballCached: kv miss key={s}, downloading", .{cache_key});
     const gz = try fetchTarball(allocator, parsed, ref);
     errdefer allocator.free(gz);
 
-    try blogs_kv.put(cache_key, gz, .{});
-    zx.log.debug("git.fetchTarballCached: stored in kv key={s} bytes={d}", .{ cache_key, gz.len });
+    const encoded = try encodeCachedTarball(allocator, gz);
+    defer allocator.free(encoded);
+    try blogs_kv.put(cache_key, encoded, .{});
+    zx.log.debug("git.fetchTarballCached: stored in kv key={s} raw={d} encoded={d}", .{ cache_key, gz.len, encoded.len });
     return gz;
+}
+
+fn encodeCachedTarball(allocator: std.mem.Allocator, gz: []const u8) ![]u8 {
+    const enc = std.base64.standard.Encoder;
+    const out = try allocator.alloc(u8, enc.calcSize(gz.len));
+    _ = enc.encode(out, gz);
+    return out;
+}
+
+fn decodeCachedTarball(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
+    const dec = std.base64.standard.Decoder;
+    const out_len = try dec.calcSizeForSlice(encoded);
+    const out = try allocator.alloc(u8, out_len);
+    errdefer allocator.free(out);
+    try dec.decode(out, encoded);
+    if (out.len < 2 or out[0] != 0x1f or out[1] != 0x8b) return error.InvalidCachedTarball;
+    return out;
 }
 
 pub fn archiveFromTarball(allocator: std.mem.Allocator, gz: []const u8) !Archive {
