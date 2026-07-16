@@ -12,6 +12,10 @@
             .url = "git+https://codeberg.org/nurulhudaapon/markz.git?ref=zig-0.17#19af600075fc60775e89a3430dadd94299b13e14",
             .hash = "markz-0.1.0-53lpvCGhBgD-cT9CdpZAx065JqAJ75JavcvhPwyU5z8G",
         },
+        .geist_font = .{
+            .url = "https://github.com/vercel/geist-font/archive/refs/tags/v1.7.2.tar.gz",
+            .hash = "N-V-__8AAFc7rAUORs3dAyKAwiLMJnpmoGFKg_HorL675ktk",
+        },
     },
     .paths = .{
         "build.zig",

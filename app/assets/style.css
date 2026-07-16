@@ -6,6 +6,40 @@
     padding: 0;
 }
 
+@font-face {
+    font-family: Geist;
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("/fonts/geist-sans.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Geist Fallback";
+    src: local("Arial");
+    ascent-override: 95.94%;
+    descent-override: 28.16%;
+    line-gap-override: 0%;
+    size-adjust: 104.76%;
+}
+
+@font-face {
+    font-family: "Geist Mono";
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("/fonts/geist-mono.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Geist Mono Fallback";
+    src: local("Arial");
+    ascent-override: 74.67%;
+    descent-override: 21.92%;
+    line-gap-override: 0%;
+    size-adjust: 134.59%;
+}
+
 :root {
     --background: #ffffff;
     --foreground: #171717;
@@ -19,7 +53,7 @@
     --color-link: #3b82f6;
     --color-link-accent: #22c55e;
     --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --max-width: 56rem;
     --content-width: 48rem;
 }
