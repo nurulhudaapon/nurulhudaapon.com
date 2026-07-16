@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) !void {
         .app = .{
             .features = .{
                 .kv = .enabled,
+                .sqlite = .enabled,
             },
         },
     });

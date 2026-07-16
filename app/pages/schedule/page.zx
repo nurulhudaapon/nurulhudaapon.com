@@ -1,0 +1,23 @@
+pub fn Page(ctx: zx.PageContext) zx.Component {
+    return (
+        <main @allocator={ctx.arena} class="page-inner page-schedule">
+            <div class="page-inner-content">
+                <div class="page-nav">
+                    <Navbar />
+                </div>
+                <div class="schedule-content">
+                    <p class="schedule-intro">Pick a time that works for you and let's talk.</p>
+                    <div class="calendar-embed">
+                        <iframe
+                            src="https://calendar.google.com/calendar/appointments/schedules/AcZssZ1nBnTfyZjvTSHR6mQzLHcWOD7LjCilnrpKo9YMBTaRuwOYfd5c6jrQ5511cMBjL_CNMJgVDOrk?gv=true"
+                            title="Schedule a meeting with Nurul Huda (Apon)"
+                        ></iframe>
+                    </div>
+                </div>
+            </div>
+        </main>
+    );
+}
+
+const zx = @import("zx");
+const Navbar = @import("../component.zx").Navbar;

@@ -1,0 +1,250 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    // TODO: run in main.zig, and only in dev mode, for prod use migration scripts
+    try db.ensureSchema();
+
+    const visitor_id = ensureVisitorId(ctx);
+    handleAction(ctx, visitor_id);
+
+    const admin_param = ctx.request.queries.get("admin");
+    const is_admin = try db.isValidAdmin(ctx.arena, admin_param);
+    const success = ctx.request.queries.get("success") != null;
+    const deleted = ctx.request.queries.get("deleted") != null;
+
+    var answering: ?db.Question = null;
+    if (is_admin) {
+        if (ctx.request.queries.get("q_id")) |raw| {
+            if (std.fmt.parseInt(i64, raw, 10)) |id| {
+                answering = try db.getById(ctx.arena, id);
+            } else |_| {}
+        }
+    }
+
+    const questions = if (is_admin)
+        try db.listAll(ctx.arena)
+    else blk: {
+        try db.markAnsweredSeen(ctx.arena, visitor_id);
+        break :blk try db.listForVisitor(ctx.arena, visitor_id);
+    };
+
+    const answering_id = if (answering) |q| q.id else @as(i64, 0);
+    const answering_text = if (answering) |q| q.question else "";
+    const answering_answer = if (answering) |q| (q.answer orelse "") else "";
+    const is_answering = answering != null;
+    const list_title = if (is_admin) "All Questions" else "Your questions";
+    const submit_label = if (is_answering) "Answer" else "Submit";
+    const placeholder = if (is_answering) "Write your answer here..." else "Ask me anything...";
+    const form_action = if (is_answering) "answer" else "submit";
+    const admin_cred = admin_param orelse "";
+
+    return (
+        <main @allocator={ctx.arena} class="page-inner page-ask">
+            <div class="page-inner-content">
+                <div class="page-nav">
+                    <Navbar />
+                </div>
+
+                <div class="ask-content">
+                    <h1 class="ask-title">Ask Me Anything</h1>
+                    <p class="ask-intro">
+                        Anonymously ask me anything. I'll answer it in my social media or you can find the answer by revisiting this page.
+                    </p>
+
+                    {if (success) (
+                        <p class="ask-flash ask-flash-success">Thanks! Your submission was saved.</p>
+                    )}
+                    {if (deleted) (
+                        <p class="ask-flash ask-flash-success">Question deleted.</p>
+                    )}
+
+                    <div class="ask-form-card">
+                        {if (is_answering) (
+                            <div class="ask-answering">
+                                <p class="ask-answering-label">Question:</p>
+                                <p class="ask-answering-text">{answering_text}</p>
+                            </div>
+                        )}
+                        <form class="ask-form" method="post" action="/ask">
+                            <textarea
+                                class="ask-textarea"
+                                name="question"
+                                rows="4"
+                                cols="30"
+                                required
+                                autofocus
+                                placeholder={placeholder}
+                            >{answering_answer}</textarea>
+                            <input type="hidden" name="email" value="" />
+                            <input type="hidden" name="action" value={form_action} />
+                            {if (is_admin) (
+                                <input type="hidden" name="admin" value={admin_cred} />
+                            )}
+                            {if (is_answering) (
+                                <input type="hidden" name="question_id" value={answering_id} />
+                            )}
+                            <div class="ask-form-actions">
+                                <button class="ask-submit" type="submit">{submit_label}</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    {if (questions.len > 0) (
+                        <div class="ask-list">
+                            <h2 class="ask-list-title">{list_title}</h2>
+                            {for (questions) |q| (
+                                <QuestionCard
+                                    q={q}
+                                    is_admin={is_admin}
+                                    admin_cred={admin_cred}
+                                />
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </main>
+    );
+}
+
+fn QuestionCard(allocator: zx.Allocator, props: struct {
+    q: db.Question,
+    is_admin: bool,
+    admin_cred: []const u8,
+}) zx.Component {
+    const q = props.q;
+    const is_admin = props.is_admin;
+    const admin_cred = props.admin_cred;
+    const has_answer = q.answer != null;
+    const item_class = if (has_answer and !q.seen and !is_admin) "ask-item ask-item-new" else "ask-item";
+    const badge_class = if (q.seen) "ask-badge ask-badge-seen" else "ask-badge ask-badge-unseen";
+    const badge_text = if (is_admin)
+        (if (q.seen) "Answered & Seen" else "Answered (Unseen)")
+    else
+        (if (q.seen) "Answered" else "New Answer!");
+    const answer_link_text = if (has_answer) "Update Answer" else "Answer";
+    const answer_href = std.fmt.allocPrint(allocator, "/ask?admin={s}&q_id={d}", .{ admin_cred, q.id }) catch "/ask";
+    const asked_label = formatAsked(allocator, q.created_at);
+
+    return (
+        <article @allocator={allocator} class={item_class}>
+            {if (has_answer) (
+                <span class={badge_class}>{badge_text}</span>
+            )}
+            <p class="ask-item-question">{q.question}</p>
+            <p class="ask-item-meta">{asked_label}</p>
+            {if (q.answer) |answer| (
+                <div class="ask-item-answer">
+                    <p class="ask-item-answer-label">Answer:</p>
+                    <p class="ask-item-answer-text">{answer}</p>
+                </div>
+            )}
+            {if (is_admin) (
+                <div class="ask-item-admin">
+                    <p class="ask-item-visitor">Visitor: {q.visitor_id}</p>
+                    <div class="ask-item-actions">
+                        <a class="ask-action-link" href={answer_href}>{answer_link_text}</a>
+                        <form method="post" action="/ask" class="ask-inline-form">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="question_id" value={q.id} />
+                            <input type="hidden" name="admin" value={admin_cred} />
+                            <button class="ask-action-delete" type="submit">Delete</button>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </article>
+    );
+}
+
+fn handleAction(ctx: zx.PageContext, visitor_id: []const u8) void {
+    if (ctx.request.method != .POST) return;
+
+    const fd = ctx.request.formData();
+    const action = fd.get("action") orelse return;
+    const admin = fd.get("admin");
+    const admin_ok = db.isValidAdmin(ctx.arena, admin) catch false;
+
+    if (std.mem.eql(u8, action, "submit")) {
+        const question = std.mem.trim(u8, fd.get("question") orelse "", " \t\r\n");
+        if (question.len == 0) return;
+        // Honeypot: bots may fill this. TODO: add captcha from Cloudflare or similar in the future
+        const email = fd.get("email") orelse "";
+        if (email.len > 0) {
+            redirectAsk(ctx, null, "success");
+            return;
+        }
+        const ua = ctx.request.headers.get("user-agent") orelse "unknown";
+        const visitor_json = ctx.fmt("{{\"userAgent\":\"{s}\"}}", .{ua}) catch "{}";
+        db.insertQuestion(ctx.arena, question, email, visitor_id, visitor_json) catch |err| {
+            zx.log.err("Failed to insert question: {any}", .{err});
+            return;
+        };
+        redirectAsk(ctx, null, "success");
+        return;
+    }
+
+    if (std.mem.eql(u8, action, "answer")) {
+        if (!admin_ok) return;
+        const question = std.mem.trim(u8, fd.get("question") orelse "", " \t\r\n");
+        const id_raw = fd.get("question_id") orelse return;
+        const id = std.fmt.parseInt(i64, id_raw, 10) catch return;
+        if (question.len == 0) return;
+        db.setAnswer(id, question) catch |err| {
+            zx.log.err("Failed to set answer: {any}", .{err});
+            return;
+        };
+        redirectAsk(ctx, admin, "success");
+        return;
+    }
+
+    if (std.mem.eql(u8, action, "delete")) {
+        if (!admin_ok) return;
+        const id_raw = fd.get("question_id") orelse return;
+        const id = std.fmt.parseInt(i64, id_raw, 10) catch return;
+        db.softDelete(id) catch |err| {
+            zx.log.err("Failed to delete question: {any}", .{err});
+            return;
+        };
+        redirectAsk(ctx, admin, "deleted");
+        return;
+    }
+}
+
+fn redirectAsk(ctx: zx.PageContext, admin: ?[]const u8, flag: []const u8) void {
+    const location = if (admin) |cred|
+        (ctx.fmt("/ask?admin={s}&{s}=true", .{ cred, flag }) catch "/ask")
+    else
+        (ctx.fmt("/ask?{s}=true", .{flag}) catch "/ask");
+    ctx.response.redirect(location, null);
+}
+
+fn ensureVisitorId(ctx: zx.PageContext) []const u8 {
+    if (ctx.request.cookies.get("visitor_id")) |existing| {
+        if (existing.len > 0) return existing;
+    }
+    const seed: u64 = @intCast(@divTrunc(std.Io.Timestamp.now(zx.io(), .awake).nanoseconds, 1000));
+    var prng = std.Random.DefaultPrng.init(seed);
+    const id = ctx.fmt("{x}", .{prng.random().int(u64)}) catch "anon";
+    ctx.response.cookies.set("visitor_id", id, .{
+        .path = "/",
+        .max_age = 60 * 60 * 24 * 365,
+        .http_only = true,
+        .same_site = .lax,
+    });
+    return id;
+}
+
+fn formatAsked(allocator: zx.Allocator, raw: []const u8) []const u8 {
+    const ts = std.fmt.parseInt(i64, raw, 10) catch
+        return std.fmt.allocPrint(allocator, "Asked on {s}", .{raw}) catch raw;
+    return std.fmt.allocPrint(allocator, "Asked at {d}", .{ts}) catch raw;
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+};
+
+const Navbar = @import("../component.zx").Navbar;
+const db = @import("db.zig");
+
+const zx = @import("zx");
+const std = @import("std");
