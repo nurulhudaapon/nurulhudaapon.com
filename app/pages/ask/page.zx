@@ -265,6 +265,7 @@ fn monthName(index: u8) ?[]const u8 {
 
 pub const options: zx.PageOptions = .{
     .methods = &.{ .GET, .POST },
+    .dynamic = true,
 };
 
 const Navbar = @import("../component.zx").Navbar;
