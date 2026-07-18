@@ -1,4 +1,0 @@
-projects:
-    hashnode:
-        schema: https://gql.hashnode.com
-        include: lib/**/*.*

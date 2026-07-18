@@ -1,6 +1,0 @@
-{
-    "editor.formatOnSave": true,
-    "editor.formatOnType": false,
-    "files.autoSave": "afterDelay",
-    "editor.formatOnSaveMode": "modifications"
-}
