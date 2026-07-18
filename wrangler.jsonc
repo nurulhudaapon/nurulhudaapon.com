@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "next",
+	"name": "nurulhudaapon",
 	"main": "app/main.ts",
 	"compatibility_date": "2026-03-10",
 	"compatibility_flags": [
@@ -9,13 +9,14 @@
 	"kv_namespaces": [
 		{
 			"binding": "KV",
-			"id": "5de66b89266a4b40a98f8bc1d796c629"
+			"id": "2f723ba2ce6c4d2e816369e709427cd7",
 		},
 	],
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_id": "1a373bbd-652c-4f8d-8b0f-464931d46408",
+			"migrations_dir": "./app/db/migrations",
+			"database_id": "13f22d54-6d81-4a60-a1cc-aac07cde60dd"
 		}
 	],
 	"build": {

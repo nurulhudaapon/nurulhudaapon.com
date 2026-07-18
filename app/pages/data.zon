@@ -3,7 +3,7 @@
     .description = "A tech enthusiast, enrolling in Computer Science and Engineering at Green University of Bangladesh and working as a Staff Engineer",
     .author = "Nurul Huda (Apon)",
     .url = "https://nurulhudaapon.com",
-    .og_image = "https://nurulhudaapon.com/social.png",
+    .og_image = "https://nurulhudaapon.com/banner.jpg",
     .social = .{
         .{ .label = "Email", .href = "mailto:me@nurulhudaapon.com", .icon = .email },
         .{ .label = "GitHub", .href = "https://github.com/nurulhudaapon", .icon = .github },
