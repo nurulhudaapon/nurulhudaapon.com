@@ -29,6 +29,12 @@ pub fn build(b: *std.Build) !void {
                 .kv = .enabled,
                 .sqlite = .enabled,
             },
+            .client = .{ 
+                .bindings = .{
+                    .from_source = true,
+                    .install_subdir = "bindings",
+                },
+            },
         },
     });
     ziex_b = ziex_b; // ignore unused

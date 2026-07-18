@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS questions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  question TEXT NOT NULL,
+  answer TEXT,
+  email TEXT,
+  visitor_id TEXT NOT NULL,
+  visitor_json TEXT,
+  created_at TEXT NOT NULL DEFAULT (CAST(unixepoch() AS TEXT)),
+  seen_at TEXT,
+  deleted INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS credentials (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  val TEXT NOT NULL,
+  cat TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS subscribers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (CAST(unixepoch() AS TEXT))
+);

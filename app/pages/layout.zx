@@ -1,4 +1,6 @@
 pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
+    const copyright = formatCopyright(ctx.arena, data.author);
+
     return (
         <html @allocator={ctx.arena} lang="en">
             <head>
@@ -23,7 +25,7 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
             <body>
                 {children}
                 <footer class="site-footer">
-                    <div class="copyright">{data.copyright}</div>
+                    <div class="copyright">{copyright}</div>
                     <div class="social-links">
                         {for (data.social) |link| (
                             if (std.mem.startsWith(u8, link.href, "mailto:")) (
@@ -41,6 +43,13 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
             </body>
         </html>
     );
+}
+
+fn formatCopyright(allocator: zx.Allocator, author: []const u8) []const u8 {
+    const secs: u64 = @intCast(@divTrunc(std.Io.Timestamp.now(zx.io(), .awake).nanoseconds, std.time.ns_per_s));
+    const epoch_secs: std.time.epoch.EpochSeconds = .{ .secs = secs };
+    const year = epoch_secs.getEpochDay().calculateYearDay().year;
+    return std.fmt.allocPrint(allocator, "© {d} {s}.", .{ year, author }) catch author;
 }
 
 fn icon(allocator: zx.Allocator, icon_type: IconType) zx.Component {
@@ -75,7 +84,6 @@ const SiteData = struct {
     author: []const u8,
     url: []const u8,
     og_image: []const u8,
-    copyright: []const u8,
     social: []const Link,
 };
 

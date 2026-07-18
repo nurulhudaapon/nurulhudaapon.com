@@ -4,7 +4,6 @@
     .author = "Nurul Huda (Apon)",
     .url = "https://nurulhudaapon.com",
     .og_image = "https://nurulhudaapon.com/social.png",
-    .copyright = "© 2026 Nurul Huda (Apon).",
     .social = .{
         .{ .label = "Email", .href = "mailto:me@nurulhudaapon.com", .icon = .email },
         .{ .label = "GitHub", .href = "https://github.com/nurulhudaapon", .icon = .github },

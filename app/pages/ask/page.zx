@@ -1,7 +1,4 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    // TODO: run in main.zig, and only in dev mode, for prod use migration scripts
-    try db.ensureSchema();
-
     const visitor_id = ensureVisitorId(ctx);
     handleAction(ctx, visitor_id);
 
@@ -22,7 +19,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const questions = if (is_admin)
         try db.listAll(ctx.arena)
     else blk: {
-        try db.markAnsweredSeen(ctx.arena, visitor_id);
+        try db.markAnsweredSeen(visitor_id);
         break :blk try db.listForVisitor(ctx.arena, visitor_id);
     };
 
@@ -114,12 +111,13 @@ fn QuestionCard(allocator: zx.Allocator, props: struct {
     const is_admin = props.is_admin;
     const admin_cred = props.admin_cred;
     const has_answer = q.answer != null;
-    const item_class = if (has_answer and !q.seen and !is_admin) "ask-item ask-item-new" else "ask-item";
-    const badge_class = if (q.seen) "ask-badge ask-badge-seen" else "ask-badge ask-badge-unseen";
+    const is_seen = q.seen_at != null;
+    const item_class = if (has_answer and !is_seen and !is_admin) "ask-item ask-item-new" else "ask-item";
+    const badge_class = if (is_seen) "ask-badge ask-badge-seen" else "ask-badge ask-badge-unseen";
     const badge_text = if (is_admin)
-        (if (q.seen) "Answered & Seen" else "Answered (Unseen)")
+        (if (is_seen) "Answered & Seen" else "Answered (Unseen)")
     else
-        (if (q.seen) "Answered" else "New Answer!");
+        (if (is_seen) "Answered" else "New Answer!");
     const answer_link_text = if (has_answer) "Update Answer" else "Answer";
     const answer_href = std.fmt.allocPrint(allocator, "/ask?admin={s}&q_id={d}", .{ admin_cred, q.id }) catch "/ask";
     const asked_label = formatAsked(allocator, q.created_at);
@@ -174,7 +172,7 @@ fn handleAction(ctx: zx.PageContext, visitor_id: []const u8) void {
         }
         const ua = ctx.request.headers.get("user-agent") orelse "unknown";
         const visitor_json = ctx.fmt("{{\"userAgent\":\"{s}\"}}", .{ua}) catch "{}";
-        db.insertQuestion(ctx.arena, question, email, visitor_id, visitor_json) catch |err| {
+        db.insertQuestion(question, email, visitor_id, visitor_json) catch |err| {
             zx.log.err("Failed to insert question: {any}", .{err});
             return;
         };
@@ -236,7 +234,33 @@ fn ensureVisitorId(ctx: zx.PageContext) []const u8 {
 fn formatAsked(allocator: zx.Allocator, raw: []const u8) []const u8 {
     const ts = std.fmt.parseInt(i64, raw, 10) catch
         return std.fmt.allocPrint(allocator, "Asked on {s}", .{raw}) catch raw;
-    return std.fmt.allocPrint(allocator, "Asked at {d}", .{ts}) catch raw;
+    if (ts < 0) return std.fmt.allocPrint(allocator, "Asked at {d}", .{ts}) catch raw;
+
+    const epoch_secs = std.time.epoch.EpochSeconds{ .secs = @intCast(ts) };
+    const epoch_day = epoch_secs.getEpochDay();
+    const day_secs = epoch_secs.getDaySeconds();
+    const year_day = epoch_day.calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const month_name = monthName(month_day.month.numeric()) orelse
+        return std.fmt.allocPrint(allocator, "Asked at {d}", .{ts}) catch raw;
+
+    return std.fmt.allocPrint(
+        allocator,
+        "Asked at {s} {d}, {d} {d:0>2}:{d:0>2}",
+        .{
+            month_name,
+            month_day.day_index + 1,
+            year_day.year,
+            day_secs.getHoursIntoDay(),
+            day_secs.getMinutesIntoHour(),
+        },
+    ) catch raw;
+}
+
+fn monthName(index: u8) ?[]const u8 {
+    const months = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    if (index < 1 or index > 12) return null;
+    return months[index - 1];
 }
 
 pub const options: zx.PageOptions = .{
