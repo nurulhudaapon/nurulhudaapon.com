@@ -12,10 +12,6 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: 'pages'
-  cancel-in-progress: false
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,14 +23,6 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: 0.17.0-dev.1413+addc3c3b8
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Install fonts
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fonts-dejavu fonts-liberation fontconfig
 
       - name: Install Node Dependencies
         run: npm install
@@ -60,7 +48,6 @@ jobs:
       name: nurulhudaapon.com
       url: https://nurulhudaapon.com
     runs-on: ubuntu-latest
-    name: Deploy
     needs: [build]
     steps:
       - uses: actions/checkout@v4
