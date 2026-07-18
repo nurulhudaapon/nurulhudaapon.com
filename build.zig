@@ -23,13 +23,13 @@ pub fn build(b: *std.Build) !void {
 
     // --- Ziex setup: wires dependencies and adds `zx`/`dev` build steps ---
     var ziex_b = try ziex.init(b, app_exe, .{
-        .cli = .{ .optimize = optimize },
+        .cli = .{ .optimize = optimize, .zig_path = "zig" },
         .app = .{
             .features = .{
                 .kv = .enabled,
                 .sqlite = .enabled,
             },
-            .client = .{ 
+            .client = .{
                 .bindings = .{
                     .from_source = true,
                     .install_subdir = "bindings",
