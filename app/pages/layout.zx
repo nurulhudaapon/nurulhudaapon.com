@@ -1,5 +1,12 @@
 pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
-    const copyright = formatCopyright(ctx.arena, data.author);
+        const current_year = blk: {
+        const timestamp: i64 = @intCast(@divFloor(std.Io.Timestamp.now(zx.io(), .real).nanoseconds, std.time.ns_per_s));
+        const seconds_per_year = 365.25 * 24 * 60 * 60;
+        const years_since_epoch = @as(i64, @intFromFloat(@as(f64, @floatFromInt(timestamp)) / seconds_per_year));
+        break :blk 1970 + years_since_epoch;
+    };
+    const copyright = ctx.fmt("© {d} {s}.", .{ current_year, data.author }) catch data.author;
+
 
     return (
         <html @allocator={ctx.arena} lang="en">
@@ -43,13 +50,6 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
             </body>
         </html>
     );
-}
-
-fn formatCopyright(allocator: zx.Allocator, author: []const u8) []const u8 {
-    const secs: u64 = @intCast(@divTrunc(std.Io.Timestamp.now(zx.io(), .awake).nanoseconds, std.time.ns_per_s));
-    const epoch_secs: std.time.epoch.EpochSeconds = .{ .secs = secs };
-    const year = epoch_secs.getEpochDay().calculateYearDay().year;
-    return std.fmt.allocPrint(allocator, "© {d} {s}.", .{ year, author }) catch author;
 }
 
 fn icon(allocator: zx.Allocator, icon_type: IconType) zx.Component {

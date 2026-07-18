@@ -1,13 +1,9 @@
 {
-  "name": "next.nurulhudaapon.com",
+  "name": "nurulhudaapon.com",
   "type": "module",
   "scripts": {
-    "build": "wrangler build",
-    "deploy": "wrangler deploy",
+    "deploy": "zig build zx -- export --outdir zig-out/static && wrangler deploy",
     "dev": "wrangler dev"
-  },
-  "dependencies": {
-    "ziex": "0.1.0-dev.1389"
   },
   "devDependencies": {
     "wrangler": "4.100.0"

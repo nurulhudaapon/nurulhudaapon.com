@@ -1,0 +1,83 @@
+name: nurulhudaapon.com
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev.1413+addc3c3b8
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu fonts-liberation fontconfig
+
+      - name: Install Node Dependencies
+        run: npm install
+
+      - name: Build
+        run: zig build zx -- export --outdir zig-out/static
+
+      - name: Bundle
+        run: npx wrangler deploy --dry-run --outdir .wrangler-artifact --assets ./zig-out/static
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifact
+          path: |
+            .wrangler-artifact
+            zig-out/static
+          include-hidden-files: true
+          retention-days: 1
+
+  deploy:
+    environment:
+      name: nurulhudaapon.com
+      url: https://nurulhudaapon.com
+    runs-on: ubuntu-latest
+    name: Deploy
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+
+      - name: Disable custom build (artifact is prebuilt)
+        run: |
+          sed -i '/"build": {/,/^\t},$/d' wrangler.jsonc
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: 4
+          command: deploy .wrangler-artifact/main.js --no-bundle --assets ./zig-out/static
