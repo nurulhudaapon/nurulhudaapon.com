@@ -1,0 +1,61 @@
+{
+  "name": "nurulhudaapon.com",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "deploy": "next build && bun run restart",
+    "restart": "docker compose down && docker compose up -d",
+    "serve": "bunx serve out -l 3000",
+    "format": "prettier --write .",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@next/third-parties": "^16.1.6",
+    "mongodb": "^7.1.0",
+    "next": "^16.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.0",
+    "@types/node": "^25.3.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vercel/og": "^0.8.6",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "next-mdx-remote": "^6.0.0",
+    "prettier": "^3.8.1",
+    "rehype-autolink-headings": "^7.1.0",
+    "rehype-code-titles": "^1.2.1",
+    "rehype-prism-plus": "^2.0.2",
+    "rehype-slug": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "tailwindcss": "^4.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "lint-staged": {
+    "**/*": "prettier --write --ignore-unknown"
+  },
+  "prettier": {
+    "semi": true,
+    "singleQuote": true,
+    "trailingComma": "all",
+    "printWidth": 120,
+    "tabWidth": 2
+  },
+  "browserslist": [
+    "last 2 Chrome versions",
+    "last 2 Edge versions",
+    "last 2 Safari versions",
+    "last 2 Firefox versions",
+    "last 2 iOS versions",
+    "last 2 ChromeAndroid versions",
+    "supports es6-module"
+  ]
+}
