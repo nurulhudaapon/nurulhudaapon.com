@@ -4,13 +4,14 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'app/**/*'
+      - 'build.zig'
+      - 'build.zig.zon'
+      - 'wrangler.jsonc'
+      - '.github/workflows/cd.yml'
 
   workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
 
 jobs:
   build:
