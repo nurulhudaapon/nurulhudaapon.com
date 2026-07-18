@@ -1,102 +1,29 @@
-# Ziex App
 
->This is a blog site built using [Ziex](https://ziex.dev), a full-stack web framework for Zig.
+<div style="margin:0;overflow:hidden;border-radius:20px;height:360px;">
+    <img src="app/public/banner.jpg" alt="nuhu.dev social preview" style="width:100%;height:100%;object-fit:cover;object-position:center;display:block;" />
+</div>
 
-**[Documentation →](https://ziex.dev)**
+<p></p>
+<p align="center">
+	<a href="https://nurulhudaapon.com">Website</a> ·
+	<a href="https://nuhu.dev/labs">Labs</a> ·
+	<a href="https://nuhu.dev/oss">OSS</a>
+</p>
 
----
+## Developing
+Requirements: `zig` (0.17.0-dev.1398)
 
-## Getting Started
-
-### 1. Install ZX CLI
-
-#### Linux/macOS
-```bash
-curl -fsSL https://ziex.dev/install | bash
-```
-
-#### Windows
-```powershell
-powershell -c "irm ziex.dev/install.ps1 | iex"
-```
-
-### 2. Install Zig
-```bash
-brew install zig # macOS
-winget install -e --id zig.zig # Windows
-```
-[_Other platforms →_](https://ziglang.org/learn/getting-started/)
-
-
----
-
-## Project
-
-```
-├── app/
-│   ├── assets/         # Static assets (CSS, images, etc)
-│   ├── main.zig        # Zig entrypoint
-│   ├── pages/          # Pages (Zig/ZX)
-│   │   ├── layout.zx   # Root layout
-│   │   ├── page.zx     # Home page
-│   │   ├── client.zx   # Client side counter component
-│   │   └── ...
-│   └── public/         # Public static files (favicon, etc)
-├── build.zig           # Zig build script
-├── build.zig.zon       # Zig package manager config
-└── README.md           # Project info
-```
-
----
-
-## Usage
-
-### Development
+Start dev server (http://localhost:3000):
 ```bash
 zig build dev
 ```
-App will be available at [`http://localhost:3000`](http://localhost:3000). with hot reload enabled.
 
-### Serve Production Build
-```bash
-zig build serve --release=fast
-```
+Build static site (output in `dist/`):
 
-### Exporting as Static Site
 ```bash
 zig build zx -- export
 ```
-This will create a `dist/` directory with the static export of your app. You can deploy the contents of `dist/` to any static hosting provider (Netlify, Vercel, GitHub Pages, etc) or serve it with any static file server.
+Built with
 
-### Deployment
-
-```bash
-zig build zx -- bundle
-```
-
-This will create a `bundle/` directory with the binary and static assets needed to run your app. You can deploy the contents of `bundle/` to any VPS.
-
-
-### [ZX CLI](https://ziex.dev/docs#cli) Commands
-```bash
-zig build zx -- [command] [options]
-```
-
-All ZX CLI commands are available under `zig build zx -- [command]`. For example, to run auto formatter:
-```bash
-zig build zx -- fmt .
-```
-
----
-
-## Contributing
-
-Contributions are welcome! Feel free to open issues or pull requests. For feature requests, bug reports, or questions, see the [Ziex Repo](https://github.com/nurulhudaapon/ziex).
-
-
-
-## Links
-
-- [Ziex Documentation](https://ziex.dev)
-- [Ziex GitHub](https://github.com/nurulhudaapon/ziex)
-- [Zig Language](https://ziglang.org/)
+- Ziex: https://ziex.dev
+- Zig: https://ziglang.org
