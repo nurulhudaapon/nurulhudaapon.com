@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) !void {
             },
             .client = .{
                 .bindings = .{
-                    .from_source = true,
+                    .build = .enabled,
                     .install_subdir = "bindings",
                 },
             },

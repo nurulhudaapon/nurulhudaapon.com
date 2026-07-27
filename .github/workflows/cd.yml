@@ -23,7 +23,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.17.0-dev.1422+e863bf3be
+          version: 0.17.0-dev.1456+2b1c6633a
 
       - name: Install Node Dependencies
         run: npm install
