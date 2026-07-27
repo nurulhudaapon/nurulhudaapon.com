@@ -25,14 +25,11 @@ jobs:
         with:
           version: 0.17.0-dev.1456+2b1c6633a
 
-      - name: Install Node Dependencies
-        run: npm install
-
       - name: Build
         run: zig build zx -- export --outdir zig-out/static
 
       - name: Bundle
-        run: npx wrangler deploy --dry-run --outdir .wrangler-artifact --assets ./zig-out/static
+        run: npx wrangler@4.100.0 deploy --dry-run --outdir .wrangler-artifact --assets ./zig-out/static
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
