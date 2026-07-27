@@ -8,7 +8,7 @@ pub fn build(b: *std.Build) !void {
 
     // --- Ziex App Executable ---
     const app_exe = b.addExecutable(.{
-        .name = "ziex_app",
+        .name = "nurulhudaapon_com",
         .root_module = b.createModule(.{
             .root_source_file = b.path("app/main.zig"),
             .target = target,

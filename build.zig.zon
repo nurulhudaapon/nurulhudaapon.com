@@ -1,7 +1,7 @@
 .{
-    .name = .zx_site_portfolio,
+    .name = .nurulhudaapon_com,
     .version = "3.0.0",
-    .fingerprint = 0xf74ff4be25271f5a,
+    .fingerprint = 0x1f61349d936904f0,
     .minimum_zig_version = "0.17.0-dev.1456+2b1c6633a",
     .dependencies = .{
         .ziex = .{
