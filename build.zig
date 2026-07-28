@@ -31,9 +31,11 @@ pub fn build(b: *std.Build) !void {
             },
             .client = .{
                 .bindings = .{
+                    .link = false,
                     .build = .enabled,
                     .install_subdir = "bindings",
                 },
+                .wasm = .disabled,
             },
         },
     });
