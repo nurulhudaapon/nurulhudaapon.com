@@ -26,7 +26,7 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                 <meta name="twitter:description" content={data.description} />
                 <meta name="twitter:image" content={data.og_image} />
                 <link rel="icon" href="/favicon.ico" sizes="32x32" type="image/x-icon" />
-                <link rel="preload" href="/fonts/geist-sans.woff2" as="font" type="font/woff2" crossorigin="" />
+                // <link rel="preload" href="/fonts/geist-sans.woff2" as="font" type="font/woff2" crossorigin="" />
                 <link rel="stylesheet" href="/assets/style.css" />
             </head>
             <body>
