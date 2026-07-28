@@ -115,6 +115,68 @@ pub fn collectHashnodeImageParams(allocator: std.mem.Allocator) GetPostError![][
     };
 }
 
+const blog_image_prefix = "/blog/images/";
+
+/// Collect catch-all image params (`v…/file.png`) for `/blog/images/[..]`.
+pub fn collectBlogImageParams(allocator: std.mem.Allocator) GetPostError![][]const u8 {
+    const archive = git.fetchDefaultArchive(allocator) catch |err| {
+        std.log.err("Failed to fetch blog archive for blog images: {any}", .{err});
+        return error.FailedToFetchPosts;
+    };
+
+    var seen: std.StringArrayHashMapUnmanaged(void) = .empty;
+    defer seen.deinit(allocator);
+
+    var out: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (out.items) |p| allocator.free(p);
+        out.deinit(allocator);
+    }
+
+    var it = archive.files.iterator();
+    while (it.next()) |entry| {
+        const path = entry.key_ptr.*;
+        if (std.mem.startsWith(u8, path, "draft-")) continue;
+        try collectBlogImageParamsFromSource(allocator, entry.value_ptr.*, &seen, &out);
+    }
+
+    return try out.toOwnedSlice(allocator);
+}
+
+fn collectBlogImageParamsFromSource(
+    allocator: std.mem.Allocator,
+    source: []const u8,
+    seen: *std.StringArrayHashMapUnmanaged(void),
+    out: *std.ArrayList([]const u8),
+) !void {
+    var start: usize = 0;
+    while (start < source.len) {
+        const at = std.mem.indexOfPos(u8, source, start, blog_image_prefix) orelse break;
+        var end = at + blog_image_prefix.len;
+        while (end < source.len and !isBlogImageUrlEnd(source[end])) : (end += 1) {}
+
+        const rest = source[at + blog_image_prefix.len .. end];
+        if (rest.len > 0) {
+            const key = try allocator.dupe(u8, rest);
+            const gop = try seen.getOrPut(allocator, key);
+            if (gop.found_existing) {
+                allocator.free(key);
+            } else {
+                gop.key_ptr.* = key;
+                try out.append(allocator, key);
+            }
+        }
+        start = end;
+    }
+}
+
+fn isBlogImageUrlEnd(c: u8) bool {
+    return switch (c) {
+        ' ', '\t', '\n', '\r', ')', '"', '\'', '<', '>', ']', '?', '#' => true,
+        else => false,
+    };
+}
+
 fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const u8, with_html: bool) !Post {
     const split = try splitFrontmatter(source);
     const fm = try parseFrontmatterFields(split.meta);

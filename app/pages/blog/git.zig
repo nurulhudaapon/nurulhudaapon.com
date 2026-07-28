@@ -10,18 +10,28 @@ pub const Archive = struct {
 };
 
 pub const Repository = struct {
-    url: []const u8,
+    url: []const u8 = "",
     ref: ?[]const u8 = null,
 };
 
 const default_repo: Repository = .{
     .url = "https://github.com/nurulhudaapon/blogs",
     .ref = "main",
+    // .url = "file://../blogs",
 };
 
-/// Download a repository (or load a cached tarball from `zx.kv`) and return
-/// an in-memory archive of its `.md` files.
+/// Load `.md` files from a local `file://` directory, or download a repository
+/// (cached in `zx.kv`) and return an in-memory archive.
 pub fn fetchArchive(allocator: std.mem.Allocator, repo: Repository) !Archive {
+    if (fileUrlPath(repo.url)) |local_path| {
+        const archive = try archiveFromDirectory(allocator, local_path);
+        zx.log.debug("git.fetchArchive: loaded local path={s} files={d}", .{
+            local_path,
+            archive.files.count(),
+        });
+        return archive;
+    }
+
     const gz = try fetchTarballCached(allocator, repo);
     defer allocator.free(gz);
     return try archiveFromTarball(allocator, gz);
@@ -29,6 +39,136 @@ pub fn fetchArchive(allocator: std.mem.Allocator, repo: Repository) !Archive {
 
 pub fn fetchDefaultArchive(allocator: std.mem.Allocator) !Archive {
     return fetchArchive(allocator, default_repo);
+}
+
+/// Read top-level `.md` files from a local directory into an archive.
+pub fn archiveFromDirectory(allocator: std.mem.Allocator, dir_path: []const u8) !Archive {
+    const io = std.Io.Threaded.global_single_threaded.io();
+
+    var dir = if (std.fs.path.isAbsolute(dir_path))
+        try std.Io.Dir.openDirAbsolute(io, dir_path, .{ .iterate = true })
+    else
+        try std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true });
+    defer dir.close(io);
+
+    var archive: Archive = .{ .files = .empty };
+    errdefer {
+        var it = archive.files.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        archive.files.deinit(allocator);
+    }
+
+    var file_count: usize = 0;
+    var total_bytes: usize = 0;
+    var skipped_non_md: usize = 0;
+
+    var it = dir.iterateAssumeFirstIteration();
+    while (try it.next(io)) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".md")) {
+            skipped_non_md += 1;
+            continue;
+        }
+
+        const value = try dir.readFileAlloc(io, entry.name, allocator, .unlimited);
+        errdefer allocator.free(value);
+        const key = try allocator.dupe(u8, entry.name);
+        errdefer allocator.free(key);
+        try archive.files.put(allocator, key, value);
+        file_count += 1;
+        total_bytes += value.len;
+    }
+
+    zx.log.debug("git.archiveFromDirectory: path={s} files={d} bytes={d} skipped={d}", .{
+        dir_path,
+        file_count,
+        total_bytes,
+        skipped_non_md,
+    });
+    return archive;
+}
+
+/// Local blogs directory from `default_repo`'s `file://` URL, if configured.
+pub fn defaultLocalPath() ?[]const u8 {
+    return fileUrlPath(default_repo.url);
+}
+
+/// Read a file from the blogs repo (`file://` disk or GitHub raw + KV cache).
+/// `relative_path` must be a safe relative path (no `..`, no absolute).
+pub fn readRepoFile(allocator: std.mem.Allocator, relative_path: []const u8) ![]u8 {
+    if (!isSafeRelativePath(relative_path)) return error.InvalidPath;
+
+    if (fileUrlPath(default_repo.url)) |root| {
+        return try readLocalFile(allocator, root, relative_path);
+    }
+
+    return try fetchRemoteFileCached(allocator, default_repo, relative_path);
+}
+
+fn readLocalFile(allocator: std.mem.Allocator, root: []const u8, relative_path: []const u8) ![]u8 {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var dir = if (std.fs.path.isAbsolute(root))
+        try std.Io.Dir.openDirAbsolute(io, root, .{})
+    else
+        try std.Io.Dir.cwd().openDir(io, root, .{});
+    defer dir.close(io);
+
+    return try dir.readFileAlloc(io, relative_path, allocator, .unlimited);
+}
+
+fn fetchRemoteFileCached(allocator: std.mem.Allocator, repo: Repository, relative_path: []const u8) ![]u8 {
+    const parsed = try parseGitHubUrl(repo.url);
+    const ref = repo.ref orelse "HEAD";
+    const cache_key = try std.fmt.allocPrint(allocator, "file:{s}/{s}:{s}:{s}", .{
+        parsed.owner,
+        parsed.repo,
+        ref,
+        relative_path,
+    });
+    defer allocator.free(cache_key);
+
+    const blogs_kv = zx.kv.scoped(.blogs);
+    if (try blogs_kv.get(allocator, cache_key)) |cached| {
+        zx.log.debug("git.fetchRemoteFileCached: kv hit key={s} bytes={d}", .{ cache_key, cached.len });
+        return cached;
+    }
+
+    const url = try std.fmt.allocPrint(
+        allocator,
+        "https://raw.githubusercontent.com/{s}/{s}/{s}/{s}",
+        .{ parsed.owner, parsed.repo, ref, relative_path },
+    );
+    defer allocator.free(url);
+
+    zx.log.debug("git.fetchRemoteFileCached: kv miss key={s}, downloading", .{cache_key});
+    const body = fetchBytes(allocator, url, .{}) catch |err| switch (err) {
+        error.RepositoryNotFound => return error.FileNotFound,
+        else => return err,
+    };
+    errdefer allocator.free(body);
+
+    try blogs_kv.put(cache_key, body, .{});
+    return body;
+}
+
+fn isSafeRelativePath(path: []const u8) bool {
+    if (path.len == 0) return false;
+    if (path[0] == '/' or path[0] == '\\') return false;
+    var parts = std.mem.splitAny(u8, path, "/\\");
+    while (parts.next()) |part| {
+        if (part.len == 0) continue;
+        if (std.mem.eql(u8, part, ".") or std.mem.eql(u8, part, "..")) return false;
+    }
+    return true;
+}
+
+fn fileUrlPath(url: []const u8) ?[]const u8 {
+    if (!std.mem.startsWith(u8, url, "file://")) return null;
+    const path = url["file://".len..];
+    return if (path.len > 0) path else null;
 }
 
 /// Fetch the raw GitHub tarball bytes, using `zx.kv` as a persistent cache.
