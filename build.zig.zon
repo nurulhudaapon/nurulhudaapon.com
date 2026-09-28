@@ -2,15 +2,15 @@
     .name = .nuhu_dev,
     .version = "0.1.0",
     .fingerprint = 0xb6da4707ea599fe0,
-    .minimum_zig_version = "0.17.0-dev.2131+d08989840",
+    .minimum_zig_version = "0.17.0-dev.2320+1e770dbef",
     .dependencies = .{
         .ziex = .{
-            .url = "git+https://github.com/ziex-dev/ziex#030ae03f531cf24943ede1ab7e337c58455d7d89",
-            .hash = "ziex-0.1.0-dev-Z3YcvXfCmwG7l7nGY0oqd1CoOCUGcYV7gVKU3xfjZHHk",
+            .url = "git+https://github.com/ziex-dev/ziex#ebdaafc5b9143cfb7a5ba9ce6bb24675e1fc9823",
+            .hash = "ziex-0.1.0-dev-Z3YcvXzCmwHfKL-gJHRrrRFdHT8auVyI32siy27C3RDQ",
         },
         .lunasvg = .{
-            .url = "git+https://github.com/nuhulabs/lunasvg.git#3a977d33d137795f04f3dd7df00298f1d1b729de",
-            .hash = "lunasvg-0.0.0-9mEwLqAcAABMUDN1zRkpqiP0vtANX3cPTcomKCm-9X6w",
+            .url = "git+https://github.com/nuhulabs/lunasvg.git#a3c19981a7cef75440444b401485c693c3962c53",
+            .hash = "lunasvg-0.0.0-9mEwLiMRAQDctmwhbMAwCACtK02EefOHg0YIg1K3hHUf",
         },
     },
     .paths = .{

@@ -27,5 +27,16 @@ pub fn build(b: *std.Build) !void {
     }).module("lunasvg"));
 
     // --- ziex setup: wires dependencies and adds `ziex`/`dev` build steps ---
-    _ = try ziex.init(b, app_exe, .{ .cli = .{ .optimize = optimize } });
+    _ = try ziex.init(b, app_exe, .{
+        .cli = .{ .optimize = optimize },
+        .app = .{
+            .server = .{ .backend = .std },
+            .client = .{
+                .bindings = .{
+                    .build = .enabled,
+                    .install_subdir = "bindings",
+                },
+            },
+        },
+    });
 }
