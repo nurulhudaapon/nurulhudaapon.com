@@ -11,7 +11,7 @@
 </p>
 
 ## Developing
-Requirements: `zig` (0.17.0-dev.1398)
+Requirements: `zig` (0.17.0)
 
 Start dev server (http://localhost:3000):
 ```bash
