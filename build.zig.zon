@@ -2,11 +2,11 @@
     .name = .nurulhudaapon_com,
     .version = "3.0.0",
     .fingerprint = 0x1f61349d936904f0,
-    .minimum_zig_version = "0.17.0-dev.1456+2b1c6633a",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .ziex = .{
-            .url = "git+https://github.com/ziex-dev/ziex#53f7faffc86eef43a0ffe7c68d89c6e2f2d39100",
-            .hash = "ziex-0.1.0-dev-Z3YcvWU-lwEjA17uRPFGod40NbC6DUrGKCb74LhIjaY1",
+            .url = "git+https://github.com/ziex-dev/ziex#2806404ce6c4e953e1a039d7521be928e1337cd3",
+            .hash = "ziex-0.1.0-dev-Z3YcvU0ZnAF7FhTmc5i7e3Lio2Vq9tGWvIbuAI9jHBiT",
         },
         .markz = .{
             .url = "git+https://codeberg.org/nurulhudaapon/markz.git?ref=zig-0.17#19af600075fc60775e89a3430dadd94299b13e14",
