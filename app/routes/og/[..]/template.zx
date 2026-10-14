@@ -43,6 +43,7 @@ fn SiteOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
                     width="284"
                     height="284"
                     preserveAspectRatio="xMidYMid slice"
+                    clip-path="url(#avatar_clip)"
                 />
 
                 <g font-family="'Geist', Arial, sans-serif" letter-spacing="0em">
@@ -95,6 +96,9 @@ fn SiteOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
                 <clipPath id="clip0_og">
                     <path fill="#fff" d="M0 0h1200v630H0z" />
                 </clipPath>
+                <clipPath id="avatar_clip">
+                    <circle cx="307" cy="315" r="142" />
+                </clipPath>
             </defs>
         </svg>
     );
@@ -126,6 +130,7 @@ fn BlogOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
                     width="284"
                     height="284"
                     preserveAspectRatio="xMidYMid slice"
+                    clip-path="url(#avatar_clip_blog)"
                 />
 
                 <g font-family="'Geist', Arial, sans-serif" letter-spacing="0em">
@@ -175,6 +180,9 @@ fn BlogOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
             <defs>
                 <clipPath id="clip0_blog_og">
                     <path fill="#fff" d="M0 0h1200v630H0z" />
+                </clipPath>
+                <clipPath id="avatar_clip_blog">
+                    <circle cx="307" cy="315" r="142" />
                 </clipPath>
             </defs>
         </svg>

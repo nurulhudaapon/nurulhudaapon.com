@@ -1,8 +1,18 @@
 pub fn GET(ctx: zx.RouteContext) !void {
-    ensureOgFonts();
-
     const pathname = ctx.request.pathname;
     const og_name = pathname["/og/".len..(pathname.len - ".png".len)];
+
+    // Static avatar: GitHub profile photo, cached and exported at /og/avatar.png
+    if (std.mem.eql(u8, og_name, "avatar")) {
+        const bytes = try avatar.fetch(ctx.arena);
+        ctx.response.text(bytes);
+        ctx.response.setContentType(avatar.contentType(bytes));
+        ctx.response.headers.add("Cache-Control", "public, max-age=86400");
+        return;
+    }
+
+    ensureOgFonts();
+
     var og_data = try getOgImageData(ctx.arena, og_name);
 
     if (try queryText(ctx, "title")) |title| {
@@ -12,7 +22,7 @@ pub fn GET(ctx: zx.RouteContext) !void {
     if (try queryText(ctx, "subtitle")) |subtitle| og_data.subtitle = subtitle;
     if (try queryText(ctx, "meta")) |meta| og_data.meta = meta;
 
-    og_data.avatar_href = try avatarDataUri(ctx.arena);
+    og_data.avatar_href = try avatar.dataUri(ctx.arena);
 
     const og_template = OgTemplate(ctx.arena, og_data);
     var aw = std.Io.Writer.Allocating.init(ctx.arena);
@@ -46,14 +56,6 @@ fn ensureOgFonts() void {
 }
 
 var fonts_registered: std.atomic.Value(bool) = .init(false);
-
-fn avatarDataUri(allocator: std.mem.Allocator) ![]const u8 {
-    const png = @embedFile("../../../assets/og/avatar.png");
-    const Encoder = std.base64.standard.Encoder;
-    const b64 = try allocator.alloc(u8, Encoder.calcSize(png.len));
-    _ = Encoder.encode(b64, png);
-    return try std.fmt.allocPrint(allocator, "data:image/png;base64,{s}", .{b64});
-}
 
 fn getOgImageData(allocator: std.mem.Allocator, path: []const u8) !OgTemplateProps {
     for (og_images) |og_image| {
@@ -208,6 +210,8 @@ const og_images = [_]OgTemplateProps{
 };
 
 fn staticParams(ctx: *zx.StaticContext) !void {
+    try ctx.params.add(.{ .@"*" = "avatar.png" });
+
     inline for (og_images) |og_image| {
         try ctx.params.add(.{ .@"*" = og_image.path ++ ".png" });
     }
@@ -224,6 +228,7 @@ pub const options = zx.RouteOptions{
 
 const OgTemplate = @import("template.zx").OgTemplate;
 const OgTemplateProps = @import("template.zx").OgTemplateProps;
+const avatar = @import("../avatar.zig");
 const posts = @import("../../../pages/blog/posts.zig");
 
 const geist_fonts = @import("geist_fonts");
