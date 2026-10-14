@@ -1,17 +1,14 @@
-
-<div style="margin:0;overflow:hidden;border-radius:20px;height:360px;">
-    <img src="https://nurulhudaapon.com/og/home.png" alt="nurulhudaapon.com social preview" style="width:100%;height:100%;object-fit:cover;object-position:center;display:block;" />
-</div>
-
+<img src="https://nurulhudaapon.com/og/home.png" alt="nurulhudaapon.com social preview"  />
 <p></p>
 <p align="center">
-	<a href="https://nurulhudaapon.com">Website</a> ·
-	<a href="https://nuhu.dev/labs">Labs</a> ·
-	<a href="https://nuhu.dev/oss">OSS</a>
+	<a href="https://nurulhudaapon.com">Home</a> ·
+	<a href="https://nurulhudaapon.com/blog">Blog</a> ·
+	<a href="https://nurulhudaapon.com/about">About</a>
+	<a href="https://nuhu.dev">Development</a>
 </p>
 
 ## Developing
-Requirements: `zig` (0.17.0)
+Requirements: `zig` ([version](https://github.com/nurulhudaapon/nurulhudaapon.com/blob/main/build.zig.zon#L5))
 
 Start dev server (http://localhost:3000):
 ```bash
