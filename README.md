@@ -3,7 +3,7 @@
 <p align="center">
 	<a href="https://nurulhudaapon.com">Home</a> ·
 	<a href="https://nurulhudaapon.com/blog">Blog</a> ·
-	<a href="https://nurulhudaapon.com/about">About</a>
+	<a href="https://nurulhudaapon.com/about">About</a> ·
 	<a href="https://nuhu.dev">Development</a>
 </p>
 
