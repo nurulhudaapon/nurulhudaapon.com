@@ -19,7 +19,7 @@ pub fn Page(ctx: zx.PageContext) zx.Component {
                     width="280"
                     height="280"
                     fetchpriority="high"
-                    src="/nurulhudaapon.webp"
+                    src="/assets/og/avatar.png"
                 />
             </div>
         </main>

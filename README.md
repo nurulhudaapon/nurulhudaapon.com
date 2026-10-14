@@ -1,6 +1,6 @@
 
 <div style="margin:0;overflow:hidden;border-radius:20px;height:360px;">
-    <img src="app/public/banner.jpg" alt="nuhu.dev social preview" style="width:100%;height:100%;object-fit:cover;object-position:center;display:block;" />
+    <img src="https://nurulhudaapon.com/og/home.png" alt="nurulhudaapon.com social preview" style="width:100%;height:100%;object-fit:cover;object-position:center;display:block;" />
 </div>
 
 <p></p>

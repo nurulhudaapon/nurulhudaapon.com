@@ -1,0 +1,202 @@
+pub const OgKind = enum { site, blog };
+
+pub const OgTemplateProps = struct {
+    kind: OgKind = .site,
+    path: []const u8,
+    title: []const u8,
+    subtitle: []const u8,
+    domain: []const u8 = "nurulhudaapon.com",
+    author: []const u8 = "Nurul Huda (Apon)",
+    meta: []const u8 = "",
+    avatar_href: []const u8,
+    title_lines: []const []const u8 = &.{},
+    title_size: u32 = 48,
+};
+
+pub fn OgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component {
+    if (props.kind == .blog) return BlogOgTemplate(allocator, props);
+    return SiteOgTemplate(allocator, props);
+}
+
+fn SiteOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component {
+    const lines = if (props.title_lines.len > 0) props.title_lines else &.{props.title};
+    const is_home = std.mem.eql(u8, props.path, "home");
+
+    return (
+        <svg
+            @allocator={allocator}
+            xmlns="http://www.w3.org/2000/svg"
+            xmlns:xlink="http://www.w3.org/1999/xlink"
+            width="1200"
+            height="630"
+            fill="none"
+        >
+            <g clip-path="url(#clip0_og)">
+                <path fill="#000" d="M0 0h1200v630H0z" />
+
+                <circle cx="307" cy="315" r="144" fill="#141414" stroke="#2a2a2a" stroke-width="2" />
+                <image
+                    href={props.avatar_href}
+                    xlink:href={props.avatar_href}
+                    x="165"
+                    y="173"
+                    width="284"
+                    height="284"
+                    preserveAspectRatio="xMidYMid slice"
+                />
+
+                <g font-family="'Geist', Arial, sans-serif" letter-spacing="0em">
+                    {for (lines, 0..) |line, i| (
+                        <text
+                            xml:space="preserve"
+                            fill="#ffffff"
+                            font-size={props.title_size}
+                            font-weight="bold"
+                            style="white-space:pre"
+                        >
+                            <tspan x="490" y={248 + @as(i32, @intCast(i)) * @as(i32, @intCast(props.title_size + 6))}>{line}</tspan>
+                        </text>
+                    )}
+
+                    {if (is_home) (
+                        <g font-size="22" font-weight="normal">
+                            <text xml:space="preserve" fill="#a3a3a3" style="white-space:pre">
+                                <tspan x="490" y="318">Building high quality software for companies and</tspan>
+                            </text>
+                            <text xml:space="preserve" style="white-space:pre">
+                                <tspan x="490" y="350" fill="#a3a3a3">crafting </tspan>
+                                <tspan fill="#ffffff" font-weight="bold">Ziex</tspan>
+                                <tspan fill="#a3a3a3">, a full-stack web framework for </tspan>
+                                <tspan fill="#ffffff" font-weight="bold">Zig</tspan>
+                            </text>
+                        </g>
+                    ) else (
+                        <g fill="#a3a3a3" font-size="22" font-weight="normal">
+                            {for (wrapPlain(props.subtitle), 0..) |line, i| (
+                                <text xml:space="preserve" style="white-space:pre">
+                                    <tspan x="490" y={318 + @as(i32, @intCast(i)) * 32}>{line}</tspan>
+                                </text>
+                            )}
+                        </g>
+                    )}
+
+                    <text
+                        xml:space="preserve"
+                        fill="#ffffff"
+                        font-size="44"
+                        font-weight="bold"
+                        style="white-space:pre"
+                    >
+                        <tspan x="490" y="448">{props.domain}</tspan>
+                    </text>
+                </g>
+            </g>
+            <defs>
+                <clipPath id="clip0_og">
+                    <path fill="#fff" d="M0 0h1200v630H0z" />
+                </clipPath>
+            </defs>
+        </svg>
+    );
+}
+
+fn BlogOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component {
+    const lines = if (props.title_lines.len > 0) props.title_lines else &.{props.title};
+    const line_gap: i32 = @intCast(props.title_size + 10);
+    const title_start_y: i32 = if (lines.len > 2) 210 else 230;
+
+    return (
+        <svg
+            @allocator={allocator}
+            xmlns="http://www.w3.org/2000/svg"
+            xmlns:xlink="http://www.w3.org/1999/xlink"
+            width="1200"
+            height="630"
+            fill="none"
+        >
+            <g clip-path="url(#clip0_blog_og)">
+                <path fill="#000" d="M0 0h1200v630H0z" />
+
+                <circle cx="307" cy="315" r="144" fill="#141414" stroke="#2a2a2a" stroke-width="2" />
+                <image
+                    href={props.avatar_href}
+                    xlink:href={props.avatar_href}
+                    x="165"
+                    y="173"
+                    width="284"
+                    height="284"
+                    preserveAspectRatio="xMidYMid slice"
+                />
+
+                <g font-family="'Geist', Arial, sans-serif" letter-spacing="0em">
+                    <text
+                        xml:space="preserve"
+                        fill="#737373"
+                        font-size="20"
+                        font-weight="bold"
+                        style="white-space:pre"
+                    >
+                        <tspan x="500" y="190">BLOG</tspan>
+                    </text>
+
+                    {for (lines, 0..) |line, i| (
+                        <text
+                            xml:space="preserve"
+                            fill="#ffffff"
+                            font-size={props.title_size}
+                            font-weight="bold"
+                            style="white-space:pre"
+                        >
+                            <tspan x="500" y={title_start_y + @as(i32, @intCast(i)) * line_gap}>{line}</tspan>
+                        </text>
+                    )}
+
+                    <text
+                        xml:space="preserve"
+                        fill="#a3a3a3"
+                        font-size="22"
+                        font-weight="normal"
+                        style="white-space:pre"
+                    >
+                        <tspan x="500" y="400">{props.meta}</tspan>
+                    </text>
+
+                    <text
+                        xml:space="preserve"
+                        fill="#ffffff"
+                        font-size="36"
+                        font-weight="bold"
+                        style="white-space:pre"
+                    >
+                        <tspan x="500" y="460">{props.domain}</tspan>
+                    </text>
+                </g>
+            </g>
+            <defs>
+                <clipPath id="clip0_blog_og">
+                    <path fill="#fff" d="M0 0h1200v630H0z" />
+                </clipPath>
+            </defs>
+        </svg>
+    );
+}
+
+fn wrapPlain(text: []const u8) []const []const u8 {
+    // Static fallbacks for known page subtitles (avoids allocator in template).
+    if (text.len == 0) return &.{};
+    if (std.mem.eql(u8, text, "Building high quality software for companies and crafting Ziex, a full-stack web framework for Zig."))
+        return &.{
+            "Building high quality software for companies and",
+            "crafting Ziex, a full-stack web framework for Zig.",
+        };
+    if (std.mem.eql(u8, text, "Writing and notes"))
+        return &.{ "Writing and notes from Nurul Huda (Apon)" };
+    if (std.mem.eql(u8, text, "Pick a time and let's talk"))
+        return &.{ "Pick a time that works for you and let's talk" };
+    if (std.mem.eql(u8, text, "Anonymously ask me anything"))
+        return &.{ "Anonymously ask me anything" };
+    return &.{text};
+}
+
+const zx = @import("zx");
+const std = @import("std");

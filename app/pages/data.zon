@@ -1,9 +1,9 @@
 .{
     .title = "Nurul Huda (Apon)",
-    .description = "A tech enthusiast, enrolling in Computer Science and Engineering at Green University of Bangladesh and working as a Staff Engineer",
+    .description = "Building high quality software for companies and crafting Ziex, a full-stack web framework for Zig.",
     .author = "Nurul Huda (Apon)",
     .url = "https://nurulhudaapon.com",
-    .og_image = "https://nurulhudaapon.com/banner.jpg",
+    .og_image = "https://nurulhudaapon.com/og/home.png",
     .social = .{
         .{ .label = "Email", .href = "mailto:me@nurulhudaapon.com", .icon = .email },
         .{ .label = "GitHub", .href = "https://github.com/nurulhudaapon", .icon = .github },

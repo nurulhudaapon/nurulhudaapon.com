@@ -37,5 +37,26 @@ pub fn build(b: *std.Build) !void {
             },
         },
     });
-    ziex_b = ziex_b; // ignore unused
+
+    ziex_b.addImport("lunasvg", b.dependency("lunasvg", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("lunasvg"));
+
+    ziex_b.addImport("geist_fonts", addGeistFontsModule(b));
+}
+
+fn addGeistFontsModule(b: *std.Build) *std.Build.Module {
+    const geist = b.dependency("geist_font", .{});
+    const wf = b.addWriteFiles();
+    _ = wf.addCopyFile(geist.path("Geist/ttf/Geist-Regular.ttf"), "Geist-Regular.ttf");
+    _ = wf.addCopyFile(geist.path("Geist/ttf/Geist-Bold.ttf"), "Geist-Bold.ttf");
+    const root = wf.add("root.zig",
+        \\pub const regular = @embedFile("Geist-Regular.ttf");
+        \\pub const bold = @embedFile("Geist-Bold.ttf");
+        \\
+    );
+    return b.createModule(.{
+        .root_source_file = root,
+    });
 }

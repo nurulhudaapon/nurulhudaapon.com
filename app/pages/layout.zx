@@ -1,5 +1,5 @@
 pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
-        const current_year = blk: {
+    const current_year = blk: {
         const timestamp: i64 = @intCast(@divFloor(std.Io.Timestamp.now(zx.io(), .real).nanoseconds, std.time.ns_per_s));
         const seconds_per_year = 365.25 * 24 * 60 * 60;
         const years_since_epoch = @as(i64, @intFromFloat(@as(f64, @floatFromInt(timestamp)) / seconds_per_year));
@@ -7,26 +7,45 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
     };
     const copyright = ctx.fmt("© {d} {s}.", .{ current_year, data.author }) catch data.author;
 
+    const path = ctx.request.pathname;
+    const title, const description = pageMeta(ctx.arena, path);
+
+    const origin = siteOrigin(ctx);
+    const page_url = blk: {
+        if (std.mem.eql(u8, path, "/") or std.mem.eql(u8, path, "")) break :blk origin;
+        const clean = if (std.mem.endsWith(u8, path, "/")) path[0 .. path.len - 1] else path;
+        break :blk ctx.fmt("{s}{s}", .{ origin, clean }) catch data.url;
+    };
+    const og_image_url = blk: {
+        if (std.mem.eql(u8, path, "/") or std.mem.eql(u8, path, ""))
+            break :blk ctx.fmt("{s}/og/home.png", .{origin}) catch data.og_image;
+        const clean = if (std.mem.endsWith(u8, path, "/")) path[0 .. path.len - 1] else path;
+        break :blk ctx.fmt("{s}/og{s}.png", .{ origin, clean }) catch data.og_image;
+    };
 
     return (
         <html @allocator={ctx.arena} lang="en">
             <head>
                 <meta charset="UTF-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-                <title>{data.title}</title>
-                <meta name="description" content={data.description} />
+                <title>{title}</title>
+                <meta name="description" content={description} />
                 <meta name="author" content={data.author} />
-                <meta property="og:title" content={data.title} />
-                <meta property="og:description" content={data.description} />
+                <meta name="robots" content="index, follow" />
+                <meta property="og:title" content={title} />
+                <meta property="og:description" content={description} />
                 <meta property="og:type" content="website" />
-                <meta property="og:url" content={data.url} />
-                <meta property="og:image" content={data.og_image} />
+                <meta property="og:url" content={page_url} />
+                <meta property="og:site_name" content="nurulhudaapon.com" />
+                <meta property="og:image" content={og_image_url} />
+                <meta property="og:image:width" content="1200" />
+                <meta property="og:image:height" content="630" />
+                <meta property="og:image:alt" content={title} />
                 <meta name="twitter:card" content="summary_large_image" />
-                <meta name="twitter:title" content={data.title} />
-                <meta name="twitter:description" content={data.description} />
-                <meta name="twitter:image" content={data.og_image} />
+                <meta name="twitter:title" content={title} />
+                <meta name="twitter:description" content={description} />
+                <meta name="twitter:image" content={og_image_url} />
                 <link rel="icon" href="/favicon.ico" sizes="32x32" type="image/x-icon" />
-                // <link rel="preload" href="/fonts/geist-sans.woff2" as="font" type="font/woff2" crossorigin="" />
                 <link rel="stylesheet" href="/assets/style.css" />
             </head>
             <body>
@@ -50,6 +69,58 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
             </body>
         </html>
     );
+}
+
+fn siteOrigin(ctx: zx.LayoutContext) []const u8 {
+    if (@import("builtin").optimize == .debug) {
+        if (ctx.request.headers.get("host")) |host| {
+            if (host.len > 0) {
+                return ctx.fmt("http://{s}", .{host}) catch data.url;
+            }
+        }
+        if (originFromUrl(ctx.request.url)) |origin| return origin;
+    }
+    return data.url;
+}
+
+fn originFromUrl(url: []const u8) ?[]const u8 {
+    const scheme_end = std.mem.indexOf(u8, url, "://") orelse return null;
+    const after_scheme = url[scheme_end + 3 ..];
+    const path_start = std.mem.indexOfScalar(u8, after_scheme, '/') orelse after_scheme.len;
+    return url[0 .. scheme_end + 3 + path_start];
+}
+
+fn pageMeta(allocator: zx.Allocator, path: []const u8) struct { []const u8, []const u8 } {
+    if (std.mem.eql(u8, path, "/about") or std.mem.eql(u8, path, "/about/"))
+        return .{
+            "About - Nurul Huda (Apon)",
+            "Building high quality software for companies and crafting Ziex, a full-stack web framework for Zig.",
+        };
+    if (std.mem.eql(u8, path, "/blog") or std.mem.eql(u8, path, "/blog/"))
+        return .{
+            "Blog - Nurul Huda (Apon)",
+            "Writing and notes from Nurul Huda (Apon).",
+        };
+    if (std.mem.eql(u8, path, "/schedule") or std.mem.eql(u8, path, "/schedule/"))
+        return .{
+            "Schedule - Nurul Huda (Apon)",
+            "Pick a time that works for you and let's talk.",
+        };
+    if (std.mem.eql(u8, path, "/ask") or std.mem.eql(u8, path, "/ask/"))
+        return .{
+            "Ask Me Anything - Nurul Huda (Apon)",
+            "Anonymously ask me anything. I'll answer on social media or when you revisit this page.",
+        };
+    if (std.mem.startsWith(u8, path, "/blog/")) {
+        var slug = path["/blog/".len..];
+        if (std.mem.endsWith(u8, slug, "/")) slug = slug[0 .. slug.len - 1];
+        if (slug.len > 0) {
+            if (posts.getPostBySlug(allocator, slug)) |post| {
+                return .{ post.title, post.brief };
+            } else |_| {}
+        }
+    }
+    return .{ data.title, data.description };
 }
 
 fn icon(allocator: zx.Allocator, icon_type: IconType) zx.Component {
@@ -88,6 +159,7 @@ const SiteData = struct {
 };
 
 const data: SiteData = @import("data.zon");
+const posts = @import("blog/posts.zig");
 
 const icons = @import("component.zx").icons;
 const std = @import("std");

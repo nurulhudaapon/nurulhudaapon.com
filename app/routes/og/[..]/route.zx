@@ -1,0 +1,232 @@
+pub fn GET(ctx: zx.RouteContext) !void {
+    ensureOgFonts();
+
+    const pathname = ctx.request.pathname;
+    const og_name = pathname["/og/".len..(pathname.len - ".png".len)];
+    var og_data = try getOgImageData(ctx.arena, og_name);
+
+    if (try queryText(ctx, "title")) |title| {
+        og_data.title = title;
+        og_data.title_lines = try wrapText(ctx.arena, title, maxCharsForSize(og_data.title_size));
+    }
+    if (try queryText(ctx, "subtitle")) |subtitle| og_data.subtitle = subtitle;
+    if (try queryText(ctx, "meta")) |meta| og_data.meta = meta;
+
+    og_data.avatar_href = try avatarDataUri(ctx.arena);
+
+    const og_template = OgTemplate(ctx.arena, og_data);
+    var aw = std.Io.Writer.Allocating.init(ctx.arena);
+
+    try og_template.render(&aw.writer, .{});
+    const svg_text = aw.written();
+    const png = try lunasvg.svgToPngAlloc(ctx.arena, svg_text, 1200, 630, 0xff000000);
+
+    ctx.response.text(png);
+    ctx.response.setContentType(.@"image/png");
+}
+
+fn queryText(ctx: zx.RouteContext, name: []const u8) !?[]const u8 {
+    const raw = ctx.request.queries.get(name) orelse return null;
+    const buf = try ctx.arena.dupe(u8, raw);
+    for (buf) |*c| {
+        if (c.* == '+') c.* = ' ';
+    }
+    return std.Uri.percentDecodeInPlace(buf);
+}
+
+fn ensureOgFonts() void {
+    if (fonts_registered.swap(true, .acq_rel)) return;
+    var ok = true;
+    if (!lunasvg.addFontFaceFromData("Geist", true, false, geist_fonts.bold)) ok = false;
+    if (!lunasvg.addFontFaceFromData("Geist", false, false, geist_fonts.regular)) ok = false;
+    if (!ok) {
+        fonts_registered.store(false, .release);
+        std.log.warn("lunasvg: failed to register Geist fonts", .{});
+    }
+}
+
+var fonts_registered: std.atomic.Value(bool) = .init(false);
+
+fn avatarDataUri(allocator: std.mem.Allocator) ![]const u8 {
+    const png = @embedFile("../../../assets/og/avatar.png");
+    const Encoder = std.base64.standard.Encoder;
+    const b64 = try allocator.alloc(u8, Encoder.calcSize(png.len));
+    _ = Encoder.encode(b64, png);
+    return try std.fmt.allocPrint(allocator, "data:image/png;base64,{s}", .{b64});
+}
+
+fn getOgImageData(allocator: std.mem.Allocator, path: []const u8) !OgTemplateProps {
+    for (og_images) |og_image| {
+        if (std.mem.eql(u8, og_image.path, path)) {
+            return try finalizeSite(allocator, og_image);
+        }
+    }
+
+    if (std.mem.startsWith(u8, path, "blog/")) {
+        const slug = path["blog/".len..];
+        if (posts.getPostBySlug(allocator, slug)) |post| {
+            const title = try truncate(allocator, stripTrailingEmoji(post.title), 56);
+            const title_size = blogTitleSize(title);
+            const meta = try std.fmt.allocPrint(allocator, "{s}  ·  {s}  ·  {d} min read", .{
+                post.author.name,
+                post.publishedAt,
+                post.readTimeInMinutes,
+            });
+            return .{
+                .kind = .blog,
+                .path = path,
+                .title = title,
+                .subtitle = "",
+                .meta = meta,
+                .author = post.author.name,
+                .avatar_href = "",
+                .title_lines = try wrapText(allocator, title, maxCharsForSize(title_size)),
+                .title_size = title_size,
+            };
+        } else |_| {}
+    }
+
+    return try finalizeSite(allocator, default_og_image);
+}
+
+fn finalizeSite(allocator: std.mem.Allocator, props: OgTemplateProps) !OgTemplateProps {
+    var out = props;
+    out.kind = .site;
+    out.title_size = siteTitleSize(props.title);
+    out.title_lines = try wrapText(allocator, props.title, maxCharsForSize(out.title_size));
+    out.avatar_href = "";
+    return out;
+}
+
+fn siteTitleSize(title: []const u8) u32 {
+    if (std.mem.eql(u8, title, "Nurul Huda (Apon)")) return 52;
+    if (title.len <= 18) return 52;
+    if (title.len <= 28) return 40;
+    return 34;
+}
+
+fn blogTitleSize(title: []const u8) u32 {
+    if (title.len <= 22) return 48;
+    if (title.len <= 40) return 40;
+    return 34;
+}
+
+fn maxCharsForSize(size: u32) usize {
+    return switch (size) {
+        48 => 26,
+        40 => 32,
+        else => 38,
+    };
+}
+
+fn wrapText(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) ![]const []const u8 {
+    if (text.len <= max_chars) {
+        const one = try allocator.alloc([]const u8, 1);
+        one[0] = text;
+        return one;
+    }
+
+    var lines: std.ArrayList([]const u8) = .empty;
+    errdefer lines.deinit(allocator);
+
+    var start: usize = 0;
+    while (start < text.len and lines.items.len < 3) {
+        const remaining = text.len - start;
+        if (remaining <= max_chars) {
+            try lines.append(allocator, text[start..]);
+            break;
+        }
+
+        var end = start + max_chars;
+        while (end > start and text[end - 1] != ' ') : (end -= 1) {}
+        if (end <= start) end = start + max_chars;
+
+        const is_last_slot = lines.items.len == 2;
+        if (is_last_slot and end < text.len) {
+            try lines.append(allocator, try truncate(allocator, text[start..], max_chars));
+            break;
+        }
+
+        try lines.append(allocator, text[start..end]);
+        start = end;
+        while (start < text.len and text[start] == ' ') : (start += 1) {}
+    }
+    return try lines.toOwnedSlice(allocator);
+}
+
+fn stripTrailingEmoji(text: []const u8) []const u8 {
+    var end = text.len;
+    while (end > 0 and (text[end - 1] == ' ' or text[end - 1] > 0x7f)) : (end -= 1) {}
+    return if (end == 0) text else text[0..end];
+}
+
+fn truncate(allocator: std.mem.Allocator, text: []const u8, max: usize) ![]const u8 {
+    if (text.len <= max) return text;
+    const cut = @min(max, text.len);
+    var end = cut;
+    while (end > 0 and text[end - 1] != ' ') : (end -= 1) {}
+    if (end < max / 2) end = cut;
+    if (end > 0 and text[end - 1] == ' ') end -= 1;
+    return try std.fmt.allocPrint(allocator, "{s}…", .{text[0..end]});
+}
+
+const site_tagline = "Building high quality software for companies and crafting Ziex, a full-stack web framework for Zig.";
+
+const default_og_image: OgTemplateProps = .{
+    .path = "home",
+    .title = "Nurul Huda (Apon)",
+    .subtitle = site_tagline,
+    .avatar_href = "",
+};
+
+const og_images = [_]OgTemplateProps{
+    default_og_image,
+    .{
+        .path = "about",
+        .title = "About",
+        .subtitle = site_tagline,
+        .avatar_href = "",
+    },
+    .{
+        .path = "blog",
+        .title = "Blog",
+        .subtitle = "Writing and notes",
+        .avatar_href = "",
+    },
+    .{
+        .path = "schedule",
+        .title = "Schedule",
+        .subtitle = "Pick a time and let's talk",
+        .avatar_href = "",
+    },
+    .{
+        .path = "ask",
+        .title = "Ask Me Anything",
+        .subtitle = "Anonymously ask me anything",
+        .avatar_href = "",
+    },
+};
+
+fn staticParams(ctx: *zx.StaticContext) !void {
+    inline for (og_images) |og_image| {
+        try ctx.params.add(.{ .@"*" = og_image.path ++ ".png" });
+    }
+
+    const blog_posts = posts.getPosts(ctx.arena) catch &.{};
+    for (blog_posts) |post| {
+        try ctx.params.add(.{ .@"*" = try std.fmt.allocPrint(ctx.arena, "blog/{s}.png", .{post.slug}) });
+    }
+}
+
+pub const options = zx.RouteOptions{
+    .static = staticParams,
+};
+
+const OgTemplate = @import("template.zx").OgTemplate;
+const OgTemplateProps = @import("template.zx").OgTemplateProps;
+const posts = @import("../../../pages/blog/posts.zig");
+
+const geist_fonts = @import("geist_fonts");
+const lunasvg = @import("lunasvg");
+const zx = @import("zx");
+const std = @import("std");

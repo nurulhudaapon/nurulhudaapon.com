@@ -12,6 +12,14 @@
             .url = "git+https://codeberg.org/nurulhudaapon/markz.git?ref=zig-0.17#19af600075fc60775e89a3430dadd94299b13e14",
             .hash = "markz-0.1.0-53lpvCGhBgD-cT9CdpZAx065JqAJ75JavcvhPwyU5z8G",
         },
+        .lunasvg = .{
+            .url = "git+https://github.com/nurulhudaapon/lunasvg.git#a3c19981a7cef75440444b401485c693c3962c53",
+            .hash = "lunasvg-0.0.0-9mEwLiMRAQDctmwhbMAwCACtK02EefOHg0YIg1K3hHUf",
+        },
+        .geist_font = .{
+            .url = "https://github.com/vercel/geist-font/releases/download/v1.7.2/geist-font-v1.7.2.zip",
+            .hash = "N-V-__8AAGcfRgGYQdv3bwuRkqz__9kZOc9D4-NZYcK7sDdn",
+        },
     },
     .paths = .{
         "build.zig",
