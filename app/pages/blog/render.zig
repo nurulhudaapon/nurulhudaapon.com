@@ -1,6 +1,5 @@
 const markz = @import("markz");
 const std = @import("std");
-const hashnode = @import("hashnode.zig");
 
 const Document = markz.Document;
 const Node = markz.Node;
@@ -12,42 +11,14 @@ pub fn renderMarkdown(allocator: std.mem.Allocator, source: []const u8) ![]const
     var doc = try markz.parseWith(allocator, source, .{ .gfm = true });
     defer doc.deinit();
 
-    try transformHashnodeAst(&doc);
-    try localizeImageUrls(&doc);
+    try transformBlogAst(&doc);
     return try markz.renderHtml(allocator, &doc);
 }
 
-/// Point image (and image-like link) destinations at `/images/hn/...`.
-fn localizeImageUrls(doc: *Document) !void {
-    var iter = doc.iterator();
-    while (iter.next()) |event| {
-        switch (event) {
-            .enter => |node| switch (node.tag) {
-                .image => {
-                    const idx = node.data.image;
-                    const dest = doc.getLinkData(idx).destination;
-                    if (try hashnode.localizeUrl(doc.arena.allocator(), dest)) |local| {
-                        doc.link_data.items[idx].destination = local;
-                    }
-                },
-                .link => {
-                    const idx = node.data.link;
-                    const dest = doc.getLinkData(idx).destination;
-                    if (try hashnode.localizeUrl(doc.arena.allocator(), dest)) |local| {
-                        doc.link_data.items[idx].destination = local;
-                    }
-                },
-                else => {},
-            },
-            else => {},
-        }
-    }
-}
-
-/// Rewrite Hashnode-specific syntax that CommonMark leaves as plain text:
+/// Rewrite blog markdown extensions that CommonMark leaves as plain text:
 /// - `![](url align="center")` → image nodes
 /// - `%[https://youtu.be/…]` → YouTube embed HTML
-fn transformHashnodeAst(doc: *Document) !void {
+fn transformBlogAst(doc: *Document) !void {
     try transformChildren(doc, doc.root);
 }
 
@@ -145,8 +116,7 @@ fn rewriteTextNode(doc: *Document, text_node: *Node) !void {
                     break :blk try makeText(doc, text[special.at..p.end]);
                 },
                 .image => |img| blk: {
-                    const dest = (try hashnode.localizeUrl(doc.arena.allocator(), img.destination)) orelse
-                        try doc.allocString(img.destination);
+                    const dest = try doc.allocString(img.destination);
                     const idx = try doc.storeLinkData(.{
                         .destination = dest,
                         .title = "",

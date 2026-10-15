@@ -107,7 +107,7 @@ fn SiteOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
 fn BlogOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component {
     const lines = if (props.title_lines.len > 0) props.title_lines else &.{props.title};
     const line_gap: i32 = @intCast(props.title_size + 10);
-    const title_start_y: i32 = if (lines.len > 2) 210 else 230;
+    const title_start_y: i32 = if (lines.len > 2) 240 else 260;
 
     return (
         <svg
@@ -141,7 +141,7 @@ fn BlogOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
                         font-weight="bold"
                         style="white-space:pre"
                     >
-                        <tspan x="500" y="190">BLOG</tspan>
+                        <tspan x="500" y="175">BLOG</tspan>
                     </text>
 
                     {for (lines, 0..) |line, i| (

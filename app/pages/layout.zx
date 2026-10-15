@@ -116,7 +116,9 @@ fn pageMeta(allocator: zx.Allocator, path: []const u8) struct { []const u8, []co
         if (std.mem.endsWith(u8, slug, "/")) slug = slug[0 .. slug.len - 1];
         if (slug.len > 0) {
             if (posts.getPostBySlug(allocator, slug)) |post| {
-                return .{ post.title, post.brief };
+                const title = post.seo_title orelse post.title;
+                const description = post.seo_description orelse post.brief;
+                return .{ title, description };
             } else |_| {}
         }
     }

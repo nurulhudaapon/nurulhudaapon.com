@@ -1,7 +1,6 @@
 const std = @import("std");
 const git = @import("git.zig");
 const render = @import("render.zig");
-const hashnode = @import("hashnode.zig");
 
 pub const GetPostError = error{
     FailedToFetchPosts,
@@ -21,6 +20,8 @@ pub const Post = struct {
     views: u32 = 0,
     subtitle: ?[]const u8 = null,
     coverImage: ?[]const u8 = null,
+    seo_title: ?[]const u8 = null,
+    seo_description: ?[]const u8 = null,
     content: ?[]const u8 = null,
     author: struct {
         name: []const u8,
@@ -32,12 +33,13 @@ pub const Post = struct {
 const Frontmatter = struct {
     title: ?[]const u8 = null,
     slug: ?[]const u8 = null,
-    cuid: ?[]const u8 = null,
-    date_published: ?[]const u8 = null,
+    status: ?[]const u8 = null,
+    published_at: ?[]const u8 = null,
     cover: ?[]const u8 = null,
-    excerpt: ?[]const u8 = null,
+    og_image: ?[]const u8 = null,
     seo_description: ?[]const u8 = null,
     seo_title: ?[]const u8 = null,
+    tags: ?[]const u8 = null,
 };
 
 pub fn getPosts(allocator: std.mem.Allocator) GetPostError![]Post {
@@ -52,9 +54,15 @@ pub fn getPosts(allocator: std.mem.Allocator) GetPostError![]Post {
     var it = archive.files.iterator();
     while (it.next()) |entry| {
         const path = entry.key_ptr.*;
-        if (std.mem.startsWith(u8, path, "draft-")) continue;
+        if (isDraftPath(path)) continue;
 
         const basename = std.fs.path.basename(path);
+        const fm = parseFrontmatter(entry.value_ptr.*) catch |err| {
+            std.log.warn("Skipping {s}: {any}", .{ path, err });
+            continue;
+        };
+        if (isDraftFrontmatter(fm)) continue;
+
         const post = parsePost(allocator, basename, entry.value_ptr.*, false) catch |err| {
             std.log.warn("Skipping {s}: {any}", .{ path, err });
             continue;
@@ -76,10 +84,11 @@ pub fn getPostBySlug(allocator: std.mem.Allocator, slug: []const u8) GetPostErro
     var it = archive.files.iterator();
     while (it.next()) |entry| {
         const path = entry.key_ptr.*;
-        if (std.mem.startsWith(u8, path, "draft-")) continue;
+        if (isDraftPath(path)) continue;
 
         const basename = std.fs.path.basename(path);
         const fm = parseFrontmatter(entry.value_ptr.*) catch continue;
+        if (isDraftFrontmatter(fm)) continue;
         const file_slug = fm.slug orelse slugFromFilename(basename) orelse continue;
         if (!std.mem.eql(u8, file_slug, slug)) continue;
 
@@ -90,29 +99,6 @@ pub fn getPostBySlug(allocator: std.mem.Allocator, slug: []const u8) GetPostErro
     }
 
     return error.PostNotFound;
-}
-
-/// Collect catch-all image params (`hn/v…/file.png`) from all published posts.
-pub fn collectHashnodeImageParams(allocator: std.mem.Allocator) GetPostError![][]const u8 {
-    const archive = git.fetchDefaultArchive(allocator) catch |err| {
-        std.log.err("Failed to fetch blog archive for images: {any}", .{err});
-        return error.FailedToFetchPosts;
-    };
-
-    var sources: std.ArrayList([]const u8) = .empty;
-    defer sources.deinit(allocator);
-
-    var it = archive.files.iterator();
-    while (it.next()) |entry| {
-        const path = entry.key_ptr.*;
-        if (std.mem.startsWith(u8, path, "draft-")) continue;
-        try sources.append(allocator, entry.value_ptr.*);
-    }
-
-    return hashnode.collectStaticParamPaths(allocator, sources.items) catch |err| {
-        std.log.err("Failed to collect hashnode image paths: {any}", .{err});
-        return error.OutOfMemory;
-    };
 }
 
 const blog_image_prefix = "/blog/images/";
@@ -136,7 +122,9 @@ pub fn collectBlogImageParams(allocator: std.mem.Allocator) GetPostError![][]con
     var it = archive.files.iterator();
     while (it.next()) |entry| {
         const path = entry.key_ptr.*;
-        if (std.mem.startsWith(u8, path, "draft-")) continue;
+        if (isDraftPath(path)) continue;
+        const fm = parseFrontmatter(entry.value_ptr.*) catch continue;
+        if (isDraftFrontmatter(fm)) continue;
         try collectBlogImageParamsFromSource(allocator, entry.value_ptr.*, &seen, &out);
     }
 
@@ -177,18 +165,29 @@ fn isBlogImageUrlEnd(c: u8) bool {
     };
 }
 
+fn isDraftPath(path: []const u8) bool {
+    return std.mem.startsWith(u8, std.fs.path.basename(path), "draft-");
+}
+
+fn isDraftFrontmatter(fm: Frontmatter) bool {
+    if (fm.status) |status| {
+        return std.mem.eql(u8, status, "draft");
+    }
+    return false;
+}
+
 fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const u8, with_html: bool) !Post {
     const split = try splitFrontmatter(source);
     const fm = try parseFrontmatterFields(split.meta);
+    if (isDraftFrontmatter(fm)) return error.FailedToParsePosts;
 
     const title = fm.title orelse return error.FailedToParsePosts;
     const slug = fm.slug orelse slugFromFilename(filename) orelse return error.FailedToParsePosts;
-    const id = fm.cuid orelse slug;
-    const published_raw = fm.date_published orelse "Draft";
+    const published_raw = fm.published_at orelse "Draft";
 
     const body = std.mem.trim(u8, split.body, " \t\r\n");
-    const brief = if (fm.excerpt) |excerpt|
-        try formatExcerpt(allocator, excerpt)
+    const brief = if (fm.seo_description) |desc|
+        try allocator.dupe(u8, desc)
     else
         try makeBrief(allocator, body);
 
@@ -198,18 +197,17 @@ fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const
         null;
 
     return .{
-        .id = try allocator.dupe(u8, id),
+        .id = try allocator.dupe(u8, slug),
         .title = try allocator.dupe(u8, title),
         .brief = brief,
         .url = try std.fmt.allocPrint(allocator, "/blog/{s}", .{slug}),
         .slug = try allocator.dupe(u8, slug),
         .publishedAt = try formatPublishedDate(allocator, published_raw),
         .readTimeInMinutes = estimateReadTime(body),
-        // Only surface a dedicated subtitle when frontmatter provides `excerpt`.
-        .subtitle = if (fm.excerpt != null) brief else null,
-        .coverImage = if (fm.cover) |c| blk: {
-            break :blk (try hashnode.localizeUrl(allocator, c)) orelse try allocator.dupe(u8, c);
-        } else null,
+        .subtitle = null,
+        .coverImage = if (fm.cover) |c| try allocator.dupe(u8, c) else null,
+        .seo_title = if (fm.seo_title) |t| try allocator.dupe(u8, t) else null,
+        .seo_description = if (fm.seo_description) |d| try allocator.dupe(u8, d) else null,
         .content = content,
         .author = .{
             .name = "Nurul Huda (Apon)",
@@ -252,18 +250,20 @@ fn parseFrontmatterFields(meta: []const u8) !Frontmatter {
             fm.title = value;
         } else if (std.mem.eql(u8, key, "slug")) {
             fm.slug = value;
-        } else if (std.mem.eql(u8, key, "cuid")) {
-            fm.cuid = value;
-        } else if (std.mem.eql(u8, key, "datePublished")) {
-            fm.date_published = value;
+        } else if (std.mem.eql(u8, key, "status")) {
+            fm.status = value;
+        } else if (std.mem.eql(u8, key, "published_at")) {
+            fm.published_at = value;
         } else if (std.mem.eql(u8, key, "cover")) {
             fm.cover = value;
-        } else if (std.mem.eql(u8, key, "excerpt")) {
-            fm.excerpt = value;
-        } else if (std.mem.eql(u8, key, "seoDescription")) {
+        } else if (std.mem.eql(u8, key, "og_image")) {
+            fm.og_image = value;
+        } else if (std.mem.eql(u8, key, "seo_description")) {
             fm.seo_description = value;
-        } else if (std.mem.eql(u8, key, "seoTitle")) {
+        } else if (std.mem.eql(u8, key, "seo_title")) {
             fm.seo_title = value;
+        } else if (std.mem.eql(u8, key, "tags")) {
+            fm.tags = value;
         }
     }
     return fm;
@@ -281,13 +281,6 @@ fn slugFromFilename(filename: []const u8) ?[]const u8 {
     const stem = filename[0 .. filename.len - ".md".len];
     if (stem.len == 0) return null;
     return stem;
-}
-
-fn formatExcerpt(allocator: std.mem.Allocator, excerpt: []const u8) ![]const u8 {
-    const trimmed = std.mem.trim(u8, excerpt, " \t\r\n");
-    if (trimmed.len == 0) return try allocator.dupe(u8, "...");
-    if (std.mem.endsWith(u8, trimmed, "...")) return try allocator.dupe(u8, trimmed);
-    return try std.fmt.allocPrint(allocator, "{s}...", .{trimmed});
 }
 
 /// Plain-text preview from markdown: skip headings, embeds, images, code; end with `...`.
