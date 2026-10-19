@@ -1,0 +1,157 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    const filter = std.meta.stringToEnum(booking.Filter, ctx.request.queries.get("filter") orelse "") orelse .upcoming;
+    const back = try ctx.fmt("/admin/bookings?filter={s}", .{@tagName(filter)});
+    if (ctx.request.method == .POST) {
+        const flag = handle(ctx) catch |err| switch (err) {
+            error.InvalidUrl => "err=bad_url",
+            error.NotFound => "err=not_found",
+            else => blk: {
+                zx.log.err("admin: booking action failed: {any}", .{err});
+                break :blk "err=failed";
+            },
+        };
+        return ui.redirect(ctx, try ctx.fmt("{s}&{s}", .{ back, flag }));
+    }
+
+    const records = try booking.list(ctx.arena, filter, 200);
+    const default_url = settings.defaultMeetingUrl(ctx.arena) orelse "";
+    const flash = ui.flashFrom(ctx.request.queries, &.{
+        .{ "link", "Meeting link updated. The /meet link in the invite now redirects there." },
+        .{ "link_reset", "Meeting link reset to your default." },
+        .{ "cancelled", "Booking cancelled. The calendar event was removed and the slot is open again." },
+        .{ "bad_url", "Meeting links must start with https:// or http://." },
+        .{ "not_found", "That booking no longer exists or was already cancelled." },
+        .{ "failed", "Something went wrong. Check the server logs." },
+    });
+    const tabs = try ui.filterTabs(ctx.arena, "/admin/bookings", filter, booking.counts(ctx.arena));
+
+    return (
+        <div @allocator={ctx.arena}>
+            <ui.PageHeader title="Bookings" description="Meetings booked through /schedule. Times are in Asia/Dhaka (GMT+6)." />
+            <ui.FlashBanner flash={flash} />
+            <ui.Tabs tabs={tabs} />
+            {if (records.len == 0) (
+                <div class="adm-card">
+                    <ui.Empty text={emptyText(filter)} />
+                </div>
+            ) else (
+                <div class="adm-card adm-list">
+                    {for (records) |r| (
+                        <BookingItem r={r} upcoming={filter == .upcoming} action={back} default_url={default_url} />
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+fn BookingItem(allocator: zx.Allocator, props: struct {
+    r: booking.Record,
+    upcoming: bool,
+    action: []const u8,
+    default_url: []const u8,
+}) zx.Component {
+    const r = props.r;
+    const local = slots.LocalDate.of(r.starts_at);
+    const mailto = std.fmt.allocPrint(allocator, "mailto:{s}", .{r.email}) catch "";
+    const link = r.meet_url orelse props.default_url;
+    const placeholder = if (props.default_url.len > 0) props.default_url else "https://meet.google.com/…";
+
+    return (
+        <article @{allocator} class="adm-item">
+            <div class="adm-item-head">
+                <div class="adm-when">
+                    <span class="adm-when-month">{local.monthName()}</span>
+                    <span class="adm-when-day">{local.day}</span>
+                    <span class="adm-when-weekday">{local.weekdayName()}</span>
+                </div>
+                <div class="adm-item-body">
+                    <p class="adm-item-title">{r.name}</p>
+                    <div class="adm-meta">
+                        <span>{format.timeRange(allocator, r.starts_at, r.ends_at)}</span>
+                        <a href={mailto}>{r.email}</a>
+                        <span>{r.joins} {if (r.joins == 1) "join" else "joins"}</span>
+                        <span>Booked {format.ago(allocator, r.created_at)}</span>
+                    </div>
+                    {if (r.notes) |notes| (
+                        <p class="adm-notes">{notes}</p>
+                    )}
+                    {if (link.len > 0 and r.cancelled_at == null) (
+                        <div class="adm-meta">
+                            {ui.icon(allocator, .video)}
+                            <a href={link} target="_blank" rel="noopener">{link}</a>
+                            {if (r.meet_url != null) (
+                                <span class="adm-badge adm-badge-accent">Custom</span>
+                            )}
+                        </div>
+                    )}
+                </div>
+                {if (r.cancelled_at) |at| (
+                    <span class="adm-badge adm-badge-err">Cancelled {format.ago(allocator, at)}</span>
+                ) else if (props.upcoming) (
+                    <span class="adm-badge adm-badge-ok">{format.until(allocator, r.starts_at)}</span>
+                )}
+            </div>
+            {if (props.upcoming) (
+                <div class="adm-actions">
+                    <details class="adm-disclosure">
+                        <summary class="adm-btn">{ui.icon(allocator, .video)} Meeting link</summary>
+                        <form method="post" action={props.action} class="adm-disclosure-panel adm-field">
+                            <input type="hidden" name="id" value={r.id} />
+                            <label class="adm-label" for={r.id}>Custom link for this meeting</label>
+                            <div class="adm-url-row">
+                                <input class="adm-input" id={r.id} type="url" name="meet_url" value={r.meet_url orelse ""} placeholder={placeholder} />
+                                <button class="adm-btn adm-btn-primary" type="submit" name="action" value="link">Save</button>
+                            </div>
+                            <p class="adm-hint">The invite links to /meet, which redirects here. Leave empty to use your default link.</p>
+                        </form>
+                    </details>
+                    <details class="adm-disclosure">
+                        <summary class="adm-btn adm-btn-danger">Cancel booking</summary>
+                        <form method="post" action={props.action} class="adm-disclosure-panel adm-field">
+                            <input type="hidden" name="id" value={r.id} />
+                            <p>This removes the event from your calendar. iCloud emails {r.name} a cancellation and the slot opens up again.</p>
+                            <div>
+                                <button class="adm-btn adm-btn-danger-solid" type="submit" name="action" value="cancel">Cancel meeting with {r.name}</button>
+                            </div>
+                        </form>
+                    </details>
+                </div>
+            )}
+        </article>
+    );
+}
+
+fn handle(ctx: zx.PageContext) ![]const u8 {
+    const fd = ctx.request.formData();
+    const id = fd.get("id") orelse return error.NotFound;
+    const action = fd.get("action") orelse "";
+    if (std.mem.eql(u8, action, "cancel")) {
+        try booking.cancel(ctx.arena, id);
+        return "ok=cancelled";
+    }
+    const url = std.mem.trim(u8, fd.get("meet_url") orelse "", " \t\r\n");
+    try booking.setMeetUrl(id, url);
+    return if (url.len == 0) "ok=link_reset" else "ok=link";
+}
+
+fn emptyText(filter: booking.Filter) []const u8 {
+    return switch (filter) {
+        .upcoming => "Nothing on the calendar. Share /schedule to get bookings.",
+        .past => "No past meetings yet.",
+        .cancelled => "No cancelled bookings.",
+    };
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .dynamic = true,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const format = @import("../format.zig");
+const booking = @import("../../schedule/booking.zig");
+const settings = @import("../../schedule/settings.zig");
+const slots = @import("../../schedule/slots.zig");

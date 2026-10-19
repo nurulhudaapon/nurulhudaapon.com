@@ -1,0 +1,175 @@
+pub const Icon = enum { home, question, calendar, clock, file, external, chevron_right, chevrons, menu, user, video, arrow_left };
+
+pub fn icon(allocator: zx.Allocator, kind: Icon) zx.Component {
+    return switch (kind) {
+        .home => (
+            <svg @{allocator} class="adm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
+                <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>
+        ),
+        .question => (
+            <svg @{allocator} class="adm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                <path d="M12 17h.01" />
+            </svg>
+        ),
+        .calendar => (
+            <svg @{allocator} class="adm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 2v4" />
+                <path d="M16 2v4" />
+                <rect width="18" height="18" x="3" y="4" rx="2" />
+                <path d="M3 10h18" />
+            </svg>
+        ),
+        .clock => (
+            <svg @{allocator} class="adm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
+            </svg>
+        ),
+        .file => (
+            <svg @{allocator} class="adm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+                <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                <path d="M10 9H8" />
+                <path d="M16 13H8" />
+                <path d="M16 17H8" />
+            </svg>
+        ),
+        .external => (
+            <svg @{allocator} class="adm-icon adm-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 3h6v6" />
+                <path d="M10 14 21 3" />
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            </svg>
+        ),
+        .chevron_right => (
+            <svg @{allocator} class="adm-icon adm-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m9 18 6-6-6-6" />
+            </svg>
+        ),
+        .chevrons => (
+            <svg @{allocator} class="adm-icon adm-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m7 15 5 5 5-5" />
+                <path d="m7 9 5-5 5 5" />
+            </svg>
+        ),
+        .menu => (
+            <svg @{allocator} class="adm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 6h16" />
+                <path d="M4 12h16" />
+                <path d="M4 18h16" />
+            </svg>
+        ),
+        .user => (
+            <svg @{allocator} class="adm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="8" r="5" />
+                <path d="M20 21a8 8 0 0 0-16 0" />
+            </svg>
+        ),
+        .video => (
+            <svg @{allocator} class="adm-icon adm-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
+                <rect x="2" y="6" width="14" height="12" rx="2" />
+            </svg>
+        ),
+        .arrow_left => (
+            <svg @{allocator} class="adm-icon adm-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m12 19-7-7 7-7" />
+                <path d="M19 12H5" />
+            </svg>
+        ),
+    };
+}
+
+pub fn PageHeader(allocator: zx.Allocator, props: struct {
+    title: []const u8,
+    description: []const u8 = "",
+}) zx.Component {
+    return (
+        <header @{allocator} class="adm-page-header">
+            <h1 class="adm-page-title">{props.title}</h1>
+            {if (props.description.len > 0) (
+                <p class="adm-page-desc">{props.description}</p>
+            )}
+        </header>
+    );
+}
+
+pub const Flash = struct { text: []const u8, kind: enum { ok, err } };
+
+pub fn flashFrom(
+    queries: anytype,
+    comptime messages: []const struct { []const u8, []const u8 },
+) ?Flash {
+    inline for (.{ .{ "ok", .ok }, .{ "err", .err } }) |kv| {
+        if (queries.get(kv[0])) |code| {
+            for (messages) |m| if (std.mem.eql(u8, m[0], code)) return .{ .text = m[1], .kind = kv[1] };
+        }
+    }
+    return null;
+}
+
+pub fn FlashBanner(allocator: zx.Allocator, props: struct { flash: ?Flash }) zx.Component {
+    return (
+        <div @{allocator} class="adm-flash-slot">
+            {if (props.flash) |f| (
+                <p class={if (f.kind == .ok) "adm-flash adm-flash-ok" else "adm-flash adm-flash-err"} role="status">{f.text}</p>
+            )}
+        </div>
+    );
+}
+
+/// Answer a form POST with a 303 so reloading doesn't resubmit it.
+pub fn redirect(ctx: zx.PageContext, location: []const u8) zx.Component {
+    ctx.response.redirect(location, 303);
+    return (<span @allocator={ctx.arena}></span>);
+}
+
+pub const Tab = struct { label: []const u8, href: []const u8, count: i64, active: bool };
+
+/// One tab per `active` enum field; counts come from the same-named fields of `counts`.
+pub fn filterTabs(arena: zx.Allocator, comptime base: []const u8, active: anytype, counts: anytype) ![]const Tab {
+    const names = comptime std.meta.fieldNames(@TypeOf(active));
+    const tabs = try arena.alloc(Tab, names.len);
+    inline for (names, tabs) |name, *tab| tab.* = .{
+        .label = comptime capitalize(name),
+        .href = base ++ "?filter=" ++ name,
+        .count = @field(counts, name),
+        .active = std.mem.eql(u8, @tagName(active), name),
+    };
+    return tabs;
+}
+
+fn capitalize(comptime s: []const u8) []const u8 {
+    comptime {
+        var out = s[0..s.len].*;
+        out[0] = std.ascii.toUpper(out[0]);
+        const final = out;
+        return &final;
+    }
+}
+
+pub fn Tabs(allocator: zx.Allocator, props: struct { tabs: []const Tab }) zx.Component {
+    return (
+        <nav @{allocator} class="adm-tabs">
+            {for (props.tabs) |t| (
+                <a class={if (t.active) "adm-tab adm-tab-active" else "adm-tab"} href={t.href}>
+                    {t.label}
+                    <span class="adm-tab-count">{t.count}</span>
+                </a>
+            )}
+        </nav>
+    );
+}
+
+pub fn Empty(allocator: zx.Allocator, props: struct { text: []const u8 }) zx.Component {
+    return (
+        <p @{allocator} class="adm-empty">{props.text}</p>
+    );
+}
+
+const std = @import("std");
+const zx = @import("zx");

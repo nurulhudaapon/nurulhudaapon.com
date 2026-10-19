@@ -1,0 +1,160 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    if (ctx.request.method == .POST) {
+        const flag = save(ctx) catch |err| switch (err) {
+            error.InvalidRules => "err=invalid",
+            error.InvalidUrl => "err=bad_url",
+            else => blk: {
+                zx.log.err("admin: saving availability failed: {any}", .{err});
+                break :blk "err=failed";
+            },
+        };
+        return ui.redirect(ctx, try ctx.fmt("/admin/availability?{s}", .{flag}));
+    }
+
+    const rules = settings.load(ctx.arena);
+    const default_url = settings.defaultMeetingUrl(ctx.arena) orelse "";
+    const flash = ui.flashFrom(ctx.request.queries, &.{
+        .{ "saved", "Availability saved. /schedule shows the new times right away." },
+        .{ "invalid", "Those hours don't fit. Check that the day is longer than one meeting and at least one day is open." },
+        .{ "bad_url", "The default meeting link must start with https:// or http://." },
+        .{ "failed", "Something went wrong. Check the server logs." },
+    });
+
+    return (
+        <div @allocator={ctx.arena}>
+            <ui.PageHeader title="Availability" description="When people can book you on /schedule. Busy times from your calendar are always excluded." />
+            <ui.FlashBanner flash={flash} />
+            <form method="post" action="/admin/availability" class="adm-card adm-settings">
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">Meeting length</p>
+                        <p class="adm-hint">Each booking takes one slot.</p>
+                    </div>
+                    <div class="adm-inline-fields">
+                        <select class="adm-select" name="slot_minutes">
+                            {for (lengths) |m| (
+                                <option value={m} selected={m == rules.slot_minutes}>{m} minutes</option>
+                            )}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">Working hours</p>
+                        <p class="adm-hint">{slots.config.timezone} ({slots.config.timezone_label}).</p>
+                    </div>
+                    <div>
+                        <div class="adm-inline-fields">
+                            <input class="adm-input" type="time" name="day_start" step="300" required value={settings.formatTimeOfDay(ctx.arena, rules.day_start)} />
+                            <span class="adm-hint">to</span>
+                            <input class="adm-input" type="time" name="day_end" step="300" required value={settings.formatTimeOfDay(ctx.arena, rules.day_end)} />
+                        </div>
+                        <div class="adm-slot-preview" aria-label="Slots per day">
+                            {for (slotStarts(ctx.arena, rules)) |label| (
+                                <span>{label}</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">Open days</p>
+                    </div>
+                    <div class="adm-days">
+                        {for (weekdays) |d| (
+                            <label class="adm-day">
+                                <input type="checkbox" name={dayField(ctx.arena, d)} value="on" checked={rules.open_days.contains(d)} />
+                                <span>{slots.weekday_names[@backingInt(d)]}</span>
+                            </label>
+                        )}
+                    </div>
+                </div>
+
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">Booking window</p>
+                        <p class="adm-hint">How far ahead people can book, and how much notice you need.</p>
+                    </div>
+                    <div class="adm-inline-fields">
+                        <input class="adm-input" type="number" name="horizon_days" min="1" max="90" required value={rules.horizon_days} />
+                        <span class="adm-hint">days ahead, at least</span>
+                        <input class="adm-input" type="number" name="min_notice_hours" min="0" max="336" required value={rules.min_notice_hours} />
+                        <span class="adm-hint">hours notice</span>
+                    </div>
+                </div>
+
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">Default meeting link</p>
+                        <p class="adm-hint">Where /meet sends people unless a booking has its own link.</p>
+                    </div>
+                    <div class="adm-field">
+                        <input class="adm-input" type="url" name="meeting_url" value={default_url} placeholder="https://meet.google.com/…" />
+                    </div>
+                </div>
+
+                <div class="adm-settings-foot">
+                    <a class="adm-btn adm-btn-ghost" href="/admin/availability">Discard</a>
+                    <button class="adm-btn adm-btn-primary" type="submit">Save changes</button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+const weekdays = [_]slots.Weekday{ .mon, .tue, .wed, .thu, .fri, .sat, .sun };
+const lengths = [_]i64{ 15, 20, 30, 45, 60, 90 };
+
+fn save(ctx: zx.PageContext) ![]const u8 {
+    const fd = ctx.request.formData();
+    var rules: slots.Rules = .{
+        .slot_minutes = try formInt(fd, "slot_minutes"),
+        .day_start = settings.parseTimeOfDay(fd.get("day_start") orelse "") orelse return error.InvalidRules,
+        .day_end = settings.parseTimeOfDay(fd.get("day_end") orelse "") orelse return error.InvalidRules,
+        .horizon_days = try formInt(fd, "horizon_days"),
+        .min_notice_hours = try formInt(fd, "min_notice_hours"),
+        .open_days = .empty,
+    };
+    for (weekdays) |d| {
+        if (fd.get(dayField(ctx.arena, d)) != null) rules.open_days.insert(d);
+    }
+
+    const url = std.mem.trim(u8, fd.get("meeting_url") orelse "", " \t\r\n");
+    if (url.len > 0 and !settings.isHttpUrl(url)) return error.InvalidUrl;
+
+    try settings.save(ctx.arena, rules);
+    try settings.setDefaultMeetingUrl(url);
+    caldav.invalidateBusy(); // cached for the old booking window
+    return "ok=saved";
+}
+
+fn formInt(fd: anytype, name: []const u8) !i64 {
+    return std.fmt.parseInt(i64, fd.get(name) orelse "", 10) catch error.InvalidRules;
+}
+
+fn slotStarts(arena: zx.Allocator, rules: slots.Rules) []const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    var m = rules.day_start;
+    while (m + rules.slot_minutes <= rules.day_end) : (m += rules.slot_minutes) {
+        out.append(arena, settings.formatTimeOfDay(arena, m)) catch break;
+    }
+    return out.items;
+}
+
+fn dayField(arena: zx.Allocator, day: slots.Weekday) []const u8 {
+    return std.fmt.allocPrint(arena, "day_{s}", .{@tagName(day)}) catch "";
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .dynamic = true,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const slots = @import("../../schedule/slots.zig");
+const settings = @import("../../schedule/settings.zig");
+const caldav = @import("../../schedule/caldav.zig");

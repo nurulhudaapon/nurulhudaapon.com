@@ -1,0 +1,94 @@
+pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
+    const path = ctx.request.pathname;
+    const unanswered = questions_db.counts(ctx.arena).unanswered;
+    const upcoming = booking.counts(ctx.arena).upcoming;
+    const user = ctx.request.headers.get("cf-access-authenticated-user-email") orelse "local";
+
+    return (
+        <div @allocator={ctx.arena} class="adm">
+            <input type="checkbox" id="adm-nav-toggle" class="adm-nav-toggle" aria-hidden="true" />
+            <aside class="adm-sidebar">
+                <a class="adm-account" href="/admin">
+                    <img class="adm-account-avatar" src="/og/avatar.png" alt="" width="28" height="28" />
+                    <span class="adm-account-name">Nurul Huda (Apon)</span>
+                    {ui.icon(ctx.arena, .chevrons)}
+                </a>
+                <nav class="adm-nav" aria-label="Admin">
+                    <NavItem href="/admin" label="Overview" kind={.home} active={std.mem.eql(u8, path, "/admin")} badge={0} />
+
+                    <p class="adm-nav-section">Inbox</p>
+                    <NavItem href="/admin/questions" label="Questions" kind={.question} active={isUnder(path, "/admin/questions")} badge={unanswered} />
+
+                    <p class="adm-nav-section">Schedule</p>
+                    <NavItem href="/admin/bookings" label="Bookings" kind={.calendar} active={isUnder(path, "/admin/bookings")} badge={upcoming} />
+                    <NavItem href="/admin/availability" label="Availability" kind={.clock} active={isUnder(path, "/admin/availability")} badge={0} />
+
+                    <p class="adm-nav-section">Content</p>
+                    <NavItem href="/admin/posts" label="Posts" kind={.file} active={isUnder(path, "/admin/posts")} badge={0} />
+                </nav>
+                <div class="adm-sidebar-foot">
+                    <a class="adm-nav-item" href="/" target="_blank" rel="noopener">
+                        {ui.icon(ctx.arena, .external)}
+                        <span>View site</span>
+                    </a>
+                </div>
+            </aside>
+            <label class="adm-scrim" for="adm-nav-toggle" aria-hidden="true"></label>
+            <div class="adm-main">
+                <header class="adm-topbar">
+                    <label class="adm-menu-btn" for="adm-nav-toggle" aria-label="Toggle navigation">
+                        {ui.icon(ctx.arena, .menu)}
+                    </label>
+                    <span class="adm-topbar-crumb">{crumb(path)}</span>
+                    <div class="adm-topbar-right">
+                        <a class="adm-topbar-link" href="/schedule" target="_blank" rel="noopener">Schedule page</a>
+                        <a class="adm-topbar-link" href="/ask" target="_blank" rel="noopener">Ask page</a>
+                        <span class="adm-user" title={user}>
+                            {ui.icon(ctx.arena, .user)}
+                        </span>
+                    </div>
+                </header>
+                <main class="adm-content">
+                    {children}
+                </main>
+            </div>
+        </div>
+    );
+}
+
+fn NavItem(allocator: zx.Allocator, props: struct {
+    href: []const u8,
+    label: []const u8,
+    kind: ui.Icon,
+    active: bool,
+    badge: i64,
+}) zx.Component {
+    return (
+        <a @{allocator} class={if (props.active) "adm-nav-item adm-nav-item-active" else "adm-nav-item"} href={props.href}>
+            {ui.icon(allocator, props.kind)}
+            <span>{props.label}</span>
+            {if (props.badge > 0) (
+                <span class="adm-nav-badge">{props.badge}</span>
+            )}
+        </a>
+    );
+}
+
+fn isUnder(path: []const u8, prefix: []const u8) bool {
+    if (!std.mem.startsWith(u8, path, prefix)) return false;
+    return path.len == prefix.len or path[prefix.len] == '/';
+}
+
+fn crumb(path: []const u8) []const u8 {
+    if (isUnder(path, "/admin/questions")) return "Inbox / Questions";
+    if (isUnder(path, "/admin/bookings")) return "Schedule / Bookings";
+    if (isUnder(path, "/admin/availability")) return "Schedule / Availability";
+    if (isUnder(path, "/admin/posts")) return "Content / Posts";
+    return "Overview";
+}
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("ui.zx");
+const questions_db = @import("../ask/db.zig");
+const booking = @import("../schedule/booking.zig");

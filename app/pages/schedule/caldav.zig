@@ -91,6 +91,11 @@ pub fn getEvent(allocator: std.mem.Allocator, creds: Credentials, resource: []co
     return send(allocator, creds, try eventUrl(allocator, creds, resource), "GET", &.{}, null);
 }
 
+/// Deleting the organizer's copy makes iCloud send the attendee a cancellation.
+pub fn deleteEvent(allocator: std.mem.Allocator, creds: Credentials, resource: []const u8) !void {
+    _ = try send(allocator, creds, try eventUrl(allocator, creds, resource), "DELETE", &.{}, null);
+}
+
 fn eventUrl(allocator: std.mem.Allocator, creds: Credentials, resource: []const u8) ![]const u8 {
     return std.fmt.allocPrint(allocator, "{s}/{s}.ics", .{ std.mem.trimEnd(u8, creds.calendar_url, "/"), resource });
 }
@@ -117,6 +122,7 @@ fn send(
     })) orelse return error.NetworkError;
     defer response.deinit();
     if (!response.ok()) {
+        if (response.status == 404) return error.NotFound;
         zx.log.warn("schedule: {s} {s} failed status={d}", .{ method, url, response.status });
         return error.CalDavError;
     }

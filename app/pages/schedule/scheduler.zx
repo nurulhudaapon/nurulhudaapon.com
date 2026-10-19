@@ -1,4 +1,4 @@
-const Props = struct { days: []const slots.Day };
+const Props = struct { days: []const slots.Day, slot_minutes: i64 };
 
 const Result = struct {
     booked_start: i64 = 0,
@@ -50,7 +50,7 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
                 <p class="schedule-flash">{error_msg}</p>
             )}
             <p class="schedule-tz">
-                Times shown in {tzLabel()}. Each meeting is {slots.config.slot_minutes} minutes.
+                Times shown in {tzLabel()}. Each meeting is {ctx.props.slot_minutes} minutes.
             </p>
             <nav class="schedule-days" aria-label="Choose a day">
                 {for (days, 0..) |d, i| (

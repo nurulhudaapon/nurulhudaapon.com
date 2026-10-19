@@ -1,0 +1,82 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    const unanswered = try questions_db.listFiltered(ctx.arena, .unanswered);
+    const upcoming = try booking.list(ctx.arena, .upcoming, 5);
+    const sources = posts.listSources(ctx.arena) catch &.{};
+
+    return (
+        <div @allocator={ctx.arena} class="adm-home">
+            <h1 class="adm-home-title">What needs you today?</h1>
+
+            <div class="adm-columns">
+                <section class="adm-column">
+                    <a class="adm-column-head" href="/admin/questions">
+                        <span>Unanswered</span>
+                        <span class="adm-pill">{unanswered.len}</span>
+                        {ui.icon(ctx.arena, .chevron_right)}
+                    </a>
+                    {if (unanswered.len == 0) (
+                        <ui.Empty text="Inbox zero." />
+                    )}
+                    {for (unanswered[0..@min(unanswered.len, 5)]) |q| (
+                        <a class="adm-row" href="/admin/questions">
+                            {ui.icon(ctx.arena, .question)}
+                            <span class="adm-row-main">
+                                <span class="adm-row-title">{q.question}</span>
+                                <span class="adm-row-sub">{format.ago(ctx.arena, q.created_at)}</span>
+                            </span>
+                            {ui.icon(ctx.arena, .chevron_right)}
+                        </a>
+                    )}
+                </section>
+
+                <section class="adm-column">
+                    <a class="adm-column-head" href="/admin/bookings">
+                        <span>Upcoming</span>
+                        <span class="adm-pill">{booking.counts(ctx.arena).upcoming}</span>
+                        {ui.icon(ctx.arena, .chevron_right)}
+                    </a>
+                    {if (upcoming.len == 0) (
+                        <ui.Empty text="No meetings booked." />
+                    )}
+                    {for (upcoming) |b| (
+                        <a class="adm-row" href="/admin/bookings">
+                            {ui.icon(ctx.arena, .calendar)}
+                            <span class="adm-row-main">
+                                <span class="adm-row-title">{b.name}</span>
+                                <span class="adm-row-sub">{format.date(ctx.arena, b.starts_at)} · {format.timeRange(ctx.arena, b.starts_at, b.ends_at)}</span>
+                            </span>
+                            <span class="adm-row-aside">{format.until(ctx.arena, b.starts_at)}</span>
+                        </a>
+                    )}
+                </section>
+
+                <section class="adm-column">
+                    <a class="adm-column-head" href="/admin/posts">
+                        <span>Posts</span>
+                        <span class="adm-pill">{sources.len}</span>
+                        {ui.icon(ctx.arena, .chevron_right)}
+                    </a>
+                    {for (sources[0..@min(sources.len, 5)]) |p| (
+                        <a class="adm-row" href=`/admin/posts/{p.slug}`>
+                            {ui.icon(ctx.arena, .file)}
+                            <span class="adm-row-main">
+                                <span class="adm-row-title">{p.title}</span>
+                                <span class="adm-row-sub">{if (p.draft) "Draft" else p.published_at}</span>
+                            </span>
+                            {ui.icon(ctx.arena, .chevron_right)}
+                        </a>
+                    )}
+                </section>
+            </div>
+        </div>
+    );
+}
+
+pub const options: zx.PageOptions = .{ .dynamic = true };
+
+const zx = @import("zx");
+const ui = @import("ui.zx");
+const format = @import("format.zig");
+const questions_db = @import("../ask/db.zig");
+const booking = @import("../schedule/booking.zig");
+const posts = @import("../blog/posts.zig");

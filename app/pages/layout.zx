@@ -8,6 +8,7 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
     const copyright = ctx.fmt("© {d} {s}.", .{ current_year, data.author }) catch data.author;
 
     const path = ctx.request.pathname;
+    if (isAdminPath(path)) return AdminDocument(ctx, children);
     const title, const description = pageMeta(ctx.arena, path);
 
     const origin = siteOrigin(ctx);
@@ -69,6 +70,29 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
             </body>
         </html>
     );
+}
+
+fn AdminDocument(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
+    return (
+        <html @allocator={ctx.arena} lang="en">
+            <head>
+                <meta charset="UTF-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <meta name="robots" content="noindex, nofollow" />
+                <title>Admin · {data.author}</title>
+                <link rel="icon" href="/favicon.ico" sizes="32x32" type="image/x-icon" />
+                <link rel="stylesheet" href="/assets/style.css" />
+                <link rel="stylesheet" href="/assets/admin.css" />
+            </head>
+            <body class="admin-body">
+                {children}
+            </body>
+        </html>
+    );
+}
+
+fn isAdminPath(path: []const u8) bool {
+    return std.mem.eql(u8, path, "/admin") or std.mem.startsWith(u8, path, "/admin/");
 }
 
 fn siteOrigin(ctx: zx.LayoutContext) []const u8 {

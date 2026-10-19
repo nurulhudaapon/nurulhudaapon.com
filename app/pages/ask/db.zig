@@ -76,3 +76,27 @@ pub fn getById(allocator: std.mem.Allocator, id: i64) !?Question {
         \\WHERE id = ?1 AND deleted = 0
     , .{id});
 }
+
+pub const Filter = enum { unanswered, answered, all };
+
+pub fn listFiltered(allocator: std.mem.Allocator, filter: Filter) ![]const Question {
+    const select =
+        \\SELECT id, question, answer, visitor_id, created_at, seen_at FROM questions WHERE deleted = 0
+    ;
+    return switch (filter) {
+        .unanswered => zx.db.rows(allocator, Question, select ++ " AND answer IS NULL ORDER BY id DESC", .{}),
+        .answered => zx.db.rows(allocator, Question, select ++ " AND answer IS NOT NULL ORDER BY id DESC", .{}),
+        .all => listAll(allocator),
+    };
+}
+
+pub const Counts = struct { unanswered: i64 = 0, answered: i64 = 0, all: i64 = 0 };
+
+pub fn counts(allocator: std.mem.Allocator) Counts {
+    const row = zx.db.row(allocator, Counts,
+        \\SELECT COALESCE(SUM(answer IS NULL), 0) AS unanswered,
+        \\  COALESCE(SUM(answer IS NOT NULL), 0) AS answered, COUNT(*) AS "all"
+        \\FROM questions WHERE deleted = 0
+    , .{}) catch return .{};
+    return row orelse .{};
+}

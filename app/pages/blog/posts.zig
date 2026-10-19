@@ -217,7 +217,9 @@ fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const
     };
 }
 
-fn splitFrontmatter(source: []const u8) !struct { meta: []const u8, body: []const u8 } {
+const Split = struct { meta: []const u8, body: []const u8 };
+
+fn splitFrontmatter(source: []const u8) !Split {
     const trimmed = std.mem.trimStart(u8, source, " \t\r\n");
     if (!std.mem.startsWith(u8, trimmed, "---")) return error.FailedToParsePosts;
 
@@ -525,4 +527,75 @@ fn monthIndex(name: []const u8) ?u64 {
         if (std.mem.eql(u8, m, name)) return i;
     }
     return null;
+}
+
+pub const Source = struct {
+    path: []const u8,
+    slug: []const u8,
+    title: []const u8,
+    draft: bool,
+    published_at: []const u8,
+    read_minutes: u32,
+    markdown: []const u8,
+};
+
+pub fn listSources(allocator: std.mem.Allocator) GetPostError![]Source {
+    const archive = git.fetchDefaultArchive(allocator) catch |err| {
+        std.log.err("Failed to fetch blog archive: {any}", .{err});
+        return error.FailedToFetchPosts;
+    };
+
+    var out: std.ArrayList(Source) = .empty;
+    var it = archive.files.iterator();
+    while (it.next()) |entry| {
+        if (sourceFromFile(entry.key_ptr.*, entry.value_ptr.*)) |src| try out.append(allocator, src);
+    }
+    std.mem.sort(Source, out.items, {}, struct {
+        fn lessThan(_: void, a: Source, b: Source) bool {
+            if (a.draft != b.draft) return a.draft;
+            return comparePublishedDesc(a.published_at, b.published_at);
+        }
+    }.lessThan);
+    for (out.items) |*src| {
+        if (src.published_at.len > 0) src.published_at = try formatPublishedDate(allocator, src.published_at);
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+pub fn getSource(allocator: std.mem.Allocator, slug: []const u8) GetPostError!Source {
+    const sources = try listSources(allocator);
+    for (sources) |src| if (std.mem.eql(u8, src.slug, slug)) return src;
+    return error.PostNotFound;
+}
+
+fn sourceFromFile(path: []const u8, markdown: []const u8) ?Source {
+    const basename = std.fs.path.basename(path);
+    const split = splitFrontmatter(markdown) catch return null;
+    const fm = parseFrontmatterFields(split.meta) catch return null;
+    return .{
+        .path = path,
+        .slug = fm.slug orelse slugFromFilename(basename) orelse return null,
+        .title = fm.title orelse basename,
+        .draft = isDraftPath(path) or isDraftFrontmatter(fm),
+        .published_at = fm.published_at orelse "",
+        .read_minutes = estimateReadTime(split.body),
+        .markdown = markdown,
+    };
+}
+
+pub const Preview = struct {
+    title: []const u8,
+    html: []const u8,
+    read_minutes: u32,
+};
+
+pub fn renderPreview(allocator: std.mem.Allocator, markdown: []const u8) !Preview {
+    const split = splitFrontmatter(markdown) catch Split{ .meta = "", .body = markdown };
+    const fm = try parseFrontmatterFields(split.meta);
+    const body = std.mem.trim(u8, split.body, " \t\r\n");
+    return .{
+        .title = fm.title orelse "",
+        .html = if (body.len == 0) "" else try render.renderMarkdown(allocator, body),
+        .read_minutes = estimateReadTime(body),
+    };
 }

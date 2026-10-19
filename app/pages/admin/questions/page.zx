@@ -1,0 +1,120 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    const filter = std.meta.stringToEnum(db.Filter, ctx.request.queries.get("filter") orelse "") orelse .unanswered;
+    const back = try ctx.fmt("/admin/questions?filter={s}", .{@tagName(filter)});
+    if (ctx.request.method == .POST) {
+        const flag = handle(ctx) catch |err| blk: {
+            zx.log.err("admin: question action failed: {any}", .{err});
+            break :blk "err=failed";
+        };
+        return ui.redirect(ctx, try ctx.fmt("{s}&{s}", .{ back, flag }));
+    }
+
+    const questions = try db.listFiltered(ctx.arena, filter);
+    const tabs = try ui.filterTabs(ctx.arena, "/admin/questions", filter, db.counts(ctx.arena));
+    const flash = ui.flashFrom(ctx.request.queries, &.{
+        .{ "answered", "Answer saved. The asker will see it next time they visit /ask." },
+        .{ "deleted", "Question deleted." },
+        .{ "empty", "Write an answer before saving." },
+        .{ "failed", "Something went wrong. Check the server logs." },
+    });
+
+    return (
+        <div @allocator={ctx.arena}>
+            <ui.PageHeader title="Questions" description="Anonymous questions from /ask. Answers show up for the asker on their next visit." />
+            <ui.FlashBanner flash={flash} />
+            <ui.Tabs tabs={tabs} />
+            {if (questions.len == 0) (
+                <div class="adm-card">
+                    <ui.Empty text={emptyText(filter)} />
+                </div>
+            ) else (
+                <div class="adm-card adm-list">
+                    {for (questions) |q| (
+                        <QuestionItem q={q} action={back} />
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+fn QuestionItem(allocator: zx.Allocator, props: struct { q: db.Question, action: []const u8 }) zx.Component {
+    const q = props.q;
+    const status_class = if (q.answer == null) "adm-badge adm-badge-accent" else if (q.seen_at != null) "adm-badge adm-badge-ok" else "adm-badge";
+    const status = if (q.answer == null) "Unanswered" else if (q.seen_at != null) "Seen" else "Answered, not seen yet";
+
+    return (
+        <article @{allocator} class="adm-item">
+            <div class="adm-item-head">
+                <div class="adm-item-body">
+                    <p class="adm-item-title">{q.question}</p>
+                    <div class="adm-meta">
+                        <span>{format.ago(allocator, q.created_at)}</span>
+                        <span>Visitor {q.visitor_id}</span>
+                    </div>
+                </div>
+                <span class={status_class}>{status}</span>
+            </div>
+            {if (q.answer) |answer| (
+                <div>
+                    <p class="adm-answer">{answer}</p>
+                    <div class="adm-actions">
+                        <details class="adm-disclosure">
+                            <summary class="adm-btn">Edit answer</summary>
+                            <form method="post" action={props.action} class="adm-disclosure-panel adm-field">
+                                <input type="hidden" name="id" value={q.id} />
+                                <textarea class="adm-textarea" name="answer" rows="4" required>{answer}</textarea>
+                                <div>
+                                    <button class="adm-btn adm-btn-primary" type="submit" name="action" value="answer">Save answer</button>
+                                </div>
+                            </form>
+                        </details>
+                        <form method="post" action={props.action} class="adm-inline">
+                            <input type="hidden" name="id" value={q.id} />
+                            <button class="adm-btn adm-btn-ghost adm-btn-danger" type="submit" name="action" value="delete">Delete</button>
+                        </form>
+                    </div>
+                </div>
+            ) else (
+                <form method="post" action={props.action} class="adm-actions">
+                    <input type="hidden" name="id" value={q.id} />
+                    <textarea class="adm-textarea" name="answer" rows="2" placeholder="Write an answer…" required></textarea>
+                    <button class="adm-btn adm-btn-primary" type="submit" name="action" value="answer">Publish answer</button>
+                    <button class="adm-btn adm-btn-ghost adm-btn-danger" type="submit" name="action" value="delete" formnovalidate>Delete</button>
+                </form>
+            )}
+        </article>
+    );
+}
+
+fn handle(ctx: zx.PageContext) ![]const u8 {
+    const fd = ctx.request.formData();
+    const id = try std.fmt.parseInt(i64, fd.get("id") orelse "", 10);
+    if (std.mem.eql(u8, fd.get("action") orelse "", "delete")) {
+        try db.softDelete(id);
+        return "ok=deleted";
+    }
+    const answer = std.mem.trim(u8, fd.get("answer") orelse "", " \t\r\n");
+    if (answer.len == 0) return "err=empty";
+    try db.setAnswer(id, answer);
+    return "ok=answered";
+}
+
+fn emptyText(filter: db.Filter) []const u8 {
+    return switch (filter) {
+        .unanswered => "Inbox zero. Every question has an answer.",
+        .answered => "No answered questions yet.",
+        .all => "No questions yet.",
+    };
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .dynamic = true,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const format = @import("../format.zig");
+const db = @import("../../ask/db.zig");

@@ -1,5 +1,6 @@
 pub fn Page(ctx: zx.PageContext) zx.Component {
-    const days = loadDays(ctx.arena);
+    const rules = settings.load(ctx.arena);
+    const days = loadDays(ctx.arena, rules);
 
     return (
         <main @allocator={ctx.arena} class="page-inner page-schedule">
@@ -10,7 +11,7 @@ pub fn Page(ctx: zx.PageContext) zx.Component {
                 <div class="schedule-content">
                     <p class="schedule-intro">Pick a time that works for you and let's talk.</p>
                     {if (days) |d| (
-                        <Scheduler @rendering={.client} days={d} />
+                        <Scheduler @rendering={.client} days={d} slot_minutes={rules.slot_minutes} />
                     ) else (
                         <p class="schedule-empty">
                             Scheduling is temporarily unavailable. Please email me at <a href="mailto:me@nurulhudaapon.com">me@nurulhudaapon.com</a>.
@@ -22,14 +23,14 @@ pub fn Page(ctx: zx.PageContext) zx.Component {
     );
 }
 
-fn loadDays(arena: zx.Allocator) ?[]const slots.Day {
+fn loadDays(arena: zx.Allocator, rules: slots.Rules) ?[]const slots.Day {
     const now = booking.nowUnix();
     const creds = (caldav.loadCredentials(arena) catch null) orelse return null;
-    const busy = caldav.busy(arena, creds, slots.horizon(now), true) catch |err| {
+    const busy = caldav.busy(arena, creds, slots.horizon(rules, now), true) catch |err| {
         zx.log.err("schedule: failed to load busy times: {any}", .{err});
         return null;
     };
-    return slots.availableDays(arena, now, busy) catch null;
+    return slots.availableDays(arena, rules, now, busy) catch null;
 }
 
 pub const options: zx.PageOptions = .{
@@ -43,3 +44,4 @@ pub const Scheduler = @import("scheduler.zx").Scheduler;
 const slots = @import("slots.zig");
 const caldav = @import("caldav.zig");
 const booking = @import("booking.zig");
+const settings = @import("settings.zig");

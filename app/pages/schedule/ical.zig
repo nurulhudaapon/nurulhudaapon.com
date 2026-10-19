@@ -1,6 +1,7 @@
 const std = @import("std");
 const c = @import("ical");
-const Interval = @import("slots.zig").Interval;
+const slots = @import("slots.zig");
+const Interval = slots.Interval;
 
 pub fn busyIntervals(allocator: std.mem.Allocator, multistatus: []const u8, range: Interval) ![]const Interval {
     var collector: Collector = .{ .allocator = allocator };
@@ -23,6 +24,8 @@ pub fn busyIntervals(allocator: std.mem.Allocator, multistatus: []const u8, rang
         var event = c.icalcomponent_get_first_component(root, c.ICAL_VEVENT_COMPONENT);
         while (event != null) : (event = c.icalcomponent_get_next_component(root, c.ICAL_VEVENT_COMPONENT)) {
             if (!blocksTime(event)) continue;
+            // libical reads floating times and all-day dates as UTC; they mean local time.
+            collector.shift = if (c.icalcomponent_get_dtstart(event).zone == null) -slots.config.utc_offset_s else 0;
             c.icalcomponent_foreach_recurrence(event, range_start, range_end, Collector.onSpan, &collector);
             if (collector.failed) return error.OutOfMemory;
         }
@@ -33,13 +36,14 @@ pub fn busyIntervals(allocator: std.mem.Allocator, multistatus: []const u8, rang
 const Collector = struct {
     allocator: std.mem.Allocator,
     list: std.ArrayList(Interval) = .empty,
+    shift: i64 = 0,
     failed: bool = false,
 
     fn onSpan(_: ?*c.icalcomponent, span: [*c]c.icaltime_span, data: ?*anyopaque) callconv(.c) void {
         const self: *Collector = @ptrCast(@alignCast(data));
         const s = span.*;
         if (s.is_busy == 0 or s.end <= s.start) return;
-        self.list.append(self.allocator, .{ .start = s.start, .end = s.end }) catch {
+        self.list.append(self.allocator, .{ .start = s.start + self.shift, .end = s.end + self.shift }) catch {
             self.failed = true;
         };
     }
@@ -211,5 +215,20 @@ test buildEvent {
     defer std.testing.allocator.free(busy);
     try std.testing.expectEqualSlices(Interval, &.{
         .{ .start = thu_oct22_10am_dhaka, .end = thu_oct22_10am_dhaka + half_hour },
+    }, busy);
+}
+
+
+test "all-day events block the whole local day" {
+    const sat_oct24_midnight_dhaka = 1792778400;
+    const xml =
+        "<calendar-data>BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:test\r\n" ++
+        "BEGIN:VEVENT\r\nUID:allday\r\nDTSTAMP:20261001T000000Z\r\n" ++
+        "DTSTART;VALUE=DATE:20261024\r\nDTEND;VALUE=DATE:20261025\r\nTRANSP:OPAQUE\r\nEND:VEVENT\r\n" ++
+        "END:VCALENDAR\r\n</calendar-data>";
+    const busy = try busyIntervals(std.testing.allocator, xml, range_oct19_to_nov2);
+    defer std.testing.allocator.free(busy);
+    try std.testing.expectEqualSlices(Interval, &.{
+        .{ .start = sat_oct24_midnight_dhaka, .end = sat_oct24_midnight_dhaka + std.time.s_per_day },
     }, busy);
 }

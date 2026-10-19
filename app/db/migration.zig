@@ -1,17 +1,40 @@
 const std = @import("std");
 const zx = @import("zx");
 
+const Migration = struct { name: []const u8, sql: []const u8 };
+
+const migrations = [_]Migration{
+    .{ .name = "0001_init.sql", .sql = @embedFile("migrations/0001_init.sql") },
+    .{ .name = "0002_init_data.sql", .sql = @embedFile("migrations/0002_init_data.sql") },
+    .{ .name = "0003_bookings.sql", .sql = @embedFile("migrations/0003_bookings.sql") },
+    .{ .name = "0004_admin.sql", .sql = @embedFile("migrations/0004_admin.sql") },
+};
+
+/// Local only; uses wrangler's `d1_migrations` table so both track the same files.
 pub fn run() !void {
     if (zx.platform.isWasm()) return;
 
-    const migrations = [_][]const u8{
-        @embedFile("migrations/0001_init.sql"),
-        @embedFile("migrations/0002_init_data.sql"),
-        @embedFile("migrations/0003_bookings.sql"),
-    };
+    _ = try zx.db.run(
+        \\CREATE TABLE IF NOT EXISTS d1_migrations (
+        \\  id INTEGER PRIMARY KEY AUTOINCREMENT,
+        \\  name TEXT UNIQUE,
+        \\  applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        \\)
+    , .{});
 
-    for (migrations) |sql| {
-        try execScript(sql);
+    var arena_state: std.heap.ArenaAllocator = .init(zx.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    for (migrations) |m| {
+        const applied = try zx.db.row(arena, struct { ok: i64 },
+            \\SELECT 1 AS ok FROM d1_migrations WHERE name = ?1
+        , .{m.name});
+        if (applied != null) continue;
+
+        try execScript(m.sql);
+        _ = try zx.db.run("INSERT INTO d1_migrations (name) VALUES (?1)", .{m.name});
+        std.log.info("migration applied: {s}", .{m.name});
     }
 }
 
@@ -36,4 +59,3 @@ fn isCommentOnly(stmt: []const u8) bool {
     }
     return true;
 }
-

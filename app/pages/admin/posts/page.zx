@@ -1,0 +1,42 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    const sources = try posts.listSources(ctx.arena);
+
+    return (
+        <div @allocator={ctx.arena} class="adm-page-fill">
+            <ui.PageHeader title="Posts" description="Markdown files from the blogs repository. Edits are previews and drafts only; nothing is pushed to GitHub." />
+            <div class="adm-card adm-scroll">
+                <table class="adm-table">
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>Status</th>
+                            <th class="adm-hide-sm">Published</th>
+                            <th class="adm-hide-sm">Read time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {for (sources) |p| (
+                            <tr>
+                                <td>
+                                    <a class="adm-table-title" href=`/admin/posts/{p.slug}`>{p.title}</a>
+                                    <span class="adm-table-sub">{p.path}</span>
+                                </td>
+                                <td>
+                                    <span class={if (p.draft) "adm-badge" else "adm-badge adm-badge-ok"}>{if (p.draft) "Draft" else "Published"}</span>
+                                </td>
+                                <td class="adm-hide-sm">{if (p.published_at.len > 0) p.published_at else "—"}</td>
+                                <td class="adm-hide-sm">{p.read_minutes} min</td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+pub const options: zx.PageOptions = .{ .dynamic = true };
+
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const posts = @import("../../blog/posts.zig");
