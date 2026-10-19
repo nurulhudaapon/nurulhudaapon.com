@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .ziex = .{
-            .url = "git+https://github.com/ziex-dev/ziex#2806404ce6c4e953e1a039d7521be928e1337cd3",
-            .hash = "ziex-0.1.0-dev-Z3YcvU0ZnAF7FhTmc5i7e3Lio2Vq9tGWvIbuAI9jHBiT",
+            .url = "git+https://github.com/ziex-dev/ziex#8138cc7ac84f025cf644a852cf1751bce51eb57d",
+            .hash = "ziex-0.1.0-dev-Z3YcvZqFnQGb6S0HevABs_xPIHzdc97VTDX4tZvqxHZo",
         },
         .markz = .{
             .url = "git+https://codeberg.org/nurulhudaapon/markz.git?ref=zig-0.17#19af600075fc60775e89a3430dadd94299b13e14",
@@ -20,10 +20,15 @@
             .url = "https://github.com/vercel/geist-font/releases/download/v1.7.2/geist-font-v1.7.2.zip",
             .hash = "N-V-__8AAGcfRgGYQdv3bwuRkqz__9kZOc9D4-NZYcK7sDdn",
         },
+        .libical = .{
+            .url = "https://github.com/libical/libical/archive/refs/tags/v3.0.20.tar.gz",
+            .hash = "N-V-__8AAOcUlQAjl4D6KzwCNfYoBNy-Y--4_E4Jn-tM98-K",
+        },
     },
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "app",
+        "lib",
     },
 }

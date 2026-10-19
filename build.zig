@@ -1,5 +1,6 @@
 const std = @import("std");
 const ziex = @import("ziex");
+const libical = @import("lib/ical/build.zig");
 
 pub fn build(b: *std.Build) !void {
     // --- Target and Optimize from `zig build` arguments ---
@@ -29,11 +30,10 @@ pub fn build(b: *std.Build) !void {
             },
             .client = .{
                 .bindings = .{
-                    .link = false,
                     .build = .enabled,
                     .install_subdir = "bindings",
                 },
-                .wasm = .disabled,
+                .wasm = .{ .optimize = .small },
             },
         },
     });
@@ -44,6 +44,21 @@ pub fn build(b: *std.Build) !void {
     }).module("lunasvg"));
 
     ziex_b.addImport("geist_fonts", addGeistFontsModule(b));
+
+    const ical_mod = libical.addLibical(b, target, optimize);
+    ziex_b.addImport("ical", ical_mod);
+
+    // --- Unit tests ---
+    const test_step = b.step("test", "Run unit tests");
+    for ([_][]const u8{ "app/pages/schedule/slots.zig", "app/pages/schedule/ical.zig" }) |path| {
+        const t = b.addTest(.{ .root_module = b.createModule(.{
+            .root_source_file = b.path(path),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ical", .module = ical_mod }},
+        }) });
+        test_step.dependOn(&b.addRunArtifact(t).step);
+    }
 }
 
 fn addGeistFontsModule(b: *std.Build) *std.Build.Module {

@@ -7,6 +7,7 @@ pub fn run() !void {
     const migrations = [_][]const u8{
         @embedFile("migrations/0001_init.sql"),
         @embedFile("migrations/0002_init_data.sql"),
+        @embedFile("migrations/0003_bookings.sql"),
     };
 
     for (migrations) |sql| {

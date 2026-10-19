@@ -1,0 +1,193 @@
+const Props = struct { days: []const slots.Day };
+
+const Result = struct {
+    booked_start: i64 = 0,
+    error_msg: []const u8 = "",
+};
+
+const BookInput = struct {
+    name: []const u8,
+    email: []const u8,
+    notes: []const u8,
+    website: []const u8,
+};
+
+pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
+    const day_idx = ctx.state(usize, firstOpenDay(ctx.props.days));
+    const slot = ctx.state(i64, 0);
+    const result = ctx.state(Result, .{});
+    const booking_action = ctx.action(book, .{});
+    const pending = booking_action.pending;
+    const alloc = ctx.allocator;
+    const days = ctx.props.days;
+
+    if (result.get().booked_start != 0) {
+        const when = whenLabel(alloc, result.get().booked_start);
+        return (
+            <div @allocator={alloc} class="schedule-done">
+                <p class="ask-flash ask-flash-success">
+                    You're booked for {when}. A calendar invite with the meeting link is on its way to your email.
+                </p>
+                <a class="schedule-back" href="/schedule">Book another time</a>
+            </div>
+        );
+    }
+
+    if (days.len == 0) {
+        return (
+            <p @allocator={alloc} class="schedule-empty">No open times right now. Email me at me@nurulhudaapon.com instead.</p>
+        );
+    }
+
+    const day = days[@min(day_idx.get(), days.len - 1)];
+    const error_msg = result.get().error_msg;
+    // Hidden rather than omitted: ziex registers server actions during the server render.
+    const form_class = if (slot.get() == 0) "schedule-form schedule-form-hidden" else "schedule-form";
+
+    return (
+        <div @allocator={alloc} class="schedule-picker">
+            {if (error_msg.len > 0) (
+                <p class="schedule-flash">{error_msg}</p>
+            )}
+            <p class="schedule-tz">
+                Times shown in {tzLabel()}. Each meeting is {slots.config.slot_minutes} minutes.
+            </p>
+            <nav class="schedule-days" aria-label="Choose a day">
+                {for (days, 0..) |d, i| (
+                    <button
+                        type="button"
+                        class={dayClass(d, i == day_idx.get())}
+                        value={i}
+                        aria-pressed={if (i == day_idx.get()) "true" else "false"}
+                        onclick={ctx.bind(pickDay)}
+                    >
+                        <span class="schedule-day-weekday">{d.weekday}</span>
+                        <span class="schedule-day-date">{d.day_of_month}</span>
+                        <span class="schedule-day-month">{d.month}</span>
+                        <span class="schedule-day-count">{dayCount(alloc, d)}</span>
+                    </button>
+                )}
+            </nav>
+            <section class="schedule-slots" aria-label="Available times">
+                {if (day.slots.len == 0) (
+                    <p class="schedule-empty">This day is fully booked. Please pick another.</p>
+                )}
+                {for (day.slots) |s| (
+                    <button
+                        type="button"
+                        class={if (s.start == slot.get()) "schedule-slot schedule-slot-selected" else "schedule-slot"}
+                        value={s.start}
+                        onclick={ctx.bind(pickSlot)}
+                    >{timeLabel(alloc, s.start)}</button>
+                )}
+            </section>
+            <form class={form_class} action={booking_action}>
+                <p class="schedule-form-when">{if (slot.get() == 0) "" else whenLabel(alloc, slot.get())}</p>
+                <label class="schedule-label">
+                    Name
+                    <input class="schedule-input" type="text" name="name" required maxlength="100" autocomplete="name" disabled={pending} />
+                </label>
+                <label class="schedule-label">
+                    Email
+                    <input class="schedule-input" type="email" name="email" required maxlength="200" autocomplete="email" disabled={pending} />
+                </label>
+                <label class="schedule-label">
+                    What would you like to talk about?
+                    <textarea class="schedule-input" name="notes" rows="3" maxlength="2000" disabled={pending}></textarea>
+                </label>
+                <input class="schedule-hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
+                <div class="schedule-form-actions">
+                    <button class="ask-submit" type="submit" disabled={pending}>{if (pending) "Booking…" else "Book meeting"}</button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+fn pickDay(e: *zx.client.Event.Stateful) void {
+    const idx = std.fmt.parseInt(usize, e.value() orelse return, 10) catch return;
+    e.state(usize).set(idx);
+    e.state(i64).set(0);
+    e.state(Result).set(.{});
+}
+
+fn pickSlot(e: *zx.client.Event.Stateful) void {
+    const start = std.fmt.parseInt(i64, e.value() orelse return, 10) catch return;
+    _ = e.state(usize); // state handles are positional
+    e.state(i64).set(start);
+    e.state(Result).set(.{});
+}
+
+fn book(a: *zx.server.Action.Stateful) void {
+    _ = a.state(usize); // state handles are positional
+    const slot = a.state(i64);
+    const result = a.state(Result);
+    const input = a.data(BookInput);
+
+    const outcome = booking.book(a.inner.arena, slot.get(), .{
+        .name = input.name,
+        .email = input.email,
+        .notes = input.notes,
+        .honeypot = input.website,
+        .origin = booking.origin(a.inner.request),
+    });
+    switch (outcome) {
+        .booked => result.set(.{ .booked_start = slot.get() }),
+        .invalid => result.set(.{ .error_msg = "Please check your details and pick a valid time." }),
+        .taken => {
+            slot.set(0);
+            result.set(.{ .error_msg = "Sorry, that time was just taken. Please pick another." });
+        },
+        .failed => result.set(.{ .error_msg = "Something went wrong while booking. Please try again or email me." }),
+    }
+}
+
+fn firstOpenDay(days: []const slots.Day) usize {
+    for (days, 0..) |d, i| if (d.slots.len > 0) return i;
+    return 0;
+}
+
+fn dayClass(d: slots.Day, selected: bool) []const u8 {
+    if (selected) return "schedule-day schedule-day-selected";
+    if (d.slots.len == 0) return "schedule-day schedule-day-full";
+    return "schedule-day";
+}
+
+fn dayCount(alloc: zx.Allocator, d: slots.Day) []const u8 {
+    if (d.slots.len == 0) return "Full";
+    return std.fmt.allocPrint(alloc, "{d} open", .{d.slots.len}) catch "";
+}
+
+fn displayOffset(unix: i64) i64 {
+    if (zx.platform.role != .client) return slots.config.utc_offset_s;
+    var buf: [64]u8 = undefined;
+    const code = std.fmt.bufPrint(&buf, "new Date({d}).getTimezoneOffset()", .{unix * 1000}) catch
+        return slots.config.utc_offset_s;
+    const minutes = zx.client.eval(f64, code) catch return slots.config.utc_offset_s;
+    return -@as(i64, @intFromFloat(minutes)) * 60;
+}
+
+fn tzLabel() []const u8 {
+    if (zx.platform.role == .client) return "your local time";
+    return slots.config.timezone ++ " (" ++ slots.config.timezone_label ++ ")";
+}
+
+fn timeLabel(alloc: zx.Allocator, unix: i64) []const u8 {
+    return slots.formatTime(alloc, unix, displayOffset(unix)) catch "";
+}
+
+fn whenLabel(alloc: zx.Allocator, unix: i64) []const u8 {
+    const offset = displayOffset(unix);
+    const date = slots.formatDate(alloc, unix, offset) catch "";
+    const time = slots.formatTime(alloc, unix, offset) catch "";
+    const sign: u8 = if (offset < 0) '-' else '+';
+    const minutes: u64 = @abs(offset) / 60;
+    if (minutes % 60 == 0)
+        return std.fmt.allocPrint(alloc, "{s} at {s} (GMT{c}{d})", .{ date, time, sign, minutes / 60 }) catch "";
+    return std.fmt.allocPrint(alloc, "{s} at {s} (GMT{c}{d}:{d:0>2})", .{ date, time, sign, minutes / 60, minutes % 60 }) catch "";
+}
+
+const zx = @import("zx");
+const std = @import("std");
+const slots = @import("slots.zig");
+const booking = @import("booking.zig");

@@ -656,26 +656,224 @@ body:has(.page-home) .nav-link[href="/"] {
     margin: 0;
 }
 
-.calendar-embed {
-    position: relative;
-    width: 100%;
-    height: calc(100vh - 13rem);
-    overflow: hidden;
-    background: var(--background);
+/* Lets the scrollable day strip shrink inside the page grid. */
+.page-schedule,
+.schedule-content,
+.schedule-picker {
+    min-width: 0;
 }
 
-.calendar-embed iframe {
-    display: block;
-    width: 100%;
-    height: calc(100vh - 13rem + 46px);
-    margin-top: -46px;
-    border: 0;
+.schedule-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.schedule-tz,
+.schedule-empty {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+}
+
+.schedule-empty a {
+    text-decoration: underline;
+}
+
+.schedule-flash {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    color: #991b1b;
+    background: color-mix(in srgb, #ef4444 10%, transparent);
+    border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
-    .calendar-embed iframe {
-        filter: invert(0.96) hue-rotate(180deg);
+    .schedule-flash {
+        color: #fecaca;
+        background: color-mix(in srgb, #ef4444 16%, transparent);
     }
+}
+
+.schedule-days {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    scroll-snap-type: x proximity;
+}
+
+.schedule-day,
+.schedule-slot {
+    font: inherit;
+    color: inherit;
+    background: none;
+    cursor: pointer;
+}
+
+/* event.value() reads the click target, so it must be the button. */
+.schedule-day > * {
+    pointer-events: none;
+}
+
+.schedule-day {
+    flex: 0 0 4.25rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0.5rem 0.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    text-decoration: none;
+    scroll-snap-align: start;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.schedule-day:hover {
+    background: var(--color-nav);
+}
+
+.schedule-day-selected {
+    border-color: #3b82f6;
+    background: color-mix(in srgb, #3b82f6 10%, transparent);
+}
+
+.schedule-day-full {
+    opacity: 0.5;
+}
+
+.schedule-day-weekday,
+.schedule-day-month {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+}
+
+.schedule-day-date {
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.schedule-day-count {
+    font-size: 0.6875rem;
+    color: var(--color-text-muted);
+}
+
+.schedule-slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
+    gap: 0.5rem;
+}
+
+.schedule-slots .schedule-empty {
+    grid-column: 1 / -1;
+}
+
+.schedule-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 2.5rem;
+    border: 1px solid color-mix(in srgb, #3b82f6 35%, var(--color-border));
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background-color 0.15s ease;
+}
+
+.schedule-slot:hover {
+    background: var(--color-nav);
+}
+
+.schedule-slot-selected {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #ffffff;
+}
+
+.schedule-slot-selected:hover {
+    background: #2563eb;
+}
+
+.schedule-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid color-mix(in srgb, #3b82f6 35%, var(--color-border));
+    border-radius: 0.5rem;
+    scroll-margin-top: 1rem;
+}
+
+.schedule-form-hidden {
+    display: none;
+}
+
+.schedule-form-when {
+    margin: 0;
+    font-weight: 600;
+}
+
+.schedule-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+}
+
+.schedule-input {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    border: 1px solid var(--color-border);
+    background: var(--background);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 1rem;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+.schedule-input:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 1px;
+}
+
+.schedule-hp {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.schedule-form .ask-submit:disabled,
+.schedule-input:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+.schedule-form-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.schedule-done {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.schedule-back {
+    font-size: 0.875rem;
+    text-decoration: underline;
 }
 
 /* Ask */

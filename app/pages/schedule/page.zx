@@ -1,4 +1,6 @@
 pub fn Page(ctx: zx.PageContext) zx.Component {
+    const days = loadDays(ctx.arena);
+
     return (
         <main @allocator={ctx.arena} class="page-inner page-schedule">
             <div class="page-inner-content">
@@ -7,17 +9,37 @@ pub fn Page(ctx: zx.PageContext) zx.Component {
                 </div>
                 <div class="schedule-content">
                     <p class="schedule-intro">Pick a time that works for you and let's talk.</p>
-                    <div class="calendar-embed">
-                        <iframe
-                            src="https://calendar.google.com/calendar/appointments/schedules/AcZssZ1nBnTfyZjvTSHR6mQzLHcWOD7LjCilnrpKo9YMBTaRuwOYfd5c6jrQ5511cMBjL_CNMJgVDOrk?gv=true"
-                            title="Schedule a meeting with Nurul Huda (Apon)"
-                        ></iframe>
-                    </div>
+                    {if (days) |d| (
+                        <Scheduler @rendering={.client} days={d} />
+                    ) else (
+                        <p class="schedule-empty">
+                            Scheduling is temporarily unavailable. Please email me at <a href="mailto:me@nurulhudaapon.com">me@nurulhudaapon.com</a>.
+                        </p>
+                    )}
                 </div>
             </div>
         </main>
     );
 }
 
+fn loadDays(arena: zx.Allocator) ?[]const slots.Day {
+    const now = booking.nowUnix();
+    const creds = (caldav.loadCredentials(arena) catch null) orelse return null;
+    const busy = caldav.busy(arena, creds, slots.horizon(now), true) catch |err| {
+        zx.log.err("schedule: failed to load busy times: {any}", .{err});
+        return null;
+    };
+    return slots.availableDays(arena, now, busy) catch null;
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .dynamic = true,
+};
+
 const zx = @import("zx");
 const Navbar = @import("../component.zx").Navbar;
+pub const Scheduler = @import("scheduler.zx").Scheduler;
+const slots = @import("slots.zig");
+const caldav = @import("caldav.zig");
+const booking = @import("booking.zig");
