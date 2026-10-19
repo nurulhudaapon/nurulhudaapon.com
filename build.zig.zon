@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .ziex = .{
-            .url = "git+https://github.com/ziex-dev/ziex?ref=perf/edge-instance-reuse#c85e201e305b393d21cb6b32c252ce2504acbbff",
-            .hash = "ziex-0.1.0-dev-Z3YcvaymnQG4EVYQfNp7Dh-7IbtarZLzTdjTOSQN5Vth",
+            .url = "git+https://github.com/ziex-dev/ziex#d512fa1bea33799f21a7517d14e9b82893cdea0a",
+            .hash = "ziex-0.1.0-dev-Z3YcvfR3nQHURV_AK-AZ88AWfk4ojsMh6p_cgLCMbkxi",
         },
         .markz = .{
             .url = "git+https://codeberg.org/nurulhudaapon/markz.git?ref=zig-0.17#19af600075fc60775e89a3430dadd94299b13e14",

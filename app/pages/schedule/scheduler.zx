@@ -95,7 +95,7 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
                     What would you like to talk about?
                     <textarea class="schedule-input" name="notes" rows="3" maxlength="2000" disabled={pending}></textarea>
                 </label>
-                <input class="schedule-hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
+                <input class="form-hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
                 <div class="schedule-form-actions">
                     <button class="ask-submit" type="submit" disabled={pending}>{if (pending) "Booking…" else "Book meeting"}</button>
                 </div>
@@ -130,6 +130,7 @@ fn book(a: *zx.server.Action.Stateful) void {
         .notes = input.notes,
         .honeypot = input.website,
         .origin = booking.origin(a.inner.request),
+        .ip = a.inner.request.headers.get("cf-connecting-ip"),
     });
     switch (outcome) {
         .booked => result.set(.{ .booked_start = slot.get() }),
@@ -138,6 +139,7 @@ fn book(a: *zx.server.Action.Stateful) void {
             slot.set(0);
             result.set(.{ .error_msg = "Sorry, that time was just taken. Please pick another." });
         },
+        .limited => result.set(.{ .error_msg = "You already have meetings booked. Email me at me@nurulhudaapon.com if you need another." }),
         .failed => result.set(.{ .error_msg = "Something went wrong while booking. Please try again or email me." }),
     }
 }

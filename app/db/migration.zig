@@ -8,6 +8,7 @@ const migrations = [_]Migration{
     .{ .name = "0002_init_data.sql", .sql = @embedFile("migrations/0002_init_data.sql") },
     .{ .name = "0003_bookings.sql", .sql = @embedFile("migrations/0003_bookings.sql") },
     .{ .name = "0004_admin.sql", .sql = @embedFile("migrations/0004_admin.sql") },
+    .{ .name = "0005_spam.sql", .sql = @embedFile("migrations/0005_spam.sql") },
 };
 
 /// Local only; uses wrangler's `d1_migrations` table so both track the same files.

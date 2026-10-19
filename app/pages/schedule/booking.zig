@@ -5,6 +5,7 @@ const slots = @import("slots.zig");
 const caldav = @import("caldav.zig");
 const ical = @import("ical.zig");
 const settings = @import("settings.zig");
+const spam = @import("../spam.zig");
 
 pub const Request = struct {
     name: []const u8,
@@ -12,9 +13,10 @@ pub const Request = struct {
     notes: []const u8,
     honeypot: []const u8,
     origin: []const u8,
+    ip: ?[]const u8,
 };
 
-pub const Outcome = enum { booked, invalid, taken, failed };
+pub const Outcome = enum { booked, invalid, taken, limited, failed };
 
 const Booking = struct {
     id: []const u8,
@@ -22,10 +24,13 @@ const Booking = struct {
     name: []const u8,
     email: []const u8,
     notes: []const u8,
+    ip_hash: []const u8,
 };
 
 const site_url = "https://nurulhudaapon.com";
 const whitespace = " \t\r\n";
+const max_upcoming_per_email = 2;
+const max_daily_per_ip = 3;
 
 pub fn book(arena: std.mem.Allocator, start: i64, req: Request) Outcome {
     if (req.honeypot.len > 0) return .booked;
@@ -38,9 +43,11 @@ pub fn book(arena: std.mem.Allocator, start: i64, req: Request) Outcome {
         .name = std.mem.trim(u8, req.name, whitespace),
         .email = std.mem.trim(u8, req.email, whitespace),
         .notes = std.mem.trim(u8, req.notes, whitespace),
+        .ip_hash = spam.ipHash(arena, req.ip),
     };
     if (b.name.len == 0 or b.name.len > 100 or b.notes.len > 2000 or !isPlausibleEmail(b.email)) return .invalid;
     if (!slots.isBookable(rules, now, start)) return .invalid;
+    if (overLimit(arena, b, now)) return .limited;
 
     const creds = (caldav.loadCredentials(arena) catch null) orelse return .failed;
     const busy = caldav.busy(arena, creds, slots.horizon(rules, now), false) catch return .failed;
@@ -66,20 +73,38 @@ pub fn book(arena: std.mem.Allocator, start: i64, req: Request) Outcome {
     return .booked;
 }
 
+// Runs before any iCloud call: every booking emails an invite, so this also caps
+// the invites one sender can trigger. Re-submitting a held slot isn't counted.
+fn overLimit(arena: std.mem.Allocator, b: Booking, now: i64) bool {
+    const row = zx.db.row(arena, struct { upcoming: i64, today: i64 },
+        \\SELECT
+        \\  (SELECT COUNT(*) FROM bookings WHERE cancelled_at IS NULL AND ends_at >= ?3
+        \\    AND starts_at <> ?4 AND email = ?1 COLLATE NOCASE) AS upcoming,
+        \\  (SELECT COUNT(*) FROM bookings WHERE ?2 <> '' AND ip_hash = ?2
+        \\    AND CAST(created_at AS INTEGER) > ?3 - 86400) AS today
+    , .{ b.email, b.ip_hash, now, b.slot.start }) catch |err| {
+        zx.log.err("schedule: failed to check booking limits: {any}", .{err});
+        return false;
+    };
+    const r = row orelse return false;
+    return r.upcoming >= max_upcoming_per_email or r.today >= max_daily_per_ip;
+}
+
 const Claim = enum { claimed, duplicate, taken, failed };
 
 fn claim(arena: std.mem.Allocator, b: Booking) Claim {
     // The unique index on active starts_at serializes concurrent submissions. A
     // claim older than two minutes is stale: iCloud already reported the slot free.
     const result = zx.db.run(
-        \\INSERT INTO bookings (id, starts_at, ends_at, name, email, notes, created_at)
-        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, CAST(unixepoch() AS TEXT))
+        \\INSERT INTO bookings (id, starts_at, ends_at, name, email, notes, ip_hash, created_at)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULLIF(?7, ''), CAST(unixepoch() AS TEXT))
         \\ON CONFLICT (starts_at) WHERE cancelled_at IS NULL DO UPDATE SET
         \\  id = excluded.id, ends_at = excluded.ends_at, name = excluded.name,
-        \\  email = excluded.email, notes = excluded.notes, created_at = excluded.created_at,
+        \\  email = excluded.email, notes = excluded.notes, ip_hash = excluded.ip_hash,
+        \\  created_at = excluded.created_at,
         \\  meet_url = NULL
         \\WHERE CAST(bookings.created_at AS INTEGER) < unixepoch() - 120
-    , .{ b.id, b.slot.start, b.slot.end, b.name, b.email, b.notes }) catch |err| {
+    , .{ b.id, b.slot.start, b.slot.end, b.name, b.email, b.notes, b.ip_hash }) catch |err| {
         zx.log.err("schedule: failed to claim slot: {any}", .{err});
         return .failed;
     };

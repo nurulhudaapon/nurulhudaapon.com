@@ -1,0 +1,211 @@
+const Props = struct {
+    proof: u32,
+    questions: []const db.Question,
+};
+
+const Tone = enum { none, ok, err };
+
+// `n` is the render-time proof. `asked` holds questions saved since the page
+// loaded, newest first. Bumping `form_key` remounts the form to clear it, so it
+// only changes on a save and errors keep what was typed.
+const FormState = struct {
+    n: u32 = 0,
+    tone: Tone = .none,
+    msg: []const u8 = "",
+    asked: []const db.Question = &.{},
+    form_key: u32 = 0,
+
+    fn with(self: FormState, tone: Tone, msg: []const u8) FormState {
+        var next = self;
+        next.tone = tone;
+        next.msg = msg;
+        return next;
+    }
+};
+
+const AskInput = struct {
+    question: []const u8,
+    website: []const u8,
+};
+
+pub fn AskForm(ctx: *zx.ComponentCtx(Props)) zx.Component {
+    const form = ctx.state(FormState, .{ .n = ctx.props.proof });
+    const submit_action = ctx.action(submit, .{});
+    const pending = submit_action.pending;
+    const alloc = ctx.allocator;
+    const state = form.get();
+    const questions = newestFirst(alloc, state.asked, ctx.props.questions);
+    const status_class = switch (state.tone) {
+        .none => "ask-status",
+        .ok => "ask-status ask-status-ok",
+        .err => "ask-status ask-status-err",
+    };
+
+    return (
+        <div @allocator={alloc} class="ask-form-wrap">
+            <div class="ask-form-card">
+                <form class="ask-form" key={state.form_key} action={submit_action}>
+                    <textarea
+                        class="ask-textarea"
+                        name="question"
+                        rows="4"
+                        cols="30"
+                        required
+                        autofocus
+                        maxlength="1000"
+                        placeholder="Ask me anything..."
+                        disabled={pending}
+                    ></textarea>
+                    <input class="form-hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
+                    <div class="ask-form-actions">
+                        <p class={status_class} role="status" aria-live="polite">{state.msg}</p>
+                        <button class="ask-submit" type="submit" disabled={pending}>
+                            {if (pending) "Submitting…" else "Submit"}
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            {if (questions.len > 0) (
+                <div class="ask-list">
+                    <h2 class="ask-list-title">Your questions</h2>
+                    {for (questions) |q| (
+                        <QuestionCard key={q.id} q={q} />
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+fn newestFirst(allocator: zx.Allocator, asked: []const db.Question, loaded: []const db.Question) []const db.Question {
+    if (asked.len == 0) return loaded;
+    var out = std.ArrayList(db.Question).initCapacity(allocator, asked.len + loaded.len) catch return loaded;
+    out.appendSliceAssumeCapacity(asked);
+    outer: for (loaded) |q| {
+        for (asked) |a| if (a.id == q.id) continue :outer;
+        out.appendAssumeCapacity(q);
+    }
+    return out.items;
+}
+
+fn QuestionCard(allocator: zx.Allocator, props: struct { q: db.Question }) zx.Component {
+    const q = props.q;
+    const has_answer = q.answer != null;
+    const is_seen = q.seen_at != null;
+    const item_class = if (has_answer and !is_seen) "ask-item ask-item-new" else "ask-item";
+    const badge_class = if (is_seen) "ask-badge ask-badge-seen" else "ask-badge ask-badge-unseen";
+    const badge_text = if (is_seen) "Answered" else "New Answer!";
+    const asked_label = formatAsked(allocator, q.created_at);
+
+    return (
+        <article @allocator={allocator} class={item_class}>
+            {if (has_answer) (
+                <span class={badge_class}>{badge_text}</span>
+            )}
+            <p class="ask-item-question">{q.question}</p>
+            <p class="ask-item-meta">{asked_label}</p>
+            {if (q.answer) |answer| (
+                <div class="ask-item-answer">
+                    <p class="ask-item-answer-label">Answer:</p>
+                    <p class="ask-item-answer-text">{answer}</p>
+                </div>
+            )}
+        </article>
+    );
+}
+
+const max_question_len = 1000;
+
+fn submit(a: *zx.server.Action.Stateful) void {
+    const form = a.state(FormState);
+    const input = a.data(AskInput);
+    const arena = a.inner.arena;
+    const prev = form.get();
+
+    var thanks = prev.with(.ok, "Thanks! Your question was sent.");
+    thanks.form_key +%= 1;
+
+    const question = std.mem.trim(u8, input.question, " \t\r\n");
+    if (question.len == 0 or question.len > max_question_len)
+        return form.set(prev.with(.err, "Please enter a question (up to 1000 characters)."));
+
+    // Bots get a plain "thanks" so they can't tell what tripped. The cookie is set
+    // on render, so a request without one never loaded the form.
+    const visitor_id = visitorCookie(a.inner.request) orelse return form.set(thanks);
+    if (input.website.len > 0) return form.set(thanks);
+    if (!spam.validFormProof(visitor_id, prev.n))
+        return form.set(prev.with(.err, "This page has expired. Please refresh and ask again."));
+
+    const ip_hash = spam.ipHash(arena, a.inner.request.headers.get("cf-connecting-ip"));
+    const verdict = db.gate(arena, visitor_id, ip_hash, question) catch |err| blk: {
+        zx.log.err("Failed to check question limits: {any}", .{err});
+        break :blk .ok;
+    };
+    switch (verdict) {
+        .ok => {},
+        .limited => return form.set(prev.with(.err, "You've asked a lot today. Please try again tomorrow.")),
+        .duplicate => return form.set(prev.with(.err, "This question has already been asked.")),
+    }
+
+    const ua = a.inner.request.headers.get("user-agent") orelse "unknown";
+    const visitor_json = a.fmt("{{\"userAgent\":\"{s}\"}}", .{ua}) catch "{}";
+    const id = db.insertQuestion(question, visitor_id, visitor_json, ip_hash) catch |err| {
+        zx.log.err("Failed to insert question: {any}", .{err});
+        return form.set(prev.with(.err, "Something went wrong. Please try again."));
+    };
+
+    const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    const asked = arena.alloc(db.Question, prev.asked.len + 1) catch return form.set(thanks);
+    asked[0] = .{
+        .id = id,
+        .question = a.fmt("{s}", .{question}) catch question,
+        .visitor_id = visitor_id,
+        .created_at = a.fmt("{d}", .{now}) catch "",
+    };
+    @memcpy(asked[1..], prev.asked);
+    thanks.asked = asked;
+    form.set(thanks);
+}
+
+fn visitorCookie(request: zx.server.Request) ?[]const u8 {
+    const existing = request.cookies.get("visitor_id") orelse return null;
+    return if (existing.len > 0) existing else null;
+}
+
+fn formatAsked(allocator: zx.Allocator, raw: []const u8) []const u8 {
+    const ts = std.fmt.parseInt(i64, raw, 10) catch
+        return std.fmt.allocPrint(allocator, "Asked on {s}", .{raw}) catch raw;
+    if (ts < 0) return std.fmt.allocPrint(allocator, "Asked at {d}", .{ts}) catch raw;
+
+    const epoch_secs = std.time.epoch.EpochSeconds{ .secs = @intCast(ts) };
+    const epoch_day = epoch_secs.getEpochDay();
+    const day_secs = epoch_secs.getDaySeconds();
+    const year_day = epoch_day.calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const month_name = monthName(month_day.month.numeric()) orelse
+        return std.fmt.allocPrint(allocator, "Asked at {d}", .{ts}) catch raw;
+
+    return std.fmt.allocPrint(
+        allocator,
+        "Asked at {s} {d}, {d} {d:0>2}:{d:0>2}",
+        .{
+            month_name,
+            month_day.day_index + 1,
+            year_day.year,
+            day_secs.getHoursIntoDay(),
+            day_secs.getMinutesIntoHour(),
+        },
+    ) catch raw;
+}
+
+fn monthName(index: u8) ?[]const u8 {
+    const months = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    if (index < 1 or index > 12) return null;
+    return months[index - 1];
+}
+
+const zx = @import("zx");
+const std = @import("std");
+const db = @import("db.zig");
+const spam = @import("../spam.zig");

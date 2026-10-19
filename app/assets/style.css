@@ -845,7 +845,7 @@ body:has(.page-home) .nav-link[href="/"] {
     outline-offset: 1px;
 }
 
-.schedule-hp {
+.form-hp {
     position: absolute;
     left: -10000px;
     width: 1px;
@@ -854,7 +854,9 @@ body:has(.page-home) .nav-link[href="/"] {
 }
 
 .schedule-form .ask-submit:disabled,
-.schedule-input:disabled {
+.schedule-input:disabled,
+.ask-form .ask-submit:disabled,
+.ask-textarea:disabled {
     opacity: 0.6;
     cursor: progress;
 }
@@ -881,6 +883,12 @@ body:has(.page-home) .nav-link[href="/"] {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+}
+
+.ask-form-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
 }
 
 .ask-title {
@@ -917,31 +925,13 @@ body:has(.page-home) .nav-link[href="/"] {
 }
 
 .ask-form-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
     width: 100%;
     border: 1px solid color-mix(in srgb, #3b82f6 35%, var(--color-border));
     border-radius: 0.5rem;
     padding: 0.75rem;
-}
-
-.ask-answering {
-    margin-bottom: 1rem;
-    padding: 0.75rem;
-    border-radius: 0.375rem;
-    border: 1px solid var(--color-border);
-    background: var(--color-nav);
-}
-
-.ask-answering-label {
-    margin: 0 0 0.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--color-text-secondary);
-}
-
-.ask-answering-text {
-    margin: 0;
-    font-size: 0.875rem;
-    color: var(--color-text);
 }
 
 .ask-form {
@@ -971,7 +961,37 @@ body:has(.page-home) .nav-link[href="/"] {
 
 .ask-form-actions {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+/* Always rendered (empty when idle) so a status never shifts the layout. */
+.ask-status {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: var(--color-text-secondary);
+}
+
+.ask-status-ok {
+    color: #15803d;
+}
+
+.ask-status-err {
+    color: #b91c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ask-status-ok {
+        color: #86efac;
+    }
+
+    .ask-status-err {
+        color: #fca5a5;
+    }
 }
 
 .ask-submit {
@@ -1084,49 +1104,3 @@ body:has(.page-home) .nav-link[href="/"] {
     color: var(--color-text-secondary);
 }
 
-.ask-item-admin {
-    margin-top: 0.5rem;
-}
-
-.ask-item-visitor {
-    margin: 0 0 0.5rem;
-    font-size: 0.75rem;
-    color: var(--color-text-muted);
-}
-
-.ask-item-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.5rem;
-}
-
-.ask-action-link {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #2563eb;
-}
-
-.ask-action-link:hover {
-    color: #1d4ed8;
-}
-
-.ask-inline-form {
-    display: inline;
-    margin: 0;
-}
-
-.ask-action-delete {
-    border: 0;
-    background: transparent;
-    padding: 0;
-    font: inherit;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #dc2626;
-    cursor: pointer;
-}
-
-.ask-action-delete:hover {
-    color: #991b1b;
-}

@@ -10,25 +10,36 @@ pub const Question = struct {
     seen_at: ?[]const u8 = null,
 };
 
-pub fn isValidAdmin(allocator: std.mem.Allocator, credential: ?[]const u8) !bool {
-    const provided = credential orelse return false;
-    if (provided.len == 0) return false;
-    const hit = try zx.db.row(allocator, struct { ok: i64 },
-        \\SELECT 1 AS ok FROM credentials WHERE val = ?1 AND cat = 'admin' LIMIT 1
-    , .{provided});
-    return hit != null;
-}
-
 pub fn insertQuestion(
     question: []const u8,
-    email: []const u8,
     visitor_id: []const u8,
     visitor_json: []const u8,
-) !void {
-    _ = try zx.db.run(
-        \\INSERT INTO questions (question, email, visitor_id, visitor_json, created_at)
-        \\VALUES (?1, ?2, ?3, ?4, CAST(unixepoch() AS TEXT))
-    , .{ question, email, visitor_id, visitor_json });
+    ip_hash: []const u8,
+) !i64 {
+    const result = try zx.db.run(
+        \\INSERT INTO questions (question, visitor_id, visitor_json, ip_hash, created_at)
+        \\VALUES (?1, ?2, ?3, NULLIF(?4, ''), CAST(unixepoch() AS TEXT))
+    , .{ question, visitor_id, visitor_json, ip_hash });
+    return result.last_insert_id;
+}
+
+const max_daily_per_sender = 5;
+
+pub const Gate = enum { ok, limited, duplicate };
+
+// Looks at the last day, including deleted rows so deleting spam doesn't reset a limit.
+pub fn gate(allocator: std.mem.Allocator, visitor_id: []const u8, ip_hash: []const u8, question: []const u8) !Gate {
+    const row = try zx.db.row(allocator, struct { recent: i64, dupes: i64 },
+        \\SELECT
+        \\  (SELECT COUNT(*) FROM questions WHERE CAST(created_at AS INTEGER) > unixepoch() - 86400
+        \\    AND (visitor_id = ?1 OR (?2 <> '' AND ip_hash = ?2))) AS recent,
+        \\  (SELECT COUNT(*) FROM questions WHERE CAST(created_at AS INTEGER) > unixepoch() - 86400
+        \\    AND question = ?3) AS dupes
+    , .{ visitor_id, ip_hash, question });
+    const r = row orelse return .ok;
+    if (r.recent >= max_daily_per_sender) return .limited;
+    if (r.dupes > 0) return .duplicate;
+    return .ok;
 }
 
 pub fn setAnswer(id: i64, answer: []const u8) !void {
@@ -67,14 +78,6 @@ pub fn markAnsweredSeen(visitor_id: []const u8) !void {
         \\SET seen_at = CAST(unixepoch() AS TEXT)
         \\WHERE visitor_id = ?1 AND deleted = 0 AND answer IS NOT NULL AND seen_at IS NULL
     , .{visitor_id});
-}
-
-pub fn getById(allocator: std.mem.Allocator, id: i64) !?Question {
-    return try zx.db.row(allocator, Question,
-        \\SELECT id, question, answer, visitor_id, created_at, seen_at
-        \\FROM questions
-        \\WHERE id = ?1 AND deleted = 0
-    , .{id});
 }
 
 pub const Filter = enum { unanswered, answered, all };
