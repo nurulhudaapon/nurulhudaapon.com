@@ -1,4 +1,6 @@
 pub fn Page(ctx: zx.PageContext) zx.Component {
+    ctx.data.set("title", "About - Nurul Huda (Apon)");
+    ctx.data.set("description", "Building high quality software for companies and crafting Ziex, a full-stack web framework for Zig.");
     return (
         <main @allocator={ctx.arena} class="page-inner page-about">
             <div class="page-inner-content">

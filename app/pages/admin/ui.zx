@@ -166,9 +166,7 @@ pub fn Tabs(allocator: zx.Allocator, props: struct { tabs: []const Tab }) zx.Com
 }
 
 pub fn Empty(allocator: zx.Allocator, props: struct { text: []const u8 }) zx.Component {
-    return (
-        <p @{allocator} class="adm-empty">{props.text}</p>
-    );
+    return (<p @{allocator} class="adm-empty">{props.text}</p>);
 }
 
 const std = @import("std");

@@ -13,6 +13,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         return ui.redirect(ctx, try ctx.fmt("{s}&{s}", .{ back, flag }));
     }
 
+    booking.syncUpcoming(ctx.arena);
     const records = try booking.list(ctx.arena, filter, 200);
     const default_url = settings.defaultMeetingUrl(ctx.arena) orelse "";
     const flash = ui.flashFrom(ctx.request.queries, &.{
@@ -27,7 +28,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     return (
         <div @allocator={ctx.arena}>
-            <ui.PageHeader title="Bookings" description="Meetings booked through /schedule. Times are in Asia/Dhaka (GMT+6)." />
+            <ui.PageHeader title="Bookings" description="Meetings booked through /schedule. Times are in Asia/Dhaka (GMT+6) and follow changes made in your calendar." />
             <ui.FlashBanner flash={flash} />
             <ui.Tabs tabs={tabs} />
             {if (records.len == 0) (
@@ -56,6 +57,7 @@ fn BookingItem(allocator: zx.Allocator, props: struct {
     const mailto = std.fmt.allocPrint(allocator, "mailto:{s}", .{r.email}) catch "";
     const link = r.meet_url orelse props.default_url;
     const placeholder = if (props.default_url.len > 0) props.default_url else "https://meet.google.com/…";
+    const page_url = std.fmt.allocPrint(allocator, "/schedule/{s}", .{r.id}) catch "";
 
     return (
         <article @{allocator} class="adm-item">
@@ -72,6 +74,7 @@ fn BookingItem(allocator: zx.Allocator, props: struct {
                         <a href={mailto}>{r.email}</a>
                         <span>{r.joins} {if (r.joins == 1) "join" else "joins"}</span>
                         <span>Booked {format.ago(allocator, r.created_at)}</span>
+                        <a href={page_url} target="_blank" rel="noopener">Meeting page</a>
                     </div>
                     {if (r.notes) |notes| (
                         <p class="adm-notes">{notes}</p>

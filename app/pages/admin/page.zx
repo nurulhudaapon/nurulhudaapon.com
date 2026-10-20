@@ -1,5 +1,6 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
     const unanswered = try questions_db.listFiltered(ctx.arena, .unanswered);
+    booking.syncUpcoming(ctx.arena);
     const upcoming = try booking.list(ctx.arena, .upcoming, 5);
     const sources = posts.listSources(ctx.arena) catch &.{};
 

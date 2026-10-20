@@ -198,11 +198,11 @@ fn wrapPlain(text: []const u8) []const []const u8 {
             "crafting Ziex, a full-stack web framework for Zig.",
         };
     if (std.mem.eql(u8, text, "Writing and notes"))
-        return &.{ "Writing and notes from Nurul Huda (Apon)" };
+        return &.{"Writing and notes from Nurul Huda (Apon)"};
     if (std.mem.eql(u8, text, "Pick a time and let's talk"))
-        return &.{ "Pick a time that works for you and let's talk" };
+        return &.{"Pick a time that works for you and let's talk"};
     if (std.mem.eql(u8, text, "Anonymously ask me anything"))
-        return &.{ "Anonymously ask me anything" };
+        return &.{"Anonymously ask me anything"};
     return &.{text};
 }
 

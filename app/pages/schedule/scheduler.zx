@@ -34,24 +34,33 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
     }
 
     if (days.len == 0) {
-        return (
-            <p @allocator={alloc} class="schedule-empty">No open times right now. Email me at me@nurulhudaapon.com instead.</p>
-        );
+        return (<p @allocator={alloc} class="schedule-empty">No open times right now. Email me at me@nurulhudaapon.com instead.</p>);
     }
 
     const day = days[@min(day_idx.get(), days.len - 1)];
     const error_msg = result.get().error_msg;
     // Hidden rather than omitted: ziex registers server actions during the server render.
     const form_class = if (slot.get() == 0) "schedule-form schedule-form-hidden" else "schedule-form";
+    const zone = tzName(alloc);
 
     return (
         <div @allocator={alloc} class="schedule-picker">
             {if (error_msg.len > 0) (
                 <p class="schedule-flash">{error_msg}</p>
             )}
-            <p class="schedule-tz">
-                Times shown in {tzLabel()}. Each meeting is {ctx.props.slot_minutes} minutes.
-            </p>
+            <div class="schedule-meta">
+                <p class="schedule-zone" title={zone}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M2 12h20" />
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                    </svg>
+                    <span class={localClass("")}>
+                        Times in <strong>{cityName(alloc, zone)}</strong> ({offsetLabel(alloc, anchorTime(days))})
+                    </span>
+                </p>
+                <p class="schedule-tz">{ctx.props.slot_minutes}-minute meetings</p>
+            </div>
             <nav class="schedule-days" aria-label="Choose a day">
                 {for (days, 0..) |d, i| (
                     <button
@@ -59,6 +68,7 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
                         class={dayClass(d, i == day_idx.get())}
                         value={i}
                         aria-pressed={if (i == day_idx.get()) "true" else "false"}
+                        disabled={pending}
                         onclick={ctx.bind(pickDay)}
                     >
                         <span class="schedule-day-weekday">{d.weekday}</span>
@@ -77,8 +87,11 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
                         type="button"
                         class={if (s.start == slot.get()) "schedule-slot schedule-slot-selected" else "schedule-slot"}
                         value={s.start}
+                        disabled={pending}
                         onclick={ctx.bind(pickSlot)}
-                    >{timeLabel(alloc, s.start)}</button>
+                    >
+                        <span class={localClass("")}>{timeLabel(alloc, s.start)}</span>
+                    </button>
                 )}
             </section>
             <form class={form_class} action={booking_action}>
@@ -101,6 +114,17 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
                 </div>
             </form>
         </div>
+    );
+}
+
+pub fn MeetingTime(ctx: *zx.ComponentCtx(struct { start: i64, end: i64 })) zx.Component {
+    const alloc = ctx.allocator;
+    const end = timeLabel(alloc, ctx.props.end);
+    return (
+        <p @allocator={alloc} class="meeting-when">
+            <span class={localClass("meeting-when-main")}>{whenLabel(alloc, ctx.props.start)}</span>
+            <span class={localClass("meeting-when-sub")}>Until {end}, {tzLabel(alloc, ctx.props.start)}</span>
+        </p>
     );
 }
 
@@ -144,6 +168,11 @@ fn book(a: *zx.server.Action.Stateful) void {
     }
 }
 
+fn anchorTime(days: []const slots.Day) i64 {
+    const d = days[firstOpenDay(days)];
+    return if (d.slots.len > 0) d.slots[0].start else 0;
+}
+
 fn firstOpenDay(days: []const slots.Day) usize {
     for (days, 0..) |d, i| if (d.slots.len > 0) return i;
     return 0;
@@ -160,6 +189,13 @@ fn dayCount(alloc: zx.Allocator, d: slots.Day) []const u8 {
     return std.fmt.allocPrint(alloc, "{d} open", .{d.slots.len}) catch "";
 }
 
+/// Server-rendered times are in Asia/Dhaka, so they hold their space hidden
+/// until the browser re-renders them in the viewer's zone.
+fn localClass(comptime base: []const u8) []const u8 {
+    const sep = if (base.len > 0) " " else "";
+    return if (zx.platform.role == .client) base else base ++ sep ++ "tz-pending";
+}
+
 fn displayOffset(unix: i64) i64 {
     if (zx.platform.role != .client) return slots.config.utc_offset_s;
     var buf: [64]u8 = undefined;
@@ -169,24 +205,36 @@ fn displayOffset(unix: i64) i64 {
     return -@as(i64, @intFromFloat(minutes)) * 60;
 }
 
-fn tzLabel() []const u8 {
-    if (zx.platform.role == .client) return "your local time";
-    return slots.config.timezone ++ " (" ++ slots.config.timezone_label ++ ")";
+fn tzLabel(alloc: zx.Allocator, unix: i64) []const u8 {
+    return std.fmt.allocPrint(alloc, "{s} ({s})", .{ tzName(alloc), offsetLabel(alloc, unix) }) catch "";
+}
+
+fn tzName(alloc: zx.Allocator) []const u8 {
+    if (zx.platform.role != .client) return slots.config.timezone;
+    const js = zx.client.js;
+    return js.global.callAlloc(js.String, alloc, "eval", .{js.string("Intl.DateTimeFormat().resolvedOptions().timeZone")}) catch
+        "your local time";
+}
+
+fn cityName(alloc: zx.Allocator, zone: []const u8) []const u8 {
+    const start = if (std.mem.lastIndexOfScalar(u8, zone, '/')) |i| i + 1 else 0;
+    if (start == zone.len) return zone;
+    const city = alloc.dupe(u8, zone[start..]) catch return zone;
+    std.mem.replaceScalar(u8, city, '_', ' ');
+    return city;
+}
+
+fn offsetLabel(alloc: zx.Allocator, unix: i64) []const u8 {
+    return slots.formatOffset(alloc, displayOffset(unix)) catch "";
 }
 
 fn timeLabel(alloc: zx.Allocator, unix: i64) []const u8 {
-    return slots.formatTime(alloc, unix, displayOffset(unix)) catch "";
+    return slots.formatTime12(alloc, unix, displayOffset(unix)) catch "";
 }
 
 fn whenLabel(alloc: zx.Allocator, unix: i64) []const u8 {
-    const offset = displayOffset(unix);
-    const date = slots.formatDate(alloc, unix, offset) catch "";
-    const time = slots.formatTime(alloc, unix, offset) catch "";
-    const sign: u8 = if (offset < 0) '-' else '+';
-    const minutes: u64 = @abs(offset) / 60;
-    if (minutes % 60 == 0)
-        return std.fmt.allocPrint(alloc, "{s} at {s} (GMT{c}{d})", .{ date, time, sign, minutes / 60 }) catch "";
-    return std.fmt.allocPrint(alloc, "{s} at {s} (GMT{c}{d}:{d:0>2})", .{ date, time, sign, minutes / 60, minutes % 60 }) catch "";
+    const date = slots.formatDate(alloc, unix, displayOffset(unix)) catch "";
+    return std.fmt.allocPrint(alloc, "{s} at {s} ({s})", .{ date, timeLabel(alloc, unix), offsetLabel(alloc, unix) }) catch "";
 }
 
 const zx = @import("zx");

@@ -1,0 +1,103 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    ctx.data.set("robots", "noindex, nofollow");
+    ctx.data.set("og_image", "/og/schedule.png");
+    ctx.response.headers.add("Cache-Control", "no-store");
+
+    const id = ctx.request.params.get("id") orelse "";
+    const record = try booking.get(ctx.arena, id) orelse {
+        ctx.response.setStatus(.not_found);
+        ctx.data.set("title", "Meeting not found - Nurul Huda (Apon)");
+        return (
+            <main @allocator={ctx.arena} class="page-inner page-schedule">
+                <div class="page-inner-content">
+                    <div class="page-nav">
+                        <Navbar />
+                    </div>
+                    <div class="schedule-content">
+                        <p class="schedule-intro">This meeting doesn't exist.</p>
+                        <a class="schedule-back" href="/schedule">Book a time</a>
+                    </div>
+                </div>
+            </main>
+        );
+    };
+
+    const title = try booking.title(ctx.arena, record.name);
+    const status = statusOf(record);
+    const minutes = @divTrunc(record.ends_at - record.starts_at, std.time.s_per_min);
+    const has_call = record.meet_url != null or settings.defaultMeetingUrl(ctx.arena) != null;
+    const join_url = try ctx.fmt("/meet?id={s}", .{record.id});
+    ctx.data.set("title", title);
+    const date = try slots.formatDate(ctx.arena, record.starts_at, slots.config.utc_offset_s);
+    ctx.data.set("description", try ctx.fmt("{s} · {d} minute meeting", .{ date, minutes }));
+
+    return (
+        <main @allocator={ctx.arena} class="page-inner page-schedule">
+            <div class="page-inner-content">
+                <div class="page-nav">
+                    <Navbar />
+                </div>
+                <article class="schedule-content meeting">
+                    <header class="meeting-head">
+                        <span class={status.class}>{status.label}</span>
+                        <h1 class="meeting-title">{title}</h1>
+                    </header>
+                    <MeetingTime @rendering={.client} start={record.starts_at} end={record.ends_at} />
+                    <dl class="meeting-facts">
+                        <div>
+                            <dt>Duration</dt>
+                            <dd>{minutes} minutes</dd>
+                        </div>
+                        <div>
+                            <dt>Where</dt>
+                            <dd>{if (has_call) "Video call" else "Details to follow by email"}</dd>
+                        </div>
+                    </dl>
+                    {if (status.kind == .upcoming and has_call) (
+                        <div>
+                            <a class="ask-submit" href={join_url}>Join the call</a>
+                        </div>
+                    )}
+                    {if (record.notes) |notes| (
+                        <section class="meeting-notes">
+                            <h2>Agenda</h2>
+                            <p>{notes}</p>
+                        </section>
+                    )}
+                    <p class="schedule-tz">
+                        {switch (status.kind) {
+                            .upcoming => "If the time changes, this page and your calendar invite update with it. To reschedule or cancel, reply to the invite or email me at me@nurulhudaapon.com.",
+                            .past => "This meeting has ended. Thanks for the chat.",
+                            .cancelled => "This meeting was cancelled. You're welcome to book another time.",
+                        }}
+                    </p>
+                    {if (status.kind != .upcoming) (
+                        <a class="schedule-back" href="/schedule">Book another time</a>
+                    )}
+                </article>
+            </div>
+        </main>
+    );
+}
+
+const Status = struct {
+    kind: enum { upcoming, past, cancelled },
+    label: []const u8,
+    class: []const u8,
+};
+
+fn statusOf(r: booking.Record) Status {
+    if (r.cancelled_at != null) return .{ .kind = .cancelled, .label = "Cancelled", .class = "meeting-status meeting-status-cancelled" };
+    if (r.ends_at < booking.nowUnix()) return .{ .kind = .past, .label = "Ended", .class = "meeting-status" };
+    return .{ .kind = .upcoming, .label = "Confirmed", .class = "meeting-status meeting-status-confirmed" };
+}
+
+pub const options: zx.PageOptions = .{ .dynamic = true };
+
+const std = @import("std");
+const zx = @import("zx");
+const Navbar = @import("../../component.zx").Navbar;
+pub const MeetingTime = @import("../scheduler.zx").MeetingTime;
+const booking = @import("../booking.zig");
+const settings = @import("../settings.zig");
+const slots = @import("../slots.zig");

@@ -1,4 +1,6 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
+    ctx.data.set("title", "Ask Me Anything - Nurul Huda (Apon)");
+    ctx.data.set("description", "Anonymously ask me anything. I'll answer on social media or when you revisit this page.");
     const visitor_id = ensureVisitorId(ctx);
     // List before marking seen so this visit still shows the "New Answer!" badge.
     const questions = try db.listForVisitor(ctx.arena, visitor_id);

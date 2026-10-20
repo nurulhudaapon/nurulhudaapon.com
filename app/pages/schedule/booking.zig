@@ -6,6 +6,7 @@ const caldav = @import("caldav.zig");
 const ical = @import("ical.zig");
 const settings = @import("settings.zig");
 const spam = @import("../spam.zig");
+const names = @import("name.zig");
 
 pub const Request = struct {
     name: []const u8,
@@ -118,26 +119,44 @@ fn claim(arena: std.mem.Allocator, b: Booking) Claim {
 }
 
 fn createEvent(arena: std.mem.Allocator, creds: caldav.Credentials, b: Booking, now: i64, origin_url: []const u8) !void {
+    const page_url = try std.fmt.allocPrint(arena, "{s}/schedule/{s}", .{ origin_url, b.id });
     const meet_url = if (creds.meeting_url != null)
         try std.fmt.allocPrint(arena, "{s}/meet?id={s}", .{ origin_url, b.id })
     else
         null;
-    const join = if (meet_url) |url| try std.fmt.allocPrint(arena, "Join: {s}\n\n", .{url}) else "";
+
+    var description: std.Io.Writer.Allocating = .init(arena);
+    const w = &description.writer;
+    if (meet_url) |url| try w.print("Join the call: {s}\n", .{url});
+    try w.print("Meeting details: {s}\n", .{page_url});
+    if (b.notes.len > 0) try w.print("\nAgenda:\n{s}\n", .{b.notes});
+    try w.print("\nBooked by {s} ({s}) via nurulhudaapon.com/schedule", .{ b.name, b.email });
 
     const ics = try ical.buildEvent(arena, .{
         .uid = try std.fmt.allocPrint(arena, "{s}@nurulhudaapon.com", .{b.id}),
         .start = b.slot.start,
         .end = b.slot.end,
         .now = now,
-        .summary = try std.fmt.allocPrint(arena, "Meeting with {s}", .{b.name}),
-        .description = try std.fmt.allocPrint(arena, "{s}Booked via nurulhudaapon.com/schedule\n\n{s} <{s}>\n\n{s}", .{ join, b.name, b.email, b.notes }),
+        .summary = try calendarTitle(arena, b.name),
+        .description = description.written(),
         .organizer_email = creds.organizer_email,
         .organizer_name = "Nurul Huda (Apon)",
         .attendee_email = b.email,
         .attendee_name = b.name,
+        .url = page_url,
         .meeting_url = meet_url,
     });
     try caldav.putEvent(arena, creds, b.id, ics);
+}
+
+pub fn title(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s} <> Nurul", .{names.firstName(arena, name)});
+}
+
+/// iCloud HTML-escapes `<>` in stored titles (shown as `&lt;&gt;`) and strips
+/// tag-like text from descriptions, so calendar text avoids angle brackets.
+fn calendarTitle(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s} \u{2039}\u{203A} Nurul", .{names.firstName(arena, name)});
 }
 
 fn logInviteStatus(arena: std.mem.Allocator, creds: caldav.Credentials, id: []const u8) void {
@@ -207,6 +226,60 @@ pub fn list(arena: std.mem.Allocator, filter: Filter, limit: i64) ![]const Recor
             \\ WHERE b.cancelled_at IS NOT NULL ORDER BY b.starts_at DESC LIMIT ?1
         , .{limit}),
     };
+}
+
+pub fn get(arena: std.mem.Allocator, id: []const u8) !?Record {
+    const query = record_columns ++ " WHERE b.id = ?1";
+    const record = try zx.db.row(arena, Record, query, .{id}) orelse return null;
+    if (record.cancelled_at != null or record.ends_at < nowUnix() - std.time.s_per_day) return record;
+    syncThrottled(arena, &.{id}, try std.fmt.allocPrint(arena, "synced:{s}", .{id}));
+    return zx.db.row(arena, Record, query, .{id});
+}
+
+/// Applies moves and cancellations made directly in the calendar.
+pub fn syncUpcoming(arena: std.mem.Allocator) void {
+    const rows = zx.db.rows(arena, struct { id: []const u8 },
+        \\SELECT id FROM bookings WHERE cancelled_at IS NULL AND ends_at >= ?1 - 86400
+        \\ORDER BY starts_at LIMIT 100
+    , .{nowUnix()}) catch |err| {
+        zx.log.err("schedule: failed to list bookings to sync: {any}", .{err});
+        return;
+    };
+    if (rows.len == 0) return;
+    const ids = arena.alloc([]const u8, rows.len) catch return;
+    for (rows, ids) |r, *id| id.* = r.id;
+    syncThrottled(arena, ids, "synced");
+}
+
+fn syncThrottled(arena: std.mem.Allocator, ids: []const []const u8, key: []const u8) void {
+    const kv = zx.kv.scoped(.schedule);
+    if (kv.get(arena, key) catch null) |_| return;
+    sync(arena, ids) catch |err| {
+        zx.log.warn("schedule: failed to sync bookings from calendar: {any}", .{err});
+        return;
+    };
+    kv.put(key, "1", .{ .ttl = .fromSeconds(60) }) catch {};
+}
+
+fn sync(arena: std.mem.Allocator, ids: []const []const u8) !void {
+    const creds = (try caldav.loadCredentials(arena)) orelse return;
+    const events = try caldav.getEvents(arena, creds, ids);
+    for (ids, events) |id, data| {
+        // A missing event is left alone: it may have moved to another calendar.
+        const stored = (try ical.storedEvent(arena, data orelse continue)) orelse continue;
+        if (stored.cancelled) {
+            _ = try zx.db.run(
+                \\UPDATE bookings SET cancelled_at = CAST(unixepoch() AS TEXT) WHERE id = ?1 AND cancelled_at IS NULL
+            , .{id});
+            continue;
+        }
+        _ = zx.db.run(
+            \\UPDATE bookings SET starts_at = ?2, ends_at = ?3
+            \\WHERE id = ?1 AND cancelled_at IS NULL AND (starts_at <> ?2 OR ends_at <> ?3)
+        , .{ id, stored.span.start, stored.span.end }) catch |err| {
+            zx.log.warn("schedule: couldn't move booking {s} to {d}: {any}", .{ id, stored.span.start, err });
+        };
+    }
 }
 
 pub const Counts = struct { upcoming: i64 = 0, past: i64 = 0, cancelled: i64 = 0 };

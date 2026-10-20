@@ -66,7 +66,20 @@ pub const NewEvent = struct {
     organizer_name: []const u8,
     attendee_email: []const u8,
     attendee_name: []const u8,
+    url: []const u8,
     meeting_url: ?[]const u8 = null,
+};
+
+const tz = slots.config;
+
+const vtimezone = blk: {
+    const minutes = @abs(tz.utc_offset_s) / 60;
+    const offset = std.fmt.comptimePrint("{c}{d:0>2}{d:0>2}", .{ if (tz.utc_offset_s < 0) '-' else '+', minutes / 60, minutes % 60 });
+    break :blk std.fmt.comptimePrint(
+        "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:{0s}\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\n" ++
+            "TZOFFSETFROM:{1s}\r\nTZOFFSETTO:{1s}\r\nTZNAME:{2s}\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nEND:VCALENDAR\r\n",
+        .{ tz.timezone, offset, offset[0..3] },
+    );
 };
 
 pub fn buildEvent(allocator: std.mem.Allocator, ev: NewEvent) ![]const u8 {
@@ -80,21 +93,26 @@ pub fn buildEvent(allocator: std.mem.Allocator, ev: NewEvent) ![]const u8 {
     c.icalcomponent_add_property(cal, c.icalproperty_new_version("2.0"));
     c.icalcomponent_add_property(cal, c.icalproperty_new_prodid("-//nurulhudaapon.com//Schedule//EN"));
 
+    const zones = c.icalparser_parse_string(vtimezone) orelse return error.OutOfMemory;
+    defer c.icalcomponent_free(zones);
+    const zone = c.icalcomponent_get_first_component(zones, c.ICAL_VTIMEZONE_COMPONENT) orelse return error.OutOfMemory;
+    c.icalcomponent_add_component(cal, c.icalcomponent_new_clone(zone));
+
     const event = c.icalcomponent_new(c.ICAL_VEVENT_COMPONENT) orelse return error.OutOfMemory;
     c.icalcomponent_add_component(cal, event);
     c.icalcomponent_add_property(event, c.icalproperty_new_uid(try cstr(arena, ev.uid)));
     c.icalcomponent_add_property(event, c.icalproperty_new_dtstamp(c.icaltime_from_timet_with_zone(ev.now, 0, utc)));
-    c.icalcomponent_add_property(event, c.icalproperty_new_dtstart(c.icaltime_from_timet_with_zone(ev.start, 0, utc)));
-    c.icalcomponent_add_property(event, c.icalproperty_new_dtend(c.icaltime_from_timet_with_zone(ev.end, 0, utc)));
+    c.icalcomponent_add_property(event, withTzid(c.icalproperty_new_dtstart(localTime(ev.start))));
+    c.icalcomponent_add_property(event, withTzid(c.icalproperty_new_dtend(localTime(ev.end))));
     c.icalcomponent_add_property(event, c.icalproperty_new_summary(try cstr(arena, ev.summary)));
     c.icalcomponent_add_property(event, c.icalproperty_new_description(try cstr(arena, ev.description)));
     c.icalcomponent_add_property(event, c.icalproperty_new_status(c.ICAL_STATUS_CONFIRMED));
     c.icalcomponent_add_property(event, c.icalproperty_new_transp(c.ICAL_TRANSP_OPAQUE));
+    c.icalcomponent_add_property(event, c.icalproperty_new_url(try cstr(arena, ev.url)));
 
     if (ev.meeting_url) |url| {
         const url_z = try cstr(arena, url);
         c.icalcomponent_add_property(event, c.icalproperty_new_location(url_z));
-        c.icalcomponent_add_property(event, c.icalproperty_new_url(url_z));
         const conference = c.icalproperty_new_conference(url_z);
         c.icalproperty_add_parameter(conference, c.icalparameter_new_value(c.ICAL_VALUE_URI));
         c.icalproperty_add_parameter(conference, c.icalparameter_new_feature(c.ICAL_FEATURE_VIDEO));
@@ -116,6 +134,43 @@ pub fn buildEvent(allocator: std.mem.Allocator, ev: NewEvent) ![]const u8 {
     const out = c.icalcomponent_as_ical_string_r(cal) orelse return error.OutOfMemory;
     defer c.icalmemory_free_buffer(out);
     return allocator.dupe(u8, std.mem.span(out));
+}
+
+/// Floating (zone-less) local time; `withTzid` pins it to the owner's zone.
+fn localTime(unix: i64) c.icaltimetype {
+    return c.icaltime_from_timet_with_zone(unix + tz.utc_offset_s, 0, null);
+}
+
+fn withTzid(prop: ?*c.icalproperty) ?*c.icalproperty {
+    c.icalproperty_add_parameter(prop, c.icalparameter_new_tzid(tz.timezone));
+    return prop;
+}
+
+pub const Stored = struct { span: Interval, cancelled: bool };
+
+/// `calendar_data` may still be XML-escaped from a CalDAV response.
+pub fn storedEvent(allocator: std.mem.Allocator, calendar_data: []const u8) !?Stored {
+    const end_marker = "END:VCALENDAR";
+    const begin = std.mem.indexOf(u8, calendar_data, "BEGIN:VCALENDAR") orelse return null;
+    const end = (std.mem.indexOfPos(u8, calendar_data, begin, end_marker) orelse return null) + end_marker.len;
+    const text = try xmlUnescapeZ(allocator, calendar_data[begin..end]);
+    defer allocator.free(text);
+
+    const root = c.icalparser_parse_string(text.ptr) orelse return null;
+    defer c.icalcomponent_free(root);
+    const event = c.icalcomponent_get_first_component(root, c.ICAL_VEVENT_COMPONENT) orelse return null;
+    const start = c.icalcomponent_get_dtstart(event);
+    const finish = c.icalcomponent_get_dtend(event);
+    if (c.icaltime_is_null_time(start) != 0 or c.icaltime_is_null_time(finish) != 0) return null;
+    return .{
+        .span = .{ .start = toUnix(start), .end = toUnix(finish) },
+        .cancelled = c.icalcomponent_get_status(event) == c.ICAL_STATUS_CANCELLED,
+    };
+}
+
+fn toUnix(t: c.icaltimetype) i64 {
+    const shift: i64 = if (t.zone == null) -tz.utc_offset_s else 0;
+    return c.icaltime_as_timet_with_zone(t, t.zone) + shift;
 }
 
 fn cstr(arena: std.mem.Allocator, s: []const u8) ![:0]const u8 {
@@ -191,25 +246,34 @@ test buildEvent {
         .start = thu_oct22_10am_dhaka,
         .end = thu_oct22_10am_dhaka + half_hour,
         .now = thu_oct22_10am_dhaka,
-        .summary = "Meeting with Ada",
+        .summary = "Ada <> Nurul",
         .description = "Hello, world; notes",
         .organizer_email = "owner@example.com",
         .organizer_name = "Owner",
         .attendee_email = "ada@example.com",
         .attendee_name = "Ada",
+        .url = "https://nurulhudaapon.com/schedule/abc",
         .meeting_url = "https://nurulhudaapon.com/meet?id=abc",
     });
     defer std.testing.allocator.free(ics);
 
     for ([_][]const u8{
-        "DTSTART:20261022T040000Z",
-        "DTEND:20261022T043000Z",
+        "TZID:Asia/Dhaka",
+        "TZOFFSETTO:+0600",
+        "DTSTART;TZID=Asia/Dhaka:20261022T100000",
+        "DTEND;TZID=Asia/Dhaka:20261022T103000",
         "UID:abc@nurulhudaapon.com",
+        "SUMMARY:Ada <> Nurul",
         "mailto:ada@example.com",
         "Hello\\, world\\; notes",
-        "URL:https://nurulhudaapon.com/meet?id=abc",
+        "URL:https://nurulhudaapon.com/schedule/abc",
+        "LOCATION:https://nurulhudaapon.com/meet?id=abc",
         "CONFERENCE;VALUE=URI;FEATURE=VIDEO;",
     }) |needle| try std.testing.expect(std.mem.indexOf(u8, ics, needle) != null);
+
+    const stored = (try storedEvent(std.testing.allocator, ics)).?;
+    try std.testing.expectEqual(Interval{ .start = thu_oct22_10am_dhaka, .end = thu_oct22_10am_dhaka + half_hour }, stored.span);
+    try std.testing.expect(!stored.cancelled);
 
     const busy = try busyIntervals(std.testing.allocator, ics, range_oct19_to_nov2);
     defer std.testing.allocator.free(busy);
@@ -217,7 +281,6 @@ test buildEvent {
         .{ .start = thu_oct22_10am_dhaka, .end = thu_oct22_10am_dhaka + half_hour },
     }, busy);
 }
-
 
 test "all-day events block the whole local day" {
     const sat_oct24_midnight_dhaka = 1792778400;
@@ -231,4 +294,17 @@ test "all-day events block the whole local day" {
     try std.testing.expectEqualSlices(Interval, &.{
         .{ .start = sat_oct24_midnight_dhaka, .end = sat_oct24_midnight_dhaka + std.time.s_per_day },
     }, busy);
+}
+
+test "storedEvent reads an event moved in the calendar app" {
+    const thu_oct22_3pm_dhaka = 1792659600;
+    const xml =
+        "<response><href>/1/calendars/x/abc.ics</href><propstat><prop>" ++
+        "<calendar-data>BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:iCloud\r\n" ++
+        "BEGIN:VEVENT\r\nUID:abc@nurulhudaapon.com\r\nDTSTAMP:20261021T000000Z\r\n" ++
+        "DTSTART:20261022T090000Z\r\nDURATION:PT45M\r\nSUMMARY:Ada &lt;&gt; Nurul\r\nEND:VEVENT\r\n" ++
+        "END:VCALENDAR\r\n</calendar-data></prop></propstat></response>";
+    const stored = (try storedEvent(std.testing.allocator, xml)).?;
+    try std.testing.expectEqual(Interval{ .start = thu_oct22_3pm_dhaka, .end = thu_oct22_3pm_dhaka + 45 * std.time.s_per_min }, stored.span);
+    try std.testing.expectEqual(null, try storedEvent(std.testing.allocator, "<response><status>HTTP/1.1 404 Not Found</status></response>"));
 }

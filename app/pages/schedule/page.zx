@@ -1,4 +1,6 @@
 pub fn Page(ctx: zx.PageContext) zx.Component {
+    ctx.data.set("title", "Schedule - Nurul Huda (Apon)");
+    ctx.data.set("description", "Pick a time that works for you and let's talk.");
     const rules = settings.load(ctx.arena);
     const days = loadDays(ctx.arena, rules);
 

@@ -50,7 +50,7 @@ pub fn build(b: *std.Build) !void {
 
     // --- Unit tests ---
     const test_step = b.step("test", "Run unit tests");
-    for ([_][]const u8{ "app/pages/schedule/slots.zig", "app/pages/schedule/ical.zig" }) |path| {
+    for ([_][]const u8{ "app/pages/schedule/slots.zig", "app/pages/schedule/ical.zig", "app/pages/schedule/caldav.zig", "app/pages/schedule/name.zig" }) |path| {
         const t = b.addTest(.{ .root_module = b.createModule(.{
             .root_source_file = b.path(path),
             .target = target,

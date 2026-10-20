@@ -138,6 +138,20 @@ pub fn formatTime(allocator: std.mem.Allocator, unix: i64, utc_offset_s: i64) ![
     return std.fmt.allocPrint(allocator, "{d:0>2}:{d:0>2}", .{ m / 60, m % 60 });
 }
 
+pub fn formatTime12(allocator: std.mem.Allocator, unix: i64, utc_offset_s: i64) ![]const u8 {
+    const m = LocalDate.at(unix, utc_offset_s).minute_of_day;
+    const h = m / 60;
+    const h12 = if (h % 12 == 0) 12 else h % 12;
+    return std.fmt.allocPrint(allocator, "{d}:{d:0>2} {s}", .{ h12, m % 60, if (h < 12) "AM" else "PM" });
+}
+
+pub fn formatOffset(allocator: std.mem.Allocator, utc_offset_s: i64) ![]const u8 {
+    const sign: u8 = if (utc_offset_s < 0) '-' else '+';
+    const minutes: u64 = @abs(utc_offset_s) / 60;
+    if (minutes % 60 == 0) return std.fmt.allocPrint(allocator, "GMT{c}{d}", .{ sign, minutes / 60 });
+    return std.fmt.allocPrint(allocator, "GMT{c}{d}:{d:0>2}", .{ sign, minutes / 60, minutes % 60 });
+}
+
 pub fn formatDate(allocator: std.mem.Allocator, unix: i64, utc_offset_s: i64) ![]const u8 {
     const d = LocalDate.at(unix, utc_offset_s);
     return std.fmt.allocPrint(allocator, "{s}, {s} {d}", .{ d.weekdayName(), d.monthName(), d.day });
@@ -166,6 +180,19 @@ test isBookable {
     const late_start: Rules = .{ .day_start = 10 * 60 + 15, .slot_minutes = 45 };
     try std.testing.expect(isBookable(late_start, now, thu_oct22_10am_dhaka + 15 * std.time.s_per_min));
     try std.testing.expect(!isBookable(late_start, now, thu_oct22_10am_dhaka + 45 * std.time.s_per_min));
+}
+
+test formatTime12 {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const offset = config.utc_offset_s;
+    try std.testing.expectEqualStrings("10:00 AM", try formatTime12(a, thu_oct22_10am_dhaka, offset));
+    try std.testing.expectEqualStrings("12:30 PM", try formatTime12(a, thu_oct22_10am_dhaka + 150 * std.time.s_per_min, offset));
+    try std.testing.expectEqualStrings("12:00 AM", try formatTime12(a, thu_oct22_10am_dhaka - 10 * std.time.s_per_hour, offset));
+    try std.testing.expectEqualStrings("GMT+6", try formatOffset(a, offset));
+    try std.testing.expectEqualStrings("GMT-4", try formatOffset(a, -4 * std.time.s_per_hour));
+    try std.testing.expectEqualStrings("GMT+5:30", try formatOffset(a, 330 * std.time.s_per_min));
 }
 
 test availableDays {

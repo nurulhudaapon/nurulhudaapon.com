@@ -9,7 +9,10 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
 
     const path = ctx.request.pathname;
     if (isAdminPath(path)) return AdminDocument(ctx, children);
-    const title, const description = pageMeta(ctx.arena, path);
+    // Pages set these through `ctx.data`; anything unset falls back to the site defaults.
+    const title = ctx.data.get("title") orelse data.title;
+    const description = ctx.data.get("description") orelse data.description;
+    const robots = ctx.data.get("robots") orelse "index, follow";
 
     const origin = siteOrigin(ctx);
     const page_url = blk: {
@@ -18,6 +21,7 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
         break :blk ctx.fmt("{s}{s}", .{ origin, clean }) catch data.url;
     };
     const og_image_url = blk: {
+        if (ctx.data.get("og_image")) |og_path| break :blk ctx.fmt("{s}{s}", .{ origin, og_path }) catch data.og_image;
         if (std.mem.eql(u8, path, "/") or std.mem.eql(u8, path, ""))
             break :blk ctx.fmt("{s}/og/home.png", .{origin}) catch data.og_image;
         const clean = if (std.mem.endsWith(u8, path, "/")) path[0 .. path.len - 1] else path;
@@ -32,7 +36,7 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                 <title>{title}</title>
                 <meta name="description" content={description} />
                 <meta name="author" content={data.author} />
-                <meta name="robots" content="index, follow" />
+                <meta name="robots" content={robots} />
                 <meta property="og:title" content={title} />
                 <meta property="og:description" content={description} />
                 <meta property="og:type" content="website" />
@@ -114,41 +118,6 @@ fn originFromUrl(url: []const u8) ?[]const u8 {
     return url[0 .. scheme_end + 3 + path_start];
 }
 
-fn pageMeta(allocator: zx.Allocator, path: []const u8) struct { []const u8, []const u8 } {
-    if (std.mem.eql(u8, path, "/about") or std.mem.eql(u8, path, "/about/"))
-        return .{
-            "About - Nurul Huda (Apon)",
-            "Building high quality software for companies and crafting Ziex, a full-stack web framework for Zig.",
-        };
-    if (std.mem.eql(u8, path, "/blog") or std.mem.eql(u8, path, "/blog/"))
-        return .{
-            "Blog - Nurul Huda (Apon)",
-            "Writing and notes from Nurul Huda (Apon).",
-        };
-    if (std.mem.eql(u8, path, "/schedule") or std.mem.eql(u8, path, "/schedule/"))
-        return .{
-            "Schedule - Nurul Huda (Apon)",
-            "Pick a time that works for you and let's talk.",
-        };
-    if (std.mem.eql(u8, path, "/ask") or std.mem.eql(u8, path, "/ask/"))
-        return .{
-            "Ask Me Anything - Nurul Huda (Apon)",
-            "Anonymously ask me anything. I'll answer on social media or when you revisit this page.",
-        };
-    if (std.mem.startsWith(u8, path, "/blog/")) {
-        var slug = path["/blog/".len..];
-        if (std.mem.endsWith(u8, slug, "/")) slug = slug[0 .. slug.len - 1];
-        if (slug.len > 0) {
-            if (posts.getPostBySlug(allocator, slug)) |post| {
-                const title = post.seo_title orelse post.title;
-                const description = post.seo_description orelse post.brief;
-                return .{ title, description };
-            } else |_| {}
-        }
-    }
-    return .{ data.title, data.description };
-}
-
 fn icon(allocator: zx.Allocator, icon_type: IconType) zx.Component {
     return switch (icon_type) {
         .email => icons.Email(allocator),
@@ -185,7 +154,6 @@ const SiteData = struct {
 };
 
 const data: SiteData = @import("data.zon");
-const posts = @import("blog/posts.zig");
 
 const icons = @import("component.zx").icons;
 const std = @import("std");

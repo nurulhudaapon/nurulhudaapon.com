@@ -1,4 +1,6 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
+    ctx.data.set("title", "Blog - Nurul Huda (Apon)");
+    ctx.data.set("description", "Writing and notes from Nurul Huda (Apon).");
     const posts = try posts_mod.getPosts(ctx.arena);
 
     return (

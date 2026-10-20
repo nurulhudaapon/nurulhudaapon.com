@@ -669,6 +669,33 @@ body:has(.page-home) .nav-link[href="/"] {
     gap: 1.25rem;
 }
 
+.schedule-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+}
+
+.schedule-zone {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 0.9375rem;
+    color: var(--color-text-secondary);
+}
+
+.schedule-zone svg {
+    flex-shrink: 0;
+    color: var(--color-link);
+}
+
+.schedule-zone strong {
+    font-weight: 600;
+    color: var(--color-text);
+}
+
 .schedule-tz,
 .schedule-empty {
     margin: 0;
@@ -714,8 +741,15 @@ body:has(.page-home) .nav-link[href="/"] {
 }
 
 /* event.value() reads the click target, so it must be the button. */
-.schedule-day > * {
+.schedule-day > *,
+.schedule-slot > * {
     pointer-events: none;
+}
+
+.schedule-day:disabled,
+.schedule-slot:disabled {
+    opacity: 0.6;
+    cursor: progress;
 }
 
 .schedule-day {
@@ -876,6 +910,115 @@ body:has(.page-home) .nav-link[href="/"] {
 .schedule-back {
     font-size: 0.875rem;
     text-decoration: underline;
+}
+
+/* Server-rendered times wait for the browser's zone; shown anyway if it never loads. */
+.tz-pending {
+    visibility: hidden;
+    animation: tz-reveal 0s 2s forwards;
+}
+
+@keyframes tz-reveal {
+    to {
+        visibility: visible;
+    }
+}
+
+/* Meeting */
+.meeting-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.meeting-title {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.meeting-status {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border);
+}
+
+.meeting-status-confirmed {
+    color: #166534;
+    border-color: color-mix(in srgb, #22c55e 40%, transparent);
+    background: color-mix(in srgb, #22c55e 12%, transparent);
+}
+
+.meeting-status-cancelled {
+    color: #991b1b;
+    border-color: color-mix(in srgb, #ef4444 40%, transparent);
+    background: color-mix(in srgb, #ef4444 10%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+    .meeting-status-confirmed {
+        color: #bbf7d0;
+    }
+
+    .meeting-status-cancelled {
+        color: #fecaca;
+    }
+}
+
+.meeting-when {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin: 0;
+}
+
+.meeting-when-main {
+    font-size: 1.125rem;
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+.meeting-when-sub {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+}
+
+.meeting-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 2.5rem;
+    margin: 0;
+}
+
+.meeting-facts dt {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+}
+
+.meeting-facts dd {
+    margin: 0.125rem 0 0;
+    color: var(--color-text);
+}
+
+.meeting-notes h2 {
+    margin: 0 0 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.meeting-notes p {
+    margin: 0;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 /* Ask */
