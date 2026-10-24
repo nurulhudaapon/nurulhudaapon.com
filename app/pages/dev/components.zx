@@ -1,0 +1,86 @@
+pub fn GtmHead(allocator: zx.Allocator) ?zx.Component {
+    if (builtin.optimize == .debug)  return null;
+    
+    return (
+        <script @allocator={allocator} @escaping={.none}>
+            {
+                \\(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+                \\new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+                \\j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+                \\'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+                \\})(window,document,'script','dataLayer','GTM-5GXWQSF9');
+            }
+        </script>
+    );
+}
+
+pub fn GtmBody(allocator: zx.Allocator) ?zx.Component {
+    if (builtin.optimize == .debug)  return null;
+
+    return (
+        <noscript @allocator={allocator}>
+            <iframe src=`https://www.googletagmanager.com/ns.html?id={GTM_ID}` height="0" width="0" style="display:none;visibility:hidden"> </iframe>
+        </noscript>
+    );
+}
+
+pub const NavProps = struct {
+    active: []const u8 = "",
+};
+
+pub fn Nav(allocator: zx.Allocator, props: NavProps) zx.Component {
+    return (
+        <nav @allocator={allocator} class="nav">
+            <a class="nav-brand" href="/">nuhu<span class="nav-brand-dot">.</span>dev</a>
+            <div class="nav-links">
+                <a class=`nav-link {activeClass(props.active, "home")}` href="/">Home</a>
+                {if (config.labs) (
+                    <a class="nav-link" href="https://nuhulabs.com" target="_blank" rel="noopener">Labs</a>
+                )}
+                <a class=`nav-link {activeClass(props.active, "oss")}` href="/oss">OSS</a>
+            </div>
+        </nav>
+    );
+}
+
+pub fn ContactCard(allocator: zx.Allocator) ?zx.Component {
+    if (!config.labs) return null;
+
+    return (
+        <section @allocator={allocator} class="contact-card">
+            <div class="contact-copy">
+                <span class="eyebrow">Nuhu Labs</span>
+                <h3>Have something to build?</h3>
+                <p>
+                    Nuhu Labs partners with teams to build products from scratch
+                    or sharpen the engineering of existing systems. Take a look
+                    at what the studio is about.
+                </p>
+            </div>
+            <a class="btn btn-primary" href="https://nuhulabs.com" target="_blank" rel="noopener">Visit Nuhu Labs →</a>
+        </section>
+    );
+}
+
+pub fn Footer(allocator: zx.Allocator) zx.Component {
+    return (
+        <footer @allocator={allocator} class="footer">
+            <span>© nuhu.dev</span>
+            // <span class="footer-sep">·</span>
+            // <a href="https://github.com/nurulhudaapon" target="_blank" rel="noopener">GitHub</a>
+            // <span class="footer-sep">·</span>
+            // <a href="https://nurulhudaapon.com" target="_blank" rel="noopener">Nurul Huda (Apon)</a>
+        </footer>
+    );
+}
+
+fn activeClass(active: []const u8, key: []const u8) []const u8 {
+    return if (std.mem.eql(u8, active, key)) "is-active" else "";
+}
+
+const GTM_ID = "GTM-5GXWQSF9";
+
+const zx = @import("zx");
+const std = @import("std");
+const builtin = @import("builtin");
+const config = @import("config");

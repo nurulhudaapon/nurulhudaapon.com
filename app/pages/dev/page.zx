@@ -1,0 +1,63 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    const oss_btn_class = if (config.labs) "btn btn-ghost" else "btn btn-primary";
+
+    return (
+        <main @allocator={ctx.arena} class="container home">
+            <components.Nav active="home" />
+
+            <section class="lead">
+                <span class="eyebrow">Nurul Huda (Apon)</span>
+                <h1 class="lead-title">
+                    Building <span class="grad">fast, simple</span> software
+                    <br />
+                    for the modern web.
+                </h1>
+                <p class="lead-sub">
+                    Engineer crafting developer tooling, web infrastructure, and
+                    open source. Software that's lean, quick, and built to last.
+                </p>
+                <div class="lead-actions">
+                    {if (config.labs) (
+                        <a class="btn btn-primary" href="https://nuhulabs.com" target="_blank" rel="noopener">Nuhu Labs →</a>
+                    )}
+                    <a class={oss_btn_class} href="/oss">Open Source</a>
+                    // <a class="btn btn-ghost" href="https://nurulhudaapon.com" target="_blank" rel="noopener">About me</a>
+                </div>
+            </section>
+
+            <section class="cards-grid">
+                {if (config.labs) (
+                    <a class="nav-card" href="https://nuhulabs.com" target="_blank" rel="noopener">
+                        <span class="nav-card-tag">Company</span>
+                        <h2>Nuhu Labs</h2>
+                        <p>A product studio building focused software, open to select partnerships.</p>
+                        <span class="nav-card-go">Explore →</span>
+                    </a>
+                )}
+                <a class="nav-card" href="/oss">
+                    <span class="nav-card-tag">Open Source</span>
+                    <h2>OSS Projects</h2>
+                    <p>Libraries and tools I maintain in the open, from Zig to TypeScript.</p>
+                    <span class="nav-card-go">Browse →</span>
+                </a>
+                <a class="nav-card" href="https://github.com/nurulhudaapon" target="_blank" rel="noopener">
+                    <span class="nav-card-tag">GitHub</span>
+                    <h2>@nurulhudaapon</h2>
+                    <p>Follow along with my latest commits, repositories, and experiments.</p>
+                    <span class="nav-card-go">Visit →</span>
+                </a>
+            </section>
+
+            <components.ContactCard />
+            <components.Footer />
+        </main>
+    );
+}
+
+pub const options: zx.PageOptions = .{
+    .caching = .tag("10m"),
+};
+
+const zx = @import("zx");
+const components = @import("components.zx");
+const config = @import("config");
