@@ -24,7 +24,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                 <td>
                                     <span class={if (p.draft) "adm-badge" else "adm-badge adm-badge-ok"}>{if (p.draft) "Draft" else "Published"}</span>
                                 </td>
-                                <td class="adm-hide-sm">{if (p.published_at.len > 0) p.published_at else "—"}</td>
+                                <td class="adm-hide-sm">{if (p.published_at.len > 0) p.published_at else "-"}</td>
                                 <td class="adm-hide-sm">{p.read_minutes} min</td>
                             </tr>
                         )}
@@ -35,7 +35,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     );
 }
 
-pub const options: zx.PageOptions = .{ .dynamic = true };
+pub const options: zx.PageOptions = .{ .rendering = .request };
 
 const zx = @import("zx");
 const ui = @import("../ui.zx");

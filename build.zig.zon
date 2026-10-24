@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .ziex = .{
-            .url = "git+https://github.com/ziex-dev/ziex#d512fa1bea33799f21a7517d14e9b82893cdea0a",
-            .hash = "ziex-0.1.0-dev-Z3YcvfR3nQHURV_AK-AZ88AWfk4ojsMh6p_cgLCMbkxi",
+            .url = "git+https://github.com/ziex-dev/ziex#3a62d043e4fdfdab066c76db4b4103d2928e7aaf",
+            .hash = "ziex-0.1.0-dev-Z3YcvSMEnQE14a8NuL5Vmm7lcSM0Pt4TTbfiYj3usHKw",
         },
         .markz = .{
             .url = "git+https://codeberg.org/nurulhudaapon/markz.git?ref=zig-0.17#19af600075fc60775e89a3430dadd94299b13e14",
@@ -23,6 +23,9 @@
         .libical = .{
             .url = "https://github.com/libical/libical/archive/refs/tags/v3.0.20.tar.gz",
             .hash = "N-V-__8AAOcUlQAjl4D6KzwCNfYoBNy-Y--4_E4Jn-tM98-K",
+        },
+        .highlight = .{
+            .path = "lib/highlight",
         },
     },
     .paths = .{

@@ -27,6 +27,7 @@ pub fn build(b: *std.Build) !void {
             .features = .{
                 .kv = .enabled,
                 .sqlite = .enabled,
+                .cache = .enabled,
             },
             .client = .{
                 .bindings = .{
@@ -44,6 +45,7 @@ pub fn build(b: *std.Build) !void {
     }).module("lunasvg"));
 
     ziex_b.addImport("geist_fonts", addGeistFontsModule(b));
+    ziex_b.addImport("highlight", b.dependency("highlight", .{ .target = target, .optimize = optimize }).module("highlight"));
 
     const ical_mod = libical.addLibical(b, target, optimize);
     ziex_b.addImport("ical", ical_mod);

@@ -1,63 +1,240 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const oss_btn_class = if (config.labs) "btn btn-ghost" else "btn btn-primary";
+    const alloc = ctx.arena;
+    const snippet_html = (try highlight.html(alloc, "zx", ziex_snippet)).?;
+
+    const repos = github.fetchPinned(alloc) catch |err| blk: {
+        zx.log.warn("github: {s}", .{@errorName(err)});
+        // Non-200 responses skip the page cache, so the next request retries.
+        ctx.response.setStatus(.service_unavailable);
+        break :blk &.{};
+    };
+    const has_featured = repos.len > 0 and std.mem.eql(u8, repos[0].full_name, "ziex-dev/ziex");
+    const projects = if (has_featured) repos[1..] else repos;
+
+    var stars: u32 = 0;
+    var forks: u32 = 0;
+    for (repos) |r| {
+        stars += r.stargazers_count;
+        forks += r.forks_count;
+    }
 
     return (
-        <main @allocator={ctx.arena} class="container home">
-            <components.Nav active="home" />
+        <main @allocator={alloc} class="dev" id="top">
+            <components.Nav />
 
-            <section class="lead">
-                <span class="eyebrow">Nurul Huda (Apon)</span>
-                <h1 class="lead-title">
-                    Building <span class="grad">fast, simple</span> software
-                    <br />
-                    for the modern web.
-                </h1>
-                <p class="lead-sub">
-                    Engineer crafting developer tooling, web infrastructure, and
-                    open source. Software that's lean, quick, and built to last.
+            <section class="hero">
+                <p class="eyebrow">Nurul Huda (Apon)</p>
+                <h1 class="hero-title">Building fast, simple software for the modern web.</h1>
+                <p class="hero-sub">
+                    Engineer crafting developer tooling, web infrastructure, and open source. Software that's lean, quick, and built to last.
                 </p>
-                <div class="lead-actions">
-                    {if (config.labs) (
-                        <a class="btn btn-primary" href="https://nuhulabs.com" target="_blank" rel="noopener">Nuhu Labs →</a>
+                <div class="hero-actions">
+                    <a class="btn btn-primary" href="#projects">
+                        Explore projects
+                        {icons.ArrowRight(alloc)}
+                    </a>
+                    <a class="btn btn-ghost" href={components.github_url} target="_blank" rel="noopener">
+                        {icons.GitHub(alloc)}
+                        nurulhudaapon
+                    </a>
+                </div>
+
+                {if (repos.len > 0) (
+                    <dl class="metrics">
+                        <div class="metric">
+                            <dt>GitHub stars</dt>
+                            <dd class="metric-num">{github.compact(alloc, stars)}</dd>
+                        </div>
+                        <div class="metric">
+                            <dt>Forks</dt>
+                            <dd class="metric-num">{github.compact(alloc, forks)}</dd>
+                        </div>
+                        <div class="metric">
+                            <dt>Projects</dt>
+                            <dd class="metric-num">{repos.len}</dd>
+                        </div>
+                    </dl>
+                )}
+            </section>
+
+            <section class="spotlight" aria-labelledby="spotlight-title">
+                <div class="spotlight-copy">
+                    <p class="eyebrow">Featured · Framework</p>
+                    <h2 class="spotlight-title" id="spotlight-title">
+                        <a class="stretched" href="https://github.com/ziex-dev/ziex" target="_blank" rel="noopener">Ziex</a>
+                    </h2>
+                    <p class="spotlight-desc">
+                        Full-stack web framework for Zig. Write HTML right inside Zig, just like JSX, and ship server-rendered pages with WebAssembly islands.
+                    </p>
+                    <ul class="spotlight-points">
+                        <li>JSX-style markup, type-checked by Zig</li>
+                        <li>Server rendering with client-side WASM components</li>
+                        <li>Deploys to Cloudflare, Vercel, Node and more</li>
+                    </ul>
+                    <div class="spotlight-foot">
+                        {if (has_featured) (<Stats repo={repos[0]} />)}
+                        <a class="chip-link" href="https://ziex.dev" target="_blank" rel="noopener">
+                            ziex.dev
+                            {icons.ArrowUpRight(alloc)}
+                        </a>
+                    </div>
+                </div>
+                <figure class="code" aria-label="A Ziex page component">
+                    <div class="code-bar" aria-hidden="true">
+                        <code class="code-file">app/pages/page.zx</code>
+                    </div>
+                    <pre><code class="hl" @escaping={.none}>{snippet_html}</code></pre>
+                </figure>
+            </section>
+
+            <section class="oss" id="projects" aria-labelledby="projects-title">
+                <div class="oss-head">
+                    <div>
+                        <p class="eyebrow">Open source</p>
+                        <h2 class="section-title" id="projects-title">Tools built in the open</h2>
+                    </div>
+                    <a class="see-all" href={repos_url} target="_blank" rel="noopener">
+                        All repositories
+                        {icons.ArrowUpRight(alloc)}
+                    </a>
+                </div>
+
+                {if (projects.len == 0) (
+                    <p class="oss-empty">Couldn't reach GitHub right now. Browse the repositories directly instead.</p>
+                ) else (
+                    <fieldset class="filters">
+                        <legend class="sr-only">Filter projects</legend>
+                        {for (filters) |f| (
+                            <span class="filter">
+                                <input type="radio" name="language" id={f.id} checked={f.language.len == 0} />
+                                <label for={f.id}>
+                                    {if (f.language.len == 0) "All" else f.language}
+                                    <span class="filter-count">{countLanguage(projects, f.language)}</span>
+                                </label>
+                            </span>
+                        )}
+                    </fieldset>
+                )}
+
+                <ul class="grid" role="list">
+                    {for (projects) |p| (
+                        <li class="card" data-lang={p.language orelse ""}>
+                            <h3 class="card-title">
+                                <a class="stretched" href={p.html_url} target="_blank" rel="noopener">{p.name}</a>
+                            </h3>
+                            <p class="card-desc">{p.description orelse ""}</p>
+                            <div class="card-foot">
+                                {if (p.language) |language| (<span class="lang" data-lang={language}>{language}</span>)}
+                                <Stats repo={p} />
+                                {if (homepage(p)) |url| (
+                                    <a class="card-home" href={url} target="_blank" rel="noopener" aria-label={p.name}>
+                                        {icons.ArrowUpRight(alloc)}
+                                    </a>
+                                )}
+                            </div>
+                        </li>
                     )}
-                    <a class={oss_btn_class} href="/oss">Open Source</a>
-                    // <a class="btn btn-ghost" href="https://nurulhudaapon.com" target="_blank" rel="noopener">About me</a>
+                </ul>
+            </section>
+
+            <section class="built" aria-labelledby="built-title">
+                <h2 class="section-title section-title-sm" id="built-title">Built with Ziex</h2>
+                <ul class="built-list" role="list">
+                    {for (built_with_ziex) |link| (
+                        <li>
+                            <a href={link.href} target="_blank" rel="noopener">
+                                <span class="built-name">{link.name}</span>
+                                <span class="built-note">{link.note}</span>
+                                {icons.ArrowUpRight(alloc)}
+                            </a>
+                        </li>
+                    )}
+                </ul>
+            </section>
+
+            <section class="cta">
+                <div>
+                    <h2 class="cta-title">Have something to build?</h2>
+                    <p class="cta-sub">Book a call or drop a line. Happy to talk Zig, web infrastructure, or your next project.</p>
+                </div>
+                <div class="cta-actions">
+                    <a class="btn btn-primary" href={schedule_url} target="_blank" rel="noopener">Book a call</a>
+                    <a class="btn btn-ghost" href="mailto:me@nurulhudaapon.com">Email me</a>
                 </div>
             </section>
 
-            <section class="cards-grid">
-                {if (config.labs) (
-                    <a class="nav-card" href="https://nuhulabs.com" target="_blank" rel="noopener">
-                        <span class="nav-card-tag">Company</span>
-                        <h2>Nuhu Labs</h2>
-                        <p>A product studio building focused software, open to select partnerships.</p>
-                        <span class="nav-card-go">Explore →</span>
-                    </a>
-                )}
-                <a class="nav-card" href="/oss">
-                    <span class="nav-card-tag">Open Source</span>
-                    <h2>OSS Projects</h2>
-                    <p>Libraries and tools I maintain in the open, from Zig to TypeScript.</p>
-                    <span class="nav-card-go">Browse →</span>
-                </a>
-                <a class="nav-card" href="https://github.com/nurulhudaapon" target="_blank" rel="noopener">
-                    <span class="nav-card-tag">GitHub</span>
-                    <h2>@nurulhudaapon</h2>
-                    <p>Follow along with my latest commits, repositories, and experiments.</p>
-                    <span class="nav-card-go">Visit →</span>
-                </a>
-            </section>
-
-            <components.ContactCard />
             <components.Footer />
         </main>
     );
 }
 
-pub const options: zx.PageOptions = .{
-    .caching = .tag("10m"),
+fn Stats(allocator: zx.Allocator, props: struct { repo: github.Repo }) zx.Component {
+    return (
+        <span @allocator={allocator} class="stats">
+            <span class="stat" title="Stars">
+                {icons.Star(allocator)}
+                {github.compact(allocator, props.repo.stargazers_count)}
+            </span>
+            <span class="stat" title="Forks">
+                {icons.Fork(allocator)}
+                {github.compact(allocator, props.repo.forks_count)}
+            </span>
+        </span>
+    );
+}
+
+fn homepage(repo: github.Repo) ?[]const u8 {
+    const url = repo.homepage orelse return null;
+    return if (url.len > 0) url else null;
+}
+
+fn countLanguage(repos: []const github.Repo, language: []const u8) usize {
+    if (language.len == 0) return repos.len;
+    var n: usize = 0;
+    for (repos) |r| {
+        if (std.mem.eql(u8, r.language orelse "", language)) n += 1;
+    }
+    return n;
+}
+
+const filters = [_]struct { id: []const u8, language: []const u8 }{
+    .{ .id = "lang-all", .language = "" },
+    .{ .id = "lang-zig", .language = "Zig" },
+    .{ .id = "lang-ts", .language = "TypeScript" },
+    .{ .id = "lang-shell", .language = "Shell" },
 };
 
-const zx = @import("zx");
+const built_with_ziex = [_]struct { name: []const u8, href: []const u8, note: []const u8 }{
+    .{ .name = "nurulhudaapon.com", .href = "https://github.com/nurulhudaapon/nurulhudaapon.com", .note = "This site" },
+    .{ .name = "Hacker News clone", .href = "https://hn.ziex.app", .note = "Example" },
+    .{ .name = "Cloudflare template", .href = "https://github.com/ziex-dev/template-cloudflare", .note = "Template" },
+    .{ .name = "Vercel template", .href = "https://github.com/ziex-dev/template-vercel", .note = "Template" },
+};
+
+const repos_url = components.github_url ++ "?tab=repositories";
+const schedule_url = components.site_url ++ "/schedule";
+
+const ziex_snippet =
+    \\pub fn Page(ctx: zx.PageContext) zx.Component {
+    \\    const name = "Zig";
+    \\    return (
+    \\        <main @allocator={ctx.arena}>
+    \\            <h1>Hello, {name}!</h1>
+    \\            <Counter @client />
+    \\        </main>
+    \\    );
+    \\}
+;
+
+pub const options: zx.PageOptions = .{
+    .rendering = .request,
+    .caching = .tag("1h"),
+};
+
+const icons = components.icons;
 const components = @import("components.zx");
-const config = @import("config");
+const github = @import("github.zig");
+const highlight = @import("highlight");
+
+const zx = @import("zx");
+const std = @import("std");

@@ -20,7 +20,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                         Anonymously ask me anything. I'll answer it in my social media or you can find the answer by revisiting this page.
                     </p>
 
-                    <AskForm @rendering={.client} proof={proof} questions={questions} />
+                    <AskForm @client proof={proof} questions={questions} />
                 </div>
             </div>
         </main>
@@ -45,7 +45,7 @@ fn ensureVisitorId(ctx: zx.PageContext) []const u8 {
 
 pub const options: zx.PageOptions = .{
     .methods = &.{ .GET, .POST },
-    .dynamic = true,
+    .rendering = .request,
 };
 
 const Navbar = @import("../component.zx").Navbar;

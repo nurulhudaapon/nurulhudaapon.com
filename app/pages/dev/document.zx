@@ -1,35 +1,17 @@
-pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
-    const path = ctx.request.pathname;
-
-    const title, const description = meta: {
-        if (std.mem.startsWith(u8, path, "/oss"))
-            break :meta .{
-                "Open Source - nuhu.dev",
-                "Open source libraries, frameworks, and tools maintained by Nurul Huda (Apon), from Zig to TypeScript.",
-            };
-        break :meta .{
-            "nuhu.dev - Nurul Huda (Apon)",
-            "Engineer crafting developer tooling, web infrastructure, and open source. Software that's lean, quick, and built to last.",
-        };
-    };
-
-    const domain = "https://nuhu.dev";
-    const default_og_image_url = domain ++ "/nuhu-dev-og.png";
-    const og_image_url = blk: {
-        if (std.mem.endsWith(u8, path, "/")) break :blk default_og_image_url;
-        break :blk ctx.fmt("{s}/og{s}.png", .{ domain, path }) catch default_og_image_url;
-    };
-
+pub fn Document(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
     return (
         <html @allocator={ctx.arena} lang="en-US">
             <head>
                 <meta charset="UTF-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <meta name="color-scheme" content="dark light" />
                 <title>{title}</title>
                 <meta name="description" content={description} />
                 <meta name="author" content="Nurul Huda (Apon)" />
                 <meta name="robots" content="index, follow" />
+                <link rel="canonical" href={domain ++ "/"} />
                 <meta property="og:type" content="website" />
+                <meta property="og:url" content={domain ++ "/"} />
                 <meta property="og:title" content={title} />
                 <meta property="og:description" content={description} />
                 <meta property="og:site_name" content="nuhu.dev" />
@@ -41,12 +23,12 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                 <meta name="twitter:image" content={og_image_url} />
                 <meta name="twitter:title" content={title} />
                 <meta name="twitter:description" content={description} />
-                <link rel="stylesheet" href="/assets/theme.css?v=1.0.0" />
-                <link rel="stylesheet" href="/assets/style.css?v=1.0.0" />
+                <link rel="icon" href="/nuhu-dev-favicon.ico" sizes="32x32" type="image/x-icon" />
+                <link rel="stylesheet" href="/assets/dev.css" />
                 <components.GtmHead />
             </head>
 
-            <body>
+            <body class="dev-body">
                 <components.GtmBody />
 
                 {children}
@@ -55,7 +37,11 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
     );
 }
 
+const domain = "https://nuhu.dev";
+const og_image_url = domain ++ "/nuhu-dev-og.png";
+const title = "nuhu.dev - Nurul Huda (Apon)";
+const description = "Engineer crafting developer tooling, web infrastructure, and open source. Ziex, zzon and more, built in the open.";
+
 const components = @import("components.zx");
 
 const zx = @import("zx");
-const std = @import("std");

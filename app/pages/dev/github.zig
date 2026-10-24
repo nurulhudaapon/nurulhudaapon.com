@@ -1,89 +1,64 @@
 const std = @import("std");
+const zx = @import("zx");
 
-const GITHUB_API_URLS = [_][]const u8{
-    "https://api.github.com/users/ziex-dev/repos?per_page=100",
-    "https://api.github.com/users/nurulhudaapon/repos?per_page=100",
-};
-
-const PINNED_REPOS = [_][]const u8{
-    "ziex",
-    "zzon",
-    "prisma-supabase",
-    "nx-sst-next",
-    "enum-map-generator",
-    "temporalz",
-    "bencher",
-    "supabase-mock-fetch",
-};
-
-pub const Project = struct {
+pub const Repo = struct {
     name: []const u8,
-    description: []const u8,
-    language: []const u8,
-    stars: u32,
-    forks: u32,
-    url: []const u8,
-};
-
-pub fn getPinnedRepos(allocator: std.mem.Allocator) ![]Project {
-    var client = std.http.Client{ .allocator = allocator, .io = std.Io.Threaded.global_single_threaded.io() };
-    defer client.deinit();
-
-    var pinned_repos = std.ArrayList(Project).empty;
-    defer pinned_repos.deinit(allocator);
-
-    for (GITHUB_API_URLS) |url| {
-        var aw = std.Io.Writer.Allocating.init(allocator);
-        _ = try client.fetch(.{
-            .method = .GET,
-            .location = .{ .url = url },
-            .headers = .{
-                .user_agent = .{ .override = "nuhu.dev" },
-            },
-            .response_writer = &aw.writer,
-        });
-
-        const response_text = aw.written();
-        const prs = try filterPinnedRepos(allocator, response_text);
-        try pinned_repos.appendSlice(allocator, prs);
-    }
-
-    return try pinned_repos.toOwnedSlice(allocator);
-}
-
-fn filterPinnedRepos(allocator: std.mem.Allocator, json_text: []const u8) ![]Project {
-    const parsed = try std.json.parseFromSlice([]GitHubRepo, allocator, json_text, .{ .ignore_unknown_fields = true });
-    const all_repos = parsed.value;
-
-    const projects = try allocator.alloc(Project, PINNED_REPOS.len);
-    var count: usize = 0;
-
-    // Iterate pinned names in order, find matching repo from API response
-    for (PINNED_REPOS) |pinned_name| {
-        for (all_repos) |repo| {
-            if (std.mem.eql(u8, repo.name, pinned_name)) {
-                projects[count] = .{
-                    .name = repo.name,
-                    .description = repo.description orelse "No description",
-                    .language = repo.language orelse "Unknown",
-                    .stars = repo.stargazers_count,
-                    .forks = repo.forks_count,
-                    .url = repo.html_url,
-                };
-                count += 1;
-                break;
-            }
-        }
-    }
-
-    return projects[0..count];
-}
-
-const GitHubRepo = struct {
-    name: []const u8,
-    description: ?[]const u8,
+    full_name: []const u8,
     html_url: []const u8,
+    description: ?[]const u8 = null,
+    homepage: ?[]const u8 = null,
+    language: ?[]const u8 = null,
     stargazers_count: u32,
     forks_count: u32,
-    language: ?[]const u8,
 };
+
+const owners = [_][]const u8{ "ziex-dev", "nurulhudaapon" };
+
+const pinned = [_][]const u8{
+    "ziex-dev/ziex",
+    "nurulhudaapon/zzon",
+    "nurulhudaapon/temporalz",
+    "nurulhudaapon/prisma-supabase",
+    "ziex-dev/zigc",
+    "nurulhudaapon/lunasvg",
+    "nurulhudaapon/bun-plugin-zon",
+    "nurulhudaapon/enum-map-generator",
+    "nurulhudaapon/nx-sst-next",
+    "nurulhudaapon/supabase-mock-fetch",
+    "nurulhudaapon/asdf-sst",
+};
+
+pub fn fetchPinned(arena: std.mem.Allocator) ![]const Repo {
+    var by_name: std.StringHashMapUnmanaged(Repo) = .empty;
+    for (owners) |owner| {
+        const url = try std.fmt.allocPrint(arena, "https://api.github.com/users/{s}/repos?per_page=100", .{owner});
+        var response = (try zx.fetch(.blocking, arena, url, .{
+            .headers = &.{
+                .{ .name = "Accept", .value = "application/vnd.github+json" },
+                .{ .name = "User-Agent", .value = "nuhu.dev" },
+            },
+            .timeout_ms = 5_000,
+        })) orelse return error.EmptyResponse;
+        defer response.deinit();
+        if (!response.ok()) return error.GitHubUnavailable;
+
+        const parsed = try response.json([]const Repo);
+        for (parsed.value) |repo| try by_name.put(arena, repo.full_name, repo);
+    }
+
+    var repos: std.ArrayList(Repo) = .empty;
+    for (pinned) |name| {
+        if (by_name.get(name)) |repo| try repos.append(arena, repo);
+    }
+    return repos.toOwnedSlice(arena);
+}
+
+pub fn compact(allocator: std.mem.Allocator, n: u32) []const u8 {
+    const out = if (n < 1000)
+        std.fmt.allocPrint(allocator, "{d}", .{n})
+    else if (n < 10_000 and (n + 50) / 100 % 10 != 0)
+        std.fmt.allocPrint(allocator, "{d}.{d}k", .{ (n + 50) / 1000, (n + 50) / 100 % 10 })
+    else
+        std.fmt.allocPrint(allocator, "{d}k", .{(n + 500) / 1000});
+    return out catch "";
+}

@@ -9,6 +9,7 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
 
     const path = ctx.request.pathname;
     if (isAdminPath(path)) return AdminDocument(ctx, children);
+    if (isDevPath(path)) return DevDocument(ctx, children);
     // Pages set these through `ctx.data`; anything unset falls back to the site defaults.
     const title = ctx.data.get("title") orelse data.title;
     const description = ctx.data.get("description") orelse data.description;
@@ -99,6 +100,10 @@ fn isAdminPath(path: []const u8) bool {
     return std.mem.eql(u8, path, "/admin") or std.mem.startsWith(u8, path, "/admin/");
 }
 
+fn isDevPath(path: []const u8) bool {
+    return std.mem.eql(u8, path, "/dev") or std.mem.startsWith(u8, path, "/dev/");
+}
+
 fn siteOrigin(ctx: zx.LayoutContext) []const u8 {
     if (@import("builtin").optimize == .debug) {
         if (ctx.request.headers.get("host")) |host| {
@@ -155,6 +160,7 @@ const SiteData = struct {
 
 const data: SiteData = @import("data.zon");
 
+const DevDocument = @import("dev/document.zx").Document;
 const icons = @import("component.zx").icons;
 const std = @import("std");
 const zx = @import("zx");

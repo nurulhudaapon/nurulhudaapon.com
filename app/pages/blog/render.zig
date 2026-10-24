@@ -1,4 +1,5 @@
 const markz = @import("markz");
+const highlight = @import("highlight");
 const std = @import("std");
 
 const Document = markz.Document;
@@ -39,11 +40,23 @@ fn transformChildren(doc: *Document, parent: *Node) !void {
                     inline_child = nnext;
                 }
             },
+            .code_block => try highlightCodeBlock(doc, node),
             else => {},
         }
 
         child = next;
     }
+}
+
+fn highlightCodeBlock(doc: *Document, node: *Node) !void {
+    const allocator = doc.arena.allocator();
+    const lang = std.mem.sliceTo(doc.getCodeBlockData(node.data.code_block).info, ' ');
+    const code = if (node.first_child) |c| doc.nodeText(c) else "";
+    const body = try highlight.html(allocator, lang, code) orelse return;
+    const html = try std.fmt.allocPrint(allocator, "<pre><code class=\"language-{s} hl\">{s}\n</code></pre>", .{ lang, body });
+    const block = try doc.createNode(.html_block, .{ .literal = html }, SourceSpan.empty);
+    node.insertAfter(block);
+    node.detach();
 }
 
 fn transformParagraph(doc: *Document, para: *Node) !void {

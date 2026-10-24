@@ -73,7 +73,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     );
 }
 
-pub const options: zx.PageOptions = .{ .dynamic = true };
+pub const options: zx.PageOptions = .{ .rendering = .request };
 
 const zx = @import("zx");
 const ui = @import("ui.zx");

@@ -19,6 +19,6 @@ pub fn GET(ctx: zx.RouteContext) !void {
     ctx.response.redirect(url, 302);
 }
 
-pub const options: zx.RouteOptions = .{ .dynamic = true };
+pub const options: zx.RouteOptions = .{ .rendering = .request };
 
 const zx = @import("zx");

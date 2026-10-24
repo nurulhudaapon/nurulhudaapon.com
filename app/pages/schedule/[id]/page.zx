@@ -42,7 +42,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                         <span class={status.class}>{status.label}</span>
                         <h1 class="meeting-title">{title}</h1>
                     </header>
-                    <MeetingTime @rendering={.client} start={record.starts_at} end={record.ends_at} />
+                    <MeetingTime @client start={record.starts_at} end={record.ends_at} />
                     <dl class="meeting-facts">
                         <div>
                             <dt>Duration</dt>
@@ -92,7 +92,7 @@ fn statusOf(r: booking.Record) Status {
     return .{ .kind = .upcoming, .label = "Confirmed", .class = "meeting-status meeting-status-confirmed" };
 }
 
-pub const options: zx.PageOptions = .{ .dynamic = true };
+pub const options: zx.PageOptions = .{ .rendering = .request };
 
 const std = @import("std");
 const zx = @import("zx");

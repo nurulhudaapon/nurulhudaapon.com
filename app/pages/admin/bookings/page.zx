@@ -148,7 +148,7 @@ fn emptyText(filter: booking.Filter) []const u8 {
 
 pub const options: zx.PageOptions = .{
     .methods = &.{ .GET, .POST },
-    .dynamic = true,
+    .rendering = .request,
 };
 
 const std = @import("std");
