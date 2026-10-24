@@ -26,7 +26,7 @@ jobs:
           version: 0.17.0
 
       - name: Build
-        run: zig build zx -- build --static --outdir zig-out/static
+        run: zig build zx -- build --target wasm32-wasi --release small --prerender
 
       - name: Bundle
         run: npx wrangler@4.100.0 deploy --dry-run --outdir .wrangler-artifact --assets ./zig-out/static

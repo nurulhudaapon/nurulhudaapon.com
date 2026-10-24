@@ -2,12 +2,12 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const alloc = ctx.arena;
     const snippet_html = (try highlight.html(alloc, "zx", ziex_snippet)).?;
 
+    // Without GitHub data, hide everything derived from it rather than failing the page.
     const repos = github.fetchPinned(alloc) catch |err| blk: {
-        zx.log.warn("github: {s}", .{@errorName(err)});
-        // Non-200 responses skip the page cache, so the next request retries.
-        ctx.response.setStatus(.service_unavailable);
+        zx.log.warn("dev: github repos unavailable: {s}", .{@errorName(err)});
         break :blk &.{};
     };
+    const has_repos = repos.len > 0;
     const has_featured = repos.len > 0 and std.mem.eql(u8, repos[0].full_name, "ziex-dev/ziex");
     const projects = if (has_featured) repos[1..] else repos;
 
@@ -29,25 +29,27 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     Engineer crafting developer tooling, web infrastructure, and open source. Software that's lean, quick, and built to last.
                 </p>
                 <div class="hero-actions">
-                    <a class="btn btn-primary" href="#projects">
-                        Explore projects
-                        {icons.ArrowRight(alloc)}
-                    </a>
+                    {if (has_repos) (
+                        <a class="btn btn-primary" href="#projects">
+                            Explore projects
+                            {icons.ArrowRight(alloc)}
+                        </a>
+                    )}
                     <a class="btn btn-ghost" href={components.github_url} target="_blank" rel="noopener">
                         {icons.GitHub(alloc)}
                         nurulhudaapon
                     </a>
                 </div>
 
-                {if (repos.len > 0) (
+                {if (has_repos) (
                     <dl class="metrics">
                         <div class="metric">
                             <dt>GitHub stars</dt>
-                            <dd class="metric-num">{github.compact(alloc, stars)}</dd>
+                            <dd class="metric-num"><TotalStat @client metric={.stars} value={stars} /></dd>
                         </div>
                         <div class="metric">
                             <dt>Forks</dt>
-                            <dd class="metric-num">{github.compact(alloc, forks)}</dd>
+                            <dd class="metric-num"><TotalStat @client metric={.forks} value={forks} /></dd>
                         </div>
                         <div class="metric">
                             <dt>Projects</dt>
@@ -72,7 +74,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                         <li>Deploys to Cloudflare, Vercel, Node and more</li>
                     </ul>
                     <div class="spotlight-foot">
-                        {if (has_featured) (<Stats repo={repos[0]} />)}
+                        {if (has_featured) (<RepoStats @client repo={repos[0].full_name} stars={repos[0].stargazers_count} forks={repos[0].forks_count} />)}
                         <a class="chip-link" href="https://ziex.dev" target="_blank" rel="noopener">
                             ziex.dev
                             {icons.ArrowUpRight(alloc)}
@@ -87,21 +89,19 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 </figure>
             </section>
 
-            <section class="oss" id="projects" aria-labelledby="projects-title">
-                <div class="oss-head">
-                    <div>
-                        <p class="eyebrow">Open source</p>
-                        <h2 class="section-title" id="projects-title">Tools built in the open</h2>
+            {if (has_repos) (
+                <section class="oss" id="projects" aria-labelledby="projects-title">
+                    <div class="oss-head">
+                        <div>
+                            <p class="eyebrow">Open source</p>
+                            <h2 class="section-title" id="projects-title">Tools built in the open</h2>
+                        </div>
+                        <a class="see-all" href={repos_url} target="_blank" rel="noopener">
+                            All repositories
+                            {icons.ArrowUpRight(alloc)}
+                        </a>
                     </div>
-                    <a class="see-all" href={repos_url} target="_blank" rel="noopener">
-                        All repositories
-                        {icons.ArrowUpRight(alloc)}
-                    </a>
-                </div>
 
-                {if (projects.len == 0) (
-                    <p class="oss-empty">Couldn't reach GitHub right now. Browse the repositories directly instead.</p>
-                ) else (
                     <fieldset class="filters">
                         <legend class="sr-only">Filter projects</legend>
                         {for (filters) |f| (
@@ -114,28 +114,28 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                             </span>
                         )}
                     </fieldset>
-                )}
 
-                <ul class="grid" role="list">
-                    {for (projects) |p| (
-                        <li class="card" data-lang={p.language orelse ""}>
-                            <h3 class="card-title">
-                                <a class="stretched" href={p.html_url} target="_blank" rel="noopener">{p.name}</a>
-                            </h3>
-                            <p class="card-desc">{p.description orelse ""}</p>
-                            <div class="card-foot">
-                                {if (p.language) |language| (<span class="lang" data-lang={language}>{language}</span>)}
-                                <Stats repo={p} />
-                                {if (homepage(p)) |url| (
-                                    <a class="card-home" href={url} target="_blank" rel="noopener" aria-label={p.name}>
-                                        {icons.ArrowUpRight(alloc)}
-                                    </a>
-                                )}
-                            </div>
-                        </li>
-                    )}
-                </ul>
-            </section>
+                    <ul class="grid" role="list">
+                        {for (projects) |p| (
+                            <li class="card" data-lang={p.language orelse ""}>
+                                <h3 class="card-title">
+                                    <a class="stretched" href={p.html_url} target="_blank" rel="noopener">{p.name}</a>
+                                </h3>
+                                <p class="card-desc">{p.description orelse ""}</p>
+                                <div class="card-foot">
+                                    {if (p.language) |language| (<span class="lang" data-lang={language}>{language}</span>)}
+                                    <RepoStats @client repo={p.full_name} stars={p.stargazers_count} forks={p.forks_count} />
+                                    {if (homepage(p)) |url| (
+                                        <a class="card-home" href={url} target="_blank" rel="noopener" aria-label={p.name}>
+                                            {icons.ArrowUpRight(alloc)}
+                                        </a>
+                                    )}
+                                </div>
+                            </li>
+                        )}
+                    </ul>
+                </section>
+            )}
 
             <section class="built" aria-labelledby="built-title">
                 <h2 class="section-title section-title-sm" id="built-title">Built with Ziex</h2>
@@ -165,21 +165,6 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
             <components.Footer />
         </main>
-    );
-}
-
-fn Stats(allocator: zx.Allocator, props: struct { repo: github.Repo }) zx.Component {
-    return (
-        <span @allocator={allocator} class="stats">
-            <span class="stat" title="Stars">
-                {icons.Star(allocator)}
-                {github.compact(allocator, props.repo.stargazers_count)}
-            </span>
-            <span class="stat" title="Forks">
-                {icons.Fork(allocator)}
-                {github.compact(allocator, props.repo.forks_count)}
-            </span>
-        </span>
     );
 }
 
@@ -226,11 +211,9 @@ const ziex_snippet =
     \\}
 ;
 
-pub const options: zx.PageOptions = .{
-    .rendering = .request,
-    .caching = .tag("1h"),
-};
-
+pub const RepoStats = live.RepoStats;
+pub const TotalStat = live.TotalStat;
+const live = @import("live.zx");
 const icons = components.icons;
 const components = @import("components.zx");
 const github = @import("github.zig");

@@ -15,9 +15,9 @@ pub const Repository = struct {
 };
 
 const default_repo: Repository = .{
-    // .url = "https://github.com/nurulhudaapon/blogs",
-    // .ref = "main",
-    .url = "file://../blogs",
+    .url = "https://github.com/nurulhudaapon/blogs",
+    .ref = "main",
+    // .url = "file://../blogs",
 };
 
 /// Load `.md` files from a local `file://` directory, or download a repository

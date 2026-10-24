@@ -1,0 +1,101 @@
+const Counts = struct {
+    stars: u32 = 0,
+    forks: u32 = 0,
+};
+
+pub fn RepoStats(ctx: *zx.ComponentCtx(struct { repo: []const u8, stars: u32, forks: u32 })) zx.Component {
+    const counts = ctx.state(Counts, .{ .stars = ctx.props.stars, .forks = ctx.props.forks });
+    if (comptime zx.platform.role == .client) feed.watch(ctx.props.repo, counts);
+
+    const alloc = ctx.allocator;
+    const c = counts.get();
+    return (
+        <span @allocator={alloc} class="stats">
+            <span class="stat" title="Stars">
+                {icons.Star(alloc)}
+                {github.compact(alloc, c.stars)}
+            </span>
+            <span class="stat" title="Forks">
+                {icons.Fork(alloc)}
+                {github.compact(alloc, c.forks)}
+            </span>
+        </span>
+    );
+}
+
+pub fn TotalStat(ctx: *zx.ComponentCtx(struct { metric: enum { stars, forks }, value: u32 })) zx.Component {
+    const initial: Counts = switch (ctx.props.metric) {
+        .stars => .{ .stars = ctx.props.value },
+        .forks => .{ .forks = ctx.props.value },
+    };
+    const counts = ctx.state(Counts, initial);
+    if (comptime zx.platform.role == .client) feed.watch("", counts);
+
+    const c = counts.get();
+    const value = switch (ctx.props.metric) {
+        .stars => c.stars,
+        .forks => c.forks,
+    };
+    return (<span @allocator={ctx.allocator}>{github.compact(ctx.allocator, value)}</span>);
+}
+
+const feed = struct {
+    const Watcher = struct { repo: []const u8, counts: *zx.State(Counts) };
+
+    var watchers: [32]Watcher = undefined;
+    var len: usize = 0;
+    var requested = false;
+
+    fn watch(repo: []const u8, counts: *zx.State(Counts)) void {
+        for (watchers[0..len]) |w| if (w.counts == counts) return;
+        if (len == watchers.len) return;
+        watchers[len] = .{ .repo = zx.allocator.dupe(u8, repo) catch return, .counts = counts };
+        len += 1;
+
+        if (requested) return;
+        requested = true;
+        _ = zx.fetch(.wasm(&onLoad), zx.allocator, github.endpoint, .{}) catch {
+            requested = false;
+        };
+    }
+
+    fn onLoad(response: ?*zx.Fetch.Response, err: ?zx.Fetch.FetchError) void {
+        if (err != null) return;
+        const res = response orelse return;
+        defer res.deinit();
+        if (!res.ok()) return;
+
+        const source = zx.allocator.dupeSentinel(u8, res.text() catch return, 0) catch return;
+        var diagnostics: std.zon.parse.Diagnostics = undefined;
+        const payload = std.zon.parse.fromSlice(struct { repos: []const github.Stats }, .{
+            .gpa = zx.allocator,
+            .arena = zx.allocator,
+            .source = source,
+            .diagnostics = &diagnostics,
+        }) catch return;
+
+        for (watchers[0..len]) |w| {
+            if (countsFor(payload.repos, w.repo)) |c| w.counts.set(c);
+        }
+    }
+
+    fn countsFor(repos: []const github.Stats, repo: []const u8) ?Counts {
+        if (repos.len == 0) return null;
+        var total: Counts = .{};
+        for (repos) |r| {
+            if (repo.len == 0) {
+                total.stars += r.stars;
+                total.forks += r.forks;
+            } else if (std.mem.eql(u8, r.repo, repo)) {
+                return .{ .stars = r.stars, .forks = r.forks };
+            }
+        }
+        return if (repo.len == 0) total else null;
+    }
+};
+
+const icons = @import("components.zx").icons;
+const github = @import("github.zig");
+
+const zx = @import("zx");
+const std = @import("std");

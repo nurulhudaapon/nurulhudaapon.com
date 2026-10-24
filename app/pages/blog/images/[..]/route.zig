@@ -51,6 +51,7 @@ fn staticParams(ctx: *zx.StaticContext) !void {
 }
 
 pub const options = zx.RouteOptions{
+    .rendering = .prerendered,
     .static = staticParams,
 };
 

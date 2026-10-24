@@ -440,10 +440,6 @@ a {
     margin-bottom: 1.25rem;
 }
 
-.oss-empty {
-    color: var(--muted);
-}
-
 .see-all {
     display: inline-flex;
     align-items: center;

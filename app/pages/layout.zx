@@ -160,6 +160,8 @@ const SiteData = struct {
 
 const data: SiteData = @import("data.zon");
 
+pub const options: zx.LayoutOptions = .{ .rendering = .prerendered };
+
 const DevDocument = @import("dev/document.zx").Document;
 const icons = @import("component.zx").icons;
 const std = @import("std");
