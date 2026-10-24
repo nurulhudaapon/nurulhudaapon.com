@@ -18,7 +18,7 @@ zig build dev
 Build static site (output in `dist/`):
 
 ```bash
-zig build zx -- export
+zig build zx -- build --static
 ```
 Built with
 
