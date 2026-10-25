@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .ziex = .{
-            .url = "git+https://github.com/ziex-dev/ziex#3a62d043e4fdfdab066c76db4b4103d2928e7aaf",
-            .hash = "ziex-0.1.0-dev-Z3YcvSMEnQE14a8NuL5Vmm7lcSM0Pt4TTbfiYj3usHKw",
+            .url = "git+https://github.com/ziex-dev/ziex#c9eac7391f944e1603b31c707f25714cd50bf368",
+            .hash = "ziex-0.1.0-dev-Z3YcvXUMnQGf7EsVuHl-XCNJCepvWfz_OgUEVy-Z9rJF",
         },
         .markz = .{
             .url = "git+https://codeberg.org/nurulhudaapon/markz.git?ref=zig-0.17#19af600075fc60775e89a3430dadd94299b13e14",
@@ -26,6 +26,10 @@
         },
         .highlight = .{
             .path = "lib/highlight",
+        },
+        .xml = .{
+            .url = "git+https://github.com/ianprime0509/zig-xml.git#4beab29d68ab308af4bd12a4fc4187c24fdad0d6",
+            .hash = "xml-0.2.2-ZTbP35N4AgAN3HBgWmBp_LAQ0MIPKW17GAGMwx4DHGYK",
         },
     },
     .paths = .{

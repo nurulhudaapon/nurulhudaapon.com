@@ -1,0 +1,125 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    if (ctx.request.method == .POST) {
+        const flag = handle(ctx) catch |err| switch (err) {
+            error.FetchFailed => "err=fetch",
+            error.InvalidRate, error.InvalidCurrency => "err=invalid",
+            else => blk: {
+                zx.log.err("admin: finance rates failed: {any}", .{err});
+                break :blk "err=failed";
+            },
+        };
+        return ui.redirect(ctx, try ctx.fmt("/admin/finance/rates?{s}", .{flag}));
+    }
+
+    const rates = try fx.listRates(ctx.arena);
+    const fetched = fx.fetchedAt(ctx.arena);
+    const flash = ui.flashFrom(ctx.request.queries, &.{
+        .{ "synced", "Rates refreshed (Frankfurter fiat + BAJUS 22K gold)." },
+        .{ "saved", "Rate saved." },
+        .{ "fetch", "Could not reach an FX source. Try again shortly." },
+        .{ "invalid", "Enter a positive rate." },
+        .{ "failed", "Something went wrong. Check the server logs." },
+    });
+
+    return (
+        <div @allocator={ctx.arena}>
+            <div class="adm-toolbar">
+                <div class="adm-toolbar-main">
+                    <h1 class="adm-page-title">Rates</h1>
+                    <div class="adm-page-actions">
+                        <div class="adm-nav-group">
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance">{ui.icon(ctx.arena, .arrow_left)} Portfolio</a>
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/zakat">Zakat</a>
+                        </div>
+                        <form method="post" action="/admin/finance/rates" class="adm-inline">
+                            <button class="adm-btn adm-btn-primary" type="submit" name="action" value="sync">Sync rates</button>
+                        </form>
+                    </div>
+                </div>
+                <p class="adm-page-desc">
+                    Fiat from Frankfurter; gold (XAU, grams) from <a href="https://www.bajus.org/gold-price" target="_blank" rel="noopener">BAJUS 22K</a> at 85% of list.
+                    Cached ~12h; also refreshes when you open Portfolio.
+                    {if (fetched) |at| (
+                        <span> Last sync {format.ago(ctx.arena, try ctx.fmt("{d}", .{at}))}.</span>
+                    )}
+                </p>
+            </div>
+            <ui.FlashBanner flash={flash} />
+
+            <section class="adm-card adm-settings">
+                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                    <span>fx_rates</span>
+                    <span class="adm-hint">USD = amount ÷ rate</span>
+                </div>
+                {for (rates) |r| (
+                    <form method="post" action="/admin/finance/rates" class="adm-settings-row">
+                        <input type="hidden" name="currency" value={r.currency} />
+                        <div>
+                            <p class="adm-label">{r.currency}{if (fx.isMetal(r.currency)) " · g" else ""}</p>
+                            <p class="adm-hint">{rateHint(ctx.arena, r)}</p>
+                        </div>
+                        {if (std.mem.eql(u8, r.currency, "USD") or fx.isMetal(r.currency)) (
+                            <div class="adm-field">
+                                <input class="adm-input" value={rateValue(ctx.arena, r)} disabled />
+                            </div>
+                        ) else (
+                            <div class="adm-inline-fields" style="align-items:flex-end">
+                                <div class="adm-field">
+                                    <label class="adm-label">Per USD</label>
+                                    <input class="adm-input" type="number" name="rate" min="0" step="any" required value={r.rate} />
+                                </div>
+                                <button class="adm-btn adm-btn-ghost" type="submit" name="action" value="save">Save</button>
+                            </div>
+                        )}
+                    </form>
+                )}
+            </section>
+        </div>
+    );
+}
+
+fn handle(ctx: zx.PageContext) ![]const u8 {
+    const fd = ctx.request.formData();
+    const action = fd.get("action") orelse return error.InvalidRate;
+    if (std.mem.eql(u8, action, "sync")) {
+        try fx.syncNow(ctx.arena);
+        return "ok=synced";
+    }
+    if (std.mem.eql(u8, action, "save")) {
+        const currency = std.mem.trim(u8, fd.get("currency") orelse "", " \t\r\n");
+        const rate = std.fmt.parseFloat(f64, fd.get("rate") orelse "") catch return error.InvalidRate;
+        try fx.setFiatRate(ctx.arena, currency, rate);
+        return "ok=saved";
+    }
+    return error.InvalidRate;
+}
+
+fn rateHint(arena: zx.Allocator, r: fx.Rate) []const u8 {
+    if (std.mem.eql(u8, r.currency, "USD")) return "Base currency";
+    if (fx.isMetal(r.currency)) {
+        const bdt = fx.displayRate(arena, r.currency, r.rate);
+        return std.fmt.allocPrint(arena, "৳{d:.0}/g effective · {s}", .{ bdt, r.as_of }) catch r.as_of;
+    }
+    if (r.as_of.len > 0) return std.fmt.allocPrint(arena, "Units per 1 USD · {s}", .{r.as_of}) catch "Units per 1 USD";
+    return "Units per 1 USD";
+}
+
+fn rateValue(arena: zx.Allocator, r: fx.Rate) []const u8 {
+    if (std.mem.eql(u8, r.currency, "USD")) return "1";
+    if (fx.isMetal(r.currency)) {
+        const bdt = fx.displayRate(arena, r.currency, r.rate);
+        return std.fmt.allocPrint(arena, "{d:.0}", .{bdt}) catch "";
+    }
+    return std.fmt.allocPrint(arena, "{d}", .{r.rate}) catch "";
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .rendering = .request,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../../ui.zx");
+const format = @import("../../format.zig");
+const fx = @import("../../../finance/fx.zig");

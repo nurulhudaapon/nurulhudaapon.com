@@ -1,0 +1,197 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    if (ctx.request.method == .POST) {
+        const flag = handle(ctx) catch |err| switch (err) {
+            error.InvalidYear, error.InvalidAmount, error.InvalidCurrency, error.InvalidName => "err=invalid",
+            else => blk: {
+                zx.log.err("admin: zakat failed: {any}", .{err});
+                break :blk "err=failed";
+            },
+        };
+        return ui.redirect(ctx, try ctx.fmt("/admin/finance/zakat?{s}", .{flag}));
+    }
+
+    const data = try finance.snapshot(ctx.arena);
+    const entries = try finance.listZakat(ctx.arena);
+    const currencies = try finance.listCurrencies(ctx.arena);
+    const gold_g = finance.goldGrams(ctx.arena);
+    const due = finance.zakatDueUsd(data.net_worth);
+    const edit_id = std.fmt.parseInt(i64, ctx.request.queries.get("edit") orelse "", 10) catch 0;
+    const editing = if (edit_id > 0) try finance.getZakat(ctx.arena, edit_id) else null;
+    const this_year: i64 = blk: {
+        const secs = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+        // Approximate UTC year; fine for personal logging.
+        break :blk @divTrunc(secs, 365 * 24 * 60 * 60) + 1970;
+    };
+    const flash = ui.flashFrom(ctx.request.queries, &.{
+        .{ "saved", "Zakat entry saved." },
+        .{ "deleted", "Zakat entry removed." },
+        .{ "invalid", "Year, amount, and currency are required." },
+        .{ "failed", "Something went wrong. Check the server logs." },
+    });
+
+    return (
+        <div @allocator={ctx.arena}>
+            <div class="adm-toolbar">
+                <div class="adm-toolbar-main">
+                    <h1 class="adm-page-title">Zakat</h1>
+                    <div class="adm-page-actions">
+                        <div class="adm-nav-group">
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance">{ui.icon(ctx.arena, .arrow_left)} Portfolio</a>
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/rates">Rates</a>
+                        </div>
+                    </div>
+                </div>
+                <p class="adm-page-desc">Record zakat paid by year. Estimate below is 2.5% of current net worth — adjust for debts and non-zakatable assets yourself.</p>
+            </div>
+            <ui.FlashBanner flash={flash} />
+
+            <div class="adm-finance-kpis">
+                <div class="adm-finance-kpi">
+                    <p class="adm-label">Net worth</p>
+                    <p class="adm-finance-kpi-value">{finance.formatMoney(ctx.arena, data.net_worth, "USD")}</p>
+                    <p class="adm-hint">{finance.formatMoney(ctx.arena, data.net_worth_bdt, "BDT")}</p>
+                </div>
+                <div class="adm-finance-kpi">
+                    <p class="adm-label">Est. zakat (2.5%)</p>
+                    <p class="adm-finance-kpi-value">{finance.formatMoney(ctx.arena, due, "USD")}</p>
+                    <p class="adm-hint">{finance.formatMoney(ctx.arena, due * data.usd_bdt_rate, "BDT")}</p>
+                </div>
+                <div class="adm-finance-kpi">
+                    <p class="adm-label">Gold held</p>
+                    <p class="adm-finance-kpi-value">{finance.formatMoney(ctx.arena, gold_g, "XAU")}</p>
+                    <p class="adm-hint">
+                        Gold nisab {finance.formatMoney(ctx.arena, finance.gold_nisab_grams, "XAU")}
+                        · {if (gold_g >= finance.gold_nisab_grams) "at/above gold nisab" else "below gold nisab (wealth may still qualify)"}
+                    </p>
+                </div>
+            </div>
+
+            <section class="adm-card adm-settings" style="margin-bottom:1rem">
+                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                    <span>{if (editing != null) "Edit entry" else "Add year"}</span>
+                </div>
+                <form method="post" action="/admin/finance/zakat" class="adm-settings-row">
+                    <input type="hidden" name="id" value={if (editing) |e| e.id else 0} />
+                    <div class="adm-invest-grid" style="width:100%">
+                        <div class="adm-field">
+                            <label class="adm-label">Year</label>
+                            <input class="adm-input" type="number" name="year" min="1900" max="2100" required value={if (editing) |e| e.year else this_year} />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label">Amount paid</label>
+                            <input class="adm-input" type="number" name="amount" min="0" step="0.01" required value={if (editing) |e| e.amount else due} />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label">Currency</label>
+                            <select class="adm-select" name="currency">
+                                {for (currencies) |c| (
+                                    <option value={c} selected={editingCurrency(editing, c)}>{c}</option>
+                                )}
+                            </select>
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label">Paid on</label>
+                            <input class="adm-input" type="date" name="paid_on" value={if (editing) |e| e.paid_on orelse "" else ""} />
+                        </div>
+                        <div class="adm-field" style="grid-column:1 / -1">
+                            <label class="adm-label">Notes</label>
+                            <input class="adm-input" name="notes" value={if (editing) |e| e.notes orelse "" else ""} placeholder="Optional — Hijri year, method, etc." />
+                        </div>
+                    </div>
+                    <div class="adm-inline-fields" style="align-items:flex-end;margin-top:0.75rem">
+                        <button class="adm-btn adm-btn-primary" type="submit" name="action" value="save">{if (editing != null) "Update" else "Save"}</button>
+                        {if (editing != null) (
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/zakat">Cancel</a>
+                        )}
+                    </div>
+                </form>
+            </section>
+
+            <section class="adm-card">
+                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                    <span>Previous years</span>
+                    <span class="adm-hint">{entries.len} recorded</span>
+                </div>
+                {if (entries.len == 0) (
+                    <div style="padding:1rem 1.25rem"><ui.Empty text="No zakat entries yet." /></div>
+                ) else (
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th>Year</th>
+                                    <th>Amount</th>
+                                    <th class="adm-hide-sm">Paid on</th>
+                                    <th class="adm-hide-sm">Notes</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {for (entries) |e| (
+                                    <tr>
+                                        <td><span class="adm-table-title">{e.year}</span></td>
+                                        <td>{finance.formatMoney(ctx.arena, e.amount, e.currency)}</td>
+                                        <td class="adm-hide-sm">{e.paid_on orelse "—"}</td>
+                                        <td class="adm-hide-sm">{e.notes orelse "—"}</td>
+                                        <td>
+                                            <div class="adm-inline-fields" style="justify-content:flex-end">
+                                                <a class="adm-btn adm-btn-ghost" href={try ctx.fmt("/admin/finance/zakat?edit={d}", .{e.id})}>Edit</a>
+                                                <form method="post" action="/admin/finance/zakat" class="adm-inline">
+                                                    <input type="hidden" name="id" value={e.id} />
+                                                    <button class="adm-btn adm-btn-ghost adm-btn-danger" type="submit" name="action" value="delete">Delete</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </section>
+        </div>
+    );
+}
+
+fn handle(ctx: zx.PageContext) ![]const u8 {
+    const fd = ctx.request.formData();
+    const action = fd.get("action") orelse return error.InvalidName;
+    if (std.mem.eql(u8, action, "delete")) {
+        try finance.deleteZakat(try formInt(fd, "id"));
+        return "ok=deleted";
+    }
+    if (std.mem.eql(u8, action, "save")) {
+        const year = try formInt(fd, "year");
+        const amount = std.fmt.parseFloat(f64, fd.get("amount") orelse "") catch return error.InvalidAmount;
+        try finance.saveZakat(
+            ctx.arena,
+            try formInt(fd, "id"),
+            year,
+            amount,
+            fd.get("currency") orelse "USD",
+            fd.get("paid_on") orelse "",
+            fd.get("notes") orelse "",
+        );
+        return "ok=saved";
+    }
+    return error.InvalidName;
+}
+
+fn formInt(fd: anytype, name: []const u8) !i64 {
+    return std.fmt.parseInt(i64, fd.get(name) orelse "0", 10) catch error.InvalidName;
+}
+
+fn editingCurrency(editing: ?finance.ZakatEntry, c: []const u8) bool {
+    const e = editing orelse return std.ascii.eqlIgnoreCase(c, "USD");
+    return std.ascii.eqlIgnoreCase(e.currency, c);
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .rendering = .request,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../../ui.zx");
+const finance = @import("../../../finance/db.zig");

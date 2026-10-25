@@ -1,0 +1,160 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    if (ctx.request.method == .POST) {
+        const flag = handle(ctx) catch |err| switch (err) {
+            error.InvalidName, error.InvalidPct => "err=invalid",
+            else => blk: {
+                zx.log.err("admin: finance allocation failed: {any}", .{err});
+                break :blk "err=failed";
+            },
+        };
+        return ui.redirect(ctx, try ctx.fmt("/admin/finance/allocation?{s}", .{flag}));
+    }
+
+    const targets = try finance.listAllocations(ctx.arena);
+    const data = try finance.snapshot(ctx.arena);
+    const asset_classes = try finance.listAssetClasses(ctx.arena);
+    const flash = ui.flashFrom(ctx.request.queries, &.{
+        .{ "saved", "Allocation target saved." },
+        .{ "deleted", "Allocation target removed." },
+        .{ "invalid", "Name is required and target % must be between 0 and 100." },
+        .{ "failed", "Something went wrong. Check the server logs." },
+    });
+
+    return (
+        <div @allocator={ctx.arena}>
+            <div class="adm-toolbar">
+                <div class="adm-toolbar-main">
+                    <h1 class="adm-page-title">Allocation</h1>
+                    <div class="adm-page-actions">
+                        <div class="adm-nav-group">
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance">{ui.icon(ctx.arena, .arrow_left)} Portfolio</a>
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/accounts">Accounts</a>
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/rates">Rates</a>
+                        </div>
+                    </div>
+                </div>
+                <p class="adm-page-desc">Target weights by asset class. Empty classes stay hidden on the portfolio dashboard.</p>
+            </div>
+            <ui.FlashBanner flash={flash} />
+
+            {if (data.allocations.len > 0) (
+                <section class="adm-card" style="margin-bottom:1rem">
+                    <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                        <span>Current vs target</span>
+                    </div>
+                    <div class="adm-alloc-list adm-alloc-list-pad">
+                        {for (data.allocations) |a| (
+                            <div class="adm-alloc-row">
+                                <div class="adm-alloc-meta">
+                                    <div>
+                                        <span class="adm-table-title">{a.name}</span>
+                                        <span class="adm-hint">{finance.formatMoney(ctx.arena, a.actual_value, "USD")}</span>
+                                    </div>
+                                </div>
+                                <div class="adm-alloc-bars">
+                                    <div class="adm-alloc-bar">
+                                        <span class="adm-alloc-fill adm-alloc-fill-actual" style={barWidth(ctx.arena, a.actual_pct)}></span>
+                                    </div>
+                                    {if (a.target_pct > 0) (
+                                        <div class="adm-alloc-bar adm-alloc-bar-target">
+                                            <span class="adm-alloc-fill adm-alloc-fill-target" style={barWidth(ctx.arena, a.target_pct)}></span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div class="adm-alloc-pcts">
+                                    <span>{finance.formatPct(ctx.arena, a.actual_pct)}</span>
+                                    {if (a.target_pct > 0) (
+                                        <span class="adm-hint">of {finance.formatPct(ctx.arena, a.target_pct)}</span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </section>
+            )}
+
+            <section class="adm-card adm-settings">
+                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                    <span>Targets</span>
+                </div>
+                {for (targets) |t| (
+                    <form method="post" action="/admin/finance/allocation" class="adm-settings-row">
+                        <input type="hidden" name="id" value={t.id} />
+                        <div class="adm-field">
+                            <label class="adm-label">Class</label>
+                            <input class="adm-input" name="name" value={t.name} required />
+                        </div>
+                        <div class="adm-inline-fields" style="align-items:flex-end">
+                            <div class="adm-field">
+                                <label class="adm-label">Target %</label>
+                                <input class="adm-input" type="number" name="target_pct" min="0" max="100" step="0.1" value={t.target_pct} required />
+                            </div>
+                            <div class="adm-field" style="flex:1;min-width:8rem">
+                                <label class="adm-label">Notes</label>
+                                <input class="adm-input" name="notes" value={t.notes orelse ""} />
+                            </div>
+                            <button class="adm-btn adm-btn-primary" type="submit" name="action" value="save">Save</button>
+                            <button class="adm-btn adm-btn-ghost adm-btn-danger" type="submit" name="action" value="delete">Delete</button>
+                        </div>
+                    </form>
+                )}
+                <form method="post" action="/admin/finance/allocation" class="adm-settings-row">
+                    <input type="hidden" name="id" value="0" />
+                    <div class="adm-field">
+                        <label class="adm-label">New class</label>
+                        <input class="adm-input" name="name" list="asset-classes" required placeholder="e.g. Equities" />
+                        <datalist id="asset-classes">
+                            {for (asset_classes) |c| (
+                                <option value={c.name}></option>
+                            )}
+                        </datalist>
+                    </div>
+                    <div class="adm-inline-fields" style="align-items:flex-end">
+                        <div class="adm-field">
+                            <label class="adm-label">Target %</label>
+                            <input class="adm-input" type="number" name="target_pct" min="0" max="100" step="0.1" value="0" required />
+                        </div>
+                        <div class="adm-field" style="flex:1;min-width:8rem">
+                            <label class="adm-label">Notes</label>
+                            <input class="adm-input" name="notes" />
+                        </div>
+                        <button class="adm-btn adm-btn-primary" type="submit" name="action" value="save">Add</button>
+                    </div>
+                </form>
+            </section>
+        </div>
+    );
+}
+
+fn handle(ctx: zx.PageContext) ![]const u8 {
+    const fd = ctx.request.formData();
+    const action = fd.get("action") orelse return error.InvalidName;
+    if (std.mem.eql(u8, action, "delete")) {
+        try finance.deleteAllocation(try formInt(fd, "id"));
+        return "ok=deleted";
+    }
+    if (std.mem.eql(u8, action, "save")) {
+        const pct = std.fmt.parseFloat(f64, fd.get("target_pct") orelse "") catch return error.InvalidPct;
+        try finance.saveAllocation(ctx.arena, try formInt(fd, "id"), fd.get("name") orelse "", pct, std.mem.trim(u8, fd.get("notes") orelse "", " \t\r\n"));
+        return "ok=saved";
+    }
+    return error.InvalidName;
+}
+
+fn formInt(fd: anytype, name: []const u8) !i64 {
+    return std.fmt.parseInt(i64, fd.get(name) orelse "0", 10) catch error.InvalidName;
+}
+
+fn barWidth(arena: zx.Allocator, pct: f64) []const u8 {
+    return std.fmt.allocPrint(arena, "width:{d:.1}%", .{@max(0, @min(pct, 100))}) catch "width:0%";
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .rendering = .request,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../../ui.zx");
+const finance = @import("../../../finance/db.zig");

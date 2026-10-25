@@ -46,6 +46,7 @@ pub fn build(b: *std.Build) !void {
 
     ziex_b.addImport("geist_fonts", addGeistFontsModule(b));
     ziex_b.addImport("highlight", b.dependency("highlight", .{ .target = target, .optimize = optimize }).module("highlight"));
+    ziex_b.addImport("xml", b.dependency("xml", .{ .target = target, .optimize = optimize }).module("xml"));
 
     const ical_mod = libical.addLibical(b, target, optimize);
     ziex_b.addImport("ical", ical_mod);

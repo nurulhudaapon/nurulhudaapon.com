@@ -1,7 +1,7 @@
 //! Local only: fills `credentials` from `.env`, overridden by the process environment.
 //! CALDAV_USER, CALDAV_PASS and MEET_LINK; optionally CALDAV_CALENDAR_URL (else
 //! discovered), CALDAV_CALENDAR (name to pick) and CALDAV_ORGANIZER_EMAIL.
-//! GITHUB_TOKEN, if set, authenticates GitHub API requests for /dev.
+//! GITHUB_TOKEN, IBKR_FLEX_TOKEN, IBKR_FLEX_QUERY_ID. Prefer /admin/settings in prod.
 const std = @import("std");
 const zx = @import("zx");
 const caldav = @import("../pages/schedule/caldav.zig");
@@ -24,7 +24,7 @@ pub fn load(init: zx.Init) void {
 }
 
 const Vars = std.StringHashMapUnmanaged([]const u8);
-const names = .{ "CALDAV_USER", "CALDAV_PASS", "CALDAV_CALENDAR_URL", "CALDAV_CALENDAR", "CALDAV_ORGANIZER_EMAIL", "MEET_LINK", "GITHUB_TOKEN" };
+const names = .{ "CALDAV_USER", "CALDAV_PASS", "CALDAV_CALENDAR_URL", "CALDAV_CALENDAR", "CALDAV_ORGANIZER_EMAIL", "MEET_LINK", "GITHUB_TOKEN", "IBKR_FLEX_TOKEN", "IBKR_FLEX_QUERY_ID" };
 
 fn read(arena: std.mem.Allocator, init: std.process.Init) !Vars {
     var vars: Vars = .empty;
@@ -50,8 +50,13 @@ fn read(arena: std.mem.Allocator, init: std.process.Init) !Vars {
 }
 
 fn apply(arena: std.mem.Allocator, vars: Vars) !void {
-    if (vars.get("GITHUB_TOKEN")) |token| try github.setToken(token);
+    if (vars.get("GITHUB_TOKEN")) |token| {
+        try put("github_token", token);
+        try github.setToken(token);
+    }
     if (vars.get("MEET_LINK")) |url| try put("caldav_meeting_url", url);
+    if (vars.get("IBKR_FLEX_TOKEN")) |token| try put("ibkr_flex_token", token);
+    if (vars.get("IBKR_FLEX_QUERY_ID")) |id| try put("ibkr_flex_query_id", id);
 
     const user = vars.get("CALDAV_USER") orelse return;
     const pass = vars.get("CALDAV_PASS") orelse return;

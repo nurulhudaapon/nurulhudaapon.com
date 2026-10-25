@@ -23,8 +23,18 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                     <NavItem href="/admin/bookings" label="Bookings" kind={.calendar} active={isUnder(path, "/admin/bookings")} badge={upcoming} />
                     <NavItem href="/admin/availability" label="Availability" kind={.clock} active={isUnder(path, "/admin/availability")} badge={0} />
 
+                    <p class="adm-nav-section">Finance</p>
+                    <NavItem href="/admin/finance" label="Portfolio" kind={.chart} active={std.mem.eql(u8, path, "/admin/finance")} badge={0} />
+                    <NavItem href="/admin/finance/accounts" label="Accounts" kind={.file} active={isUnder(path, "/admin/finance/accounts")} badge={0} />
+                    <NavItem href="/admin/finance/allocation" label="Allocation" kind={.chart} active={isUnder(path, "/admin/finance/allocation")} badge={0} />
+                    <NavItem href="/admin/finance/zakat" label="Zakat" kind={.chart} active={isUnder(path, "/admin/finance/zakat")} badge={0} />
+                    <NavItem href="/admin/finance/rates" label="Rates" kind={.settings} active={isUnder(path, "/admin/finance/rates")} badge={0} />
+
                     <p class="adm-nav-section">Content</p>
                     <NavItem href="/admin/posts" label="Posts" kind={.file} active={isUnder(path, "/admin/posts")} badge={0} />
+
+                    <p class="adm-nav-section">System</p>
+                    <NavItem href="/admin/settings" label="Settings" kind={.settings} active={isUnder(path, "/admin/settings")} badge={0} />
                 </nav>
                 <div class="adm-sidebar-foot">
                     <a class="adm-nav-item" href="/" target="_blank" rel="noopener">
@@ -83,7 +93,13 @@ fn crumb(path: []const u8) []const u8 {
     if (isUnder(path, "/admin/questions")) return "Inbox / Questions";
     if (isUnder(path, "/admin/bookings")) return "Schedule / Bookings";
     if (isUnder(path, "/admin/availability")) return "Schedule / Availability";
+    if (isUnder(path, "/admin/finance/accounts")) return "Finance / Accounts";
+    if (isUnder(path, "/admin/finance/allocation")) return "Finance / Allocation";
+    if (isUnder(path, "/admin/finance/zakat")) return "Finance / Zakat";
+    if (isUnder(path, "/admin/finance/rates")) return "Finance / Rates";
+    if (isUnder(path, "/admin/finance")) return "Finance / Portfolio";
     if (isUnder(path, "/admin/posts")) return "Content / Posts";
+    if (isUnder(path, "/admin/settings")) return "System / Settings";
     return "Overview";
 }
 

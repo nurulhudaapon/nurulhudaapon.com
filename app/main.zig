@@ -1,3 +1,4 @@
+const std = @import("std");
 const zx = @import("zx");
 const migration = @import("db/migration.zig");
 const env = @import("db/env.zig");

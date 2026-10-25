@@ -1,0 +1,267 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    if (ctx.request.method == .POST) {
+        const flag = handle(ctx) catch |err| switch (err) {
+            error.InvalidName, error.InvalidPct => "err=invalid",
+            error.NotConfigured => "err=not_configured",
+            error.SendFailed, error.StatementFailed => "err=ibkr",
+            error.StatementPending => "err=pending",
+            error.EmptyReport => "err=empty",
+            else => blk: {
+                zx.log.err("admin: finance accounts failed: {any}", .{err});
+                break :blk "err=failed";
+            },
+        };
+        return ui.redirect(ctx, try ctx.fmt("/admin/finance/accounts?{s}", .{flag}));
+    }
+
+    const data = try finance.snapshot(ctx.arena);
+    const account_types = try finance.listAccountTypes(ctx.arena);
+    const asset_classes = try finance.listAssetClasses(ctx.arena);
+    const currencies = try finance.listCurrencies(ctx.arena);
+    const edit_id = std.fmt.parseInt(i64, ctx.request.queries.get("edit") orelse "", 10) catch 0;
+    const editing = if (edit_id > 0) try finance.getAccount(ctx.arena, edit_id) else null;
+    const flash = ui.flashFrom(ctx.request.queries, &.{
+        .{ "saved", "Account saved." },
+        .{ "deleted", "Account removed." },
+        .{ "synced", "IBKR accounts synced." },
+        .{ "class", "Asset class updated." },
+        .{ "invalid", "Name, account type, asset class, and a supported currency are required." },
+        .{ "not_configured", "Add IBKR Flex credentials under Settings first." },
+        .{ "ibkr", "IBKR rejected the Flex request." },
+        .{ "pending", "IBKR report still generating — try again shortly." },
+        .{ "empty", "Flex report had no accounts." },
+        .{ "failed", "Something went wrong. Check the server logs." },
+    });
+
+    return (
+        <div @allocator={ctx.arena}>
+            <div class="adm-toolbar">
+                <div class="adm-toolbar-main">
+                    <h1 class="adm-page-title">Accounts</h1>
+                    <div class="adm-page-actions">
+                        <div class="adm-nav-group">
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance">{ui.icon(ctx.arena, .arrow_left)} Portfolio</a>
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/allocation">Allocation</a>
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/zakat">Zakat</a>
+                        </div>
+                        <form method="post" action="/admin/finance/accounts" class="adm-inline">
+                            <button class="adm-btn adm-btn-ghost" type="submit" name="action" value="sync" title="Force refresh">Refresh IBKR</button>
+                        </form>
+                    </div>
+                </div>
+                <p class="adm-page-desc">Enter balances in native currency. Portfolio totals convert via Frankfurter FX.</p>
+            </div>
+            <ui.FlashBanner flash={flash} />
+
+            <section class="adm-card" style="margin-bottom:1rem">
+                {if (data.accounts.len == 0) (
+                    <div style="padding:1rem 1.25rem"><ui.Empty text="No accounts yet. Add one below or sync IBKR." /></div>
+                ) else (
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th>Account</th>
+                                    <th class="adm-hide-sm">Type</th>
+                                    <th>Asset class</th>
+                                    <th>Balance</th>
+                                    <th>Weight</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {for (data.accounts) |row| (
+                                    <tr>
+                                        <td>
+                                            <span class="adm-table-title">{row.account.name}</span>
+                                            <span class="adm-table-sub">
+                                                {if (row.account.institution.len > 0) row.account.institution else "—"}
+                                                {if (std.mem.eql(u8, row.account.broker, "ibkr")) " · IBKR" else ""}
+                                            </span>
+                                        </td>
+                                        <td class="adm-hide-sm">{finance.accountTypeLabel(ctx.arena, row.account.account_type)}</td>
+                                        <td>
+                                            <form method="post" action="/admin/finance/accounts" class="adm-inline-fields">
+                                                <input type="hidden" name="id" value={row.account.id} />
+                                                <select class="adm-select" name="asset_class">
+                                                    {for (asset_classes) |c| (
+                                                        <option value={c.name} selected={std.mem.eql(u8, c.name, row.account.asset_class)}>{c.name}</option>
+                                                    )}
+                                                </select>
+                                                <button class="adm-btn adm-btn-ghost" type="submit" name="action" value="set_class">Set</button>
+                                            </form>
+                                        </td>
+                                        <td>
+                                            <span class="adm-table-title">{finance.formatMoney(ctx.arena, row.account.net_liquidation, row.account.currency)}</span>
+                                            {if (!std.ascii.eqlIgnoreCase(row.account.currency, "USD")) (
+                                                <span class="adm-table-sub">{finance.formatMoney(ctx.arena, row.value_usd, "USD")}</span>
+                                            )}
+                                        </td>
+                                        <td>{finance.formatPct(ctx.arena, row.weight_pct)}</td>
+                                        <td>
+                                            {if (std.mem.eql(u8, row.account.broker, "manual")) (
+                                                <div class="adm-inline-fields">
+                                                    <a class="adm-btn adm-btn-ghost" href={editHref(ctx.arena, row.account.id)}>Edit</a>
+                                                    <form method="post" action="/admin/finance/accounts" class="adm-inline">
+                                                        <input type="hidden" name="id" value={row.account.id} />
+                                                        <button class="adm-btn adm-btn-ghost adm-btn-danger" type="submit" name="action" value="delete">Delete</button>
+                                                    </form>
+                                                </div>
+                                            ) else (
+                                                <span class="adm-hint">synced</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </section>
+
+            <section class="adm-card adm-settings" style="margin-bottom:1rem">
+                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                    <span>{if (editing != null) "Edit account" else "Add account"}</span>
+                    <span class="adm-hint">Manual balances (bank, physical, crowdfund, …)</span>
+                </div>
+                <form method="post" action="/admin/finance/accounts" class="adm-settings">
+                    <input type="hidden" name="id" value={if (editing) |e| e.id else 0} />
+                    <div class="adm-settings-row">
+                        <div>
+                            <p class="adm-label">Identity</p>
+                        </div>
+                        <div class="adm-invest-grid">
+                            <div class="adm-field">
+                                <label class="adm-label">Name</label>
+                                <input class="adm-input" name="name" required value={if (editing) |e| e.name else ""} placeholder="e.g. Emergency FD" />
+                            </div>
+                            <div class="adm-field">
+                                <label class="adm-label">Institution</label>
+                                <input class="adm-input" name="institution" value={if (editing) |e| e.institution else ""} placeholder="e.g. Islami Bank" />
+                            </div>
+                            <div class="adm-field">
+                                <label class="adm-label">Account type</label>
+                                <select class="adm-select" name="account_type">
+                                    {for (account_types) |t| (
+                                        <option value={t.id} selected={editingType(editing, t.id)}>{t.label}</option>
+                                    )}
+                                </select>
+                            </div>
+                            <div class="adm-field">
+                                <label class="adm-label">Asset class</label>
+                                <select class="adm-select" name="asset_class">
+                                    {for (asset_classes) |c| (
+                                        <option value={c.name} selected={editingClass(editing, c.name)}>{c.name}</option>
+                                    )}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="adm-settings-row">
+                        <div>
+                            <p class="adm-label">Balance</p>
+                            <p class="adm-hint">Market value in the account currency. For gold use currency XAU and enter grams; set the gold price under Rates.</p>
+                        </div>
+                        <div class="adm-invest-grid">
+                            <div class="adm-field">
+                                <label class="adm-label">Balance / grams</label>
+                                <input class="adm-input" type="number" name="balance" min="0" step="any" required value={if (editing) |e| e.net_liquidation else 0} />
+                            </div>
+                            <div class="adm-field">
+                                <label class="adm-label">Currency</label>
+                                <select class="adm-select" name="currency">
+                                    {for (currencies) |c| (
+                                        <option value={c} selected={editingCurrency(editing, c)}>{if (std.ascii.eqlIgnoreCase(c, "XAU")) "XAU (gold g)" else c}</option>
+                                    )}
+                                </select>
+                            </div>
+                            <div class="adm-field" style="grid-column:1 / -1">
+                                <label class="adm-label">Notes</label>
+                                <input class="adm-input" name="notes" value={if (editing) |e| e.notes orelse "" else ""} />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="adm-settings-foot">
+                        {if (editing != null) (
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/accounts">Cancel</a>
+                        )}
+                        <button class="adm-btn adm-btn-primary" type="submit" name="action" value="save">
+                            {if (editing != null) "Save changes" else "Add account"}
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <p class="adm-hint" style="margin-top:0.5rem">
+                FX via Frankfurter · 1 USD = {finance.formatMoney(ctx.arena, data.usd_bdt_rate, "BDT")} · <a href="/admin/finance/rates">Manage rates</a>
+            </p>
+        </div>
+    );
+}
+
+fn handle(ctx: zx.PageContext) ![]const u8 {
+    const fd = ctx.request.formData();
+    const action = fd.get("action") orelse return error.InvalidName;
+
+    if (std.mem.eql(u8, action, "sync")) {
+        _ = try ibkr_api.sync(ctx.arena);
+        return "ok=synced";
+    }
+    if (std.mem.eql(u8, action, "set_class")) {
+        try finance.setAccountAssetClass(ctx.arena, try formInt(fd, "id"), fd.get("asset_class") orelse "");
+        return "ok=class";
+    }
+    if (std.mem.eql(u8, action, "delete")) {
+        try finance.deleteManualAccount(try formInt(fd, "id"));
+        return "ok=deleted";
+    }
+    if (std.mem.eql(u8, action, "save")) {
+        const balance = std.fmt.parseFloat(f64, fd.get("balance") orelse "") catch return error.InvalidPct;
+        try finance.saveManualAccount(ctx.arena, .{
+            .id = try formInt(fd, "id"),
+            .name = fd.get("name") orelse "",
+            .institution = fd.get("institution") orelse "",
+            .account_type = fd.get("account_type") orelse "other",
+            .asset_class = fd.get("asset_class") orelse "Alternatives",
+            .currency = fd.get("currency") orelse "USD",
+            .balance = balance,
+            .notes = fd.get("notes") orelse "",
+        });
+        return "ok=saved";
+    }
+    return error.InvalidName;
+}
+
+fn formInt(fd: anytype, name: []const u8) !i64 {
+    return std.fmt.parseInt(i64, fd.get(name) orelse "0", 10) catch error.InvalidName;
+}
+
+fn editHref(arena: zx.Allocator, id: i64) []const u8 {
+    return std.fmt.allocPrint(arena, "/admin/finance/accounts?edit={d}", .{id}) catch "/admin/finance/accounts";
+}
+
+fn editingType(editing: ?finance.Account, t: []const u8) bool {
+    const e = editing orelse return std.mem.eql(u8, t, "deposit");
+    return std.mem.eql(u8, e.account_type, t);
+}
+
+fn editingClass(editing: ?finance.Account, c: []const u8) bool {
+    const e = editing orelse return std.mem.eql(u8, c, "Fixed Income");
+    return std.mem.eql(u8, e.asset_class, c);
+}
+
+fn editingCurrency(editing: ?finance.Account, c: []const u8) bool {
+    const e = editing orelse return std.mem.eql(u8, c, "BDT");
+    return std.ascii.eqlIgnoreCase(e.currency, c);
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .rendering = .request,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../../ui.zx");
+const finance = @import("../../../finance/db.zig");
+const ibkr_api = @import("../../../finance/ibkr.zig");

@@ -1,0 +1,157 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    if (ctx.request.method == .POST) {
+        const flag = save(ctx) catch |err| switch (err) {
+            error.InvalidUrl => "err=bad_url",
+            else => blk: {
+                zx.log.err("admin: saving settings failed: {any}", .{err});
+                break :blk "err=failed";
+            },
+        };
+        return ui.redirect(ctx, try ctx.fmt("/admin/settings?{s}", .{flag}));
+    }
+
+    const caldav = credentials.loadCaldavForm(ctx.arena);
+    const ibkr = credentials.loadIbkrForm(ctx.arena);
+    const github_set = credentials.githubTokenSet(ctx.arena);
+    const flash = ui.flashFrom(ctx.request.queries, &.{
+        .{ "saved", "Credentials saved. They’re stored in the database and used on the next request." },
+        .{ "cleared", "Selected secrets were cleared." },
+        .{ "bad_url", "URLs must start with https:// or http://." },
+        .{ "failed", "Something went wrong. Check the server logs." },
+    });
+
+    return (
+        <div @allocator={ctx.arena}>
+            <ui.PageHeader title="Settings" description="Integration credentials. Leave a secret blank to keep the current value." />
+            <ui.FlashBanner flash={flash} />
+
+            <form method="post" action="/admin/settings" class="adm-card adm-settings" style="margin-bottom:1rem">
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">IBKR Flex</p>
+                        <p class="adm-hint">Read-only Flex Web Service. Activity Flex Query must include Open Positions, Equity Summary, and Cash Report (XML, all sub-accounts) in Client Portal → Reporting → Flex Queries. Without Cash Report / Equity Summary, brokerage cash stays at 0.</p>
+                    </div>
+                    <div class="adm-stack-fields">
+                        <div class="adm-field">
+                            <label class="adm-label" for="ibkr_flex_token">Access token</label>
+                            <input class="adm-input" id="ibkr_flex_token" type="password" name="ibkr_flex_token" autocomplete="off" placeholder={if (ibkr.token_set) "•••••••• (saved — leave blank to keep)" else "Flex Web Service token"} />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label" for="ibkr_flex_query_id">Query ID</label>
+                            <input class="adm-input" id="ibkr_flex_query_id" name="ibkr_flex_query_id" value={ibkr.query_id} placeholder="e.g. 123456" />
+                        </div>
+                        <label class="adm-check">
+                            <input type="checkbox" name="clear_ibkr_token" value="on" />
+                            <span>Clear saved IBKR token</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">CalDAV (iCloud)</p>
+                        <p class="adm-hint">Used by /schedule for busy times and booking invites.</p>
+                    </div>
+                    <div class="adm-stack-fields">
+                        <div class="adm-field">
+                            <label class="adm-label" for="caldav_username">Apple ID / username</label>
+                            <input class="adm-input" id="caldav_username" name="caldav_username" value={caldav.username} autocomplete="username" />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label" for="caldav_password">App-specific password</label>
+                            <input class="adm-input" id="caldav_password" type="password" name="caldav_password" autocomplete="new-password" placeholder={if (caldav.password_set) "•••••••• (saved — leave blank to keep)" else "App-specific password"} />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label" for="caldav_calendar_url">Calendar URL</label>
+                            <input class="adm-input" id="caldav_calendar_url" name="caldav_calendar_url" value={caldav.calendar_url} placeholder="https://…caldav…/calendars/…" />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label" for="caldav_organizer_email">Organizer email</label>
+                            <input class="adm-input" id="caldav_organizer_email" type="email" name="caldav_organizer_email" value={caldav.organizer_email} />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label" for="caldav_meeting_url">Default meeting link</label>
+                            <input class="adm-input" id="caldav_meeting_url" type="url" name="caldav_meeting_url" value={caldav.meeting_url} placeholder="https://meet.google.com/…" />
+                        </div>
+                        <label class="adm-check">
+                            <input type="checkbox" name="clear_caldav_password" value="on" />
+                            <span>Clear saved CalDAV password</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">GitHub</p>
+                        <p class="adm-hint">Optional. Raises API rate limits for /dev pinned repos.</p>
+                    </div>
+                    <div class="adm-stack-fields">
+                        <div class="adm-field">
+                            <label class="adm-label" for="github_token">Personal access token</label>
+                            <input class="adm-input" id="github_token" type="password" name="github_token" autocomplete="off" placeholder={if (github_set) "•••••••• (saved — leave blank to keep)" else "ghp_…"} />
+                        </div>
+                        <label class="adm-check">
+                            <input type="checkbox" name="clear_github_token" value="on" />
+                            <span>Clear saved GitHub token</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="adm-settings-foot">
+                    <a class="adm-btn adm-btn-ghost" href="/admin/settings">Discard</a>
+                    <button class="adm-btn adm-btn-primary" type="submit" name="action" value="save">Save credentials</button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+fn save(ctx: zx.PageContext) ![]const u8 {
+    const fd = ctx.request.formData();
+    var cleared = false;
+
+    if (fd.get("clear_ibkr_token") != null) {
+        try credentials.remove("ibkr_flex_token");
+        cleared = true;
+    } else {
+        try credentials.putUnlessEmpty("ibkr_flex_token", fd.get("ibkr_flex_token") orelse "");
+    }
+
+    const query_id = std.mem.trim(u8, fd.get("ibkr_flex_query_id") orelse "", " \t\r\n");
+    try credentials.put("ibkr_flex_query_id", query_id);
+
+    try credentials.putUnlessEmpty("caldav_username", fd.get("caldav_username") orelse "");
+    if (fd.get("clear_caldav_password") != null) {
+        try credentials.remove("caldav_password");
+        cleared = true;
+    } else {
+        try credentials.putUnlessEmpty("caldav_password", fd.get("caldav_password") orelse "");
+    }
+    try credentials.putUnlessEmpty("caldav_calendar_url", fd.get("caldav_calendar_url") orelse "");
+    try credentials.putUnlessEmpty("caldav_organizer_email", fd.get("caldav_organizer_email") orelse "");
+
+    const meeting = std.mem.trim(u8, fd.get("caldav_meeting_url") orelse "", " \t\r\n");
+    if (meeting.len > 0 and !settings.isHttpUrl(meeting)) return error.InvalidUrl;
+    try credentials.put("caldav_meeting_url", meeting);
+
+    if (fd.get("clear_github_token") != null) {
+        try credentials.remove("github_token");
+        cleared = true;
+    } else {
+        try credentials.putUnlessEmpty("github_token", fd.get("github_token") orelse "");
+    }
+    credentials.applyRuntime(ctx.arena);
+
+    return if (cleared) "ok=cleared" else "ok=saved";
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .rendering = .request,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const credentials = @import("../../../db/credentials.zig");
+const settings = @import("../../schedule/settings.zig");
