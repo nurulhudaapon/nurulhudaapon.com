@@ -31,16 +31,16 @@ pub fn Nav(allocator: zx.Allocator) zx.Component {
                 <a class="nav-brand" href="/" aria-label="nuhu.dev home">
                     <span>nuhu<span class="nav-brand-dot">.</span>dev</span>
                 </a>
-                <nav class="nav-links" aria-label="Primary">
-                    <a class="nav-link" href="#projects">Projects</a>
-                    <a class="nav-link" href={site_url} target="_blank" rel="noopener">
-                        About
-                        {icons.ArrowUpRight(allocator)}
-                    </a>
-                    <a class="nav-link nav-link-icon" href={github_url} target="_blank" rel="noopener" aria-label="GitHub">
-                        {icons.GitHub(allocator)}
-                    </a>
-                </nav>
+                // <nav class="nav-links" aria-label="Primary">
+                //     <a class="nav-link" href="#projects">Projects</a>
+                //     <a class="nav-link" href={site_url} target="_blank" rel="noopener">
+                //         About
+                //         {icons.ArrowUpRight(allocator)}
+                //     </a>
+                //     <a class="nav-link nav-link-icon" href={github_url} target="_blank" rel="noopener" aria-label="GitHub">
+                //         {icons.GitHub(allocator)}
+                //     </a>
+                // </nav>
             </div>
         </header>
     );

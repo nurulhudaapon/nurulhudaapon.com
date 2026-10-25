@@ -41,7 +41,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     </a>
                 </div>
 
-                {if (has_repos) (
+                {if (has_repos and false) (
                     <dl class="metrics">
                         <div class="metric">
                             <dt>GitHub stars</dt>
