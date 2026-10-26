@@ -34,6 +34,7 @@ pub const Account = struct {
     account_type: []const u8,
     asset_class: []const u8,
     notes: ?[]const u8,
+    stale: i64 = 0,
 };
 
 pub const Holding = struct {
@@ -106,9 +107,9 @@ pub const Snapshot = struct {
 pub fn listAccounts(arena: std.mem.Allocator) ![]const Account {
     return try zx.db.rows(arena, Account,
         \\SELECT id, broker, external_id, name, currency, cash, net_liquidation, synced_at,
-        \\       institution, account_type, asset_class, notes
+        \\       institution, account_type, asset_class, notes, stale
         \\FROM accounts
-        \\ORDER BY name COLLATE NOCASE
+        \\ORDER BY stale ASC, name COLLATE NOCASE
     , .{});
 }
 
@@ -125,32 +126,37 @@ const AccountUsdRow = struct {
     account_type: []const u8,
     asset_class: []const u8,
     notes: ?[]const u8,
+    stale: i64,
     value_usd: f64,
     cash_usd: f64,
     weight_pct: f64,
 };
 
 pub fn listAccountRows(arena: std.mem.Allocator) ![]const AccountRow {
-    // Do not call fx.refresh here — portfolio GETs must stay D1-only on Workers.
     const rows = try zx.db.rows(arena, AccountUsdRow,
         \\WITH valued AS (
         \\  SELECT
         \\    a.id, a.broker, a.external_id, a.name, a.currency, a.cash, a.net_liquidation, a.synced_at,
-        \\    a.institution, a.account_type, a.asset_class, a.notes,
+        \\    a.institution, a.account_type, a.asset_class, a.notes, COALESCE(a.stale, 0) AS stale,
         \\    CASE WHEN UPPER(a.currency) = 'USD' THEN a.net_liquidation
         \\         ELSE a.net_liquidation / COALESCE(NULLIF(fx.rate, 0), 1) END AS value_usd,
         \\    CASE WHEN UPPER(a.currency) = 'USD' THEN a.cash
         \\         ELSE a.cash / COALESCE(NULLIF(fx.rate, 0), 1) END AS cash_usd
         \\  FROM accounts a
         \\  LEFT JOIN fx_rates fx ON fx.currency = UPPER(a.currency)
+        \\),
+        \\tot AS (
+        \\  SELECT COALESCE(SUM(CASE WHEN stale = 0 THEN value_usd ELSE 0 END), 0) AS active_total
+        \\  FROM valued
         \\)
         \\SELECT
-        \\  id, broker, external_id, name, currency, cash, net_liquidation, synced_at,
-        \\  institution, account_type, asset_class, notes, value_usd, cash_usd,
-        \\  CASE WHEN SUM(value_usd) OVER () > 0 THEN value_usd * 100.0 / SUM(value_usd) OVER () ELSE 0 END AS weight_pct
-        \\FROM valued
-        \\WHERE ABS(value_usd) > 0.005 OR ABS(cash_usd) > 0.005
-        \\ORDER BY value_usd DESC, name COLLATE NOCASE
+        \\  v.id, v.broker, v.external_id, v.name, v.currency, v.cash, v.net_liquidation, v.synced_at,
+        \\  v.institution, v.account_type, v.asset_class, v.notes, v.stale, v.value_usd, v.cash_usd,
+        \\  CASE WHEN v.stale != 0 OR t.active_total <= 0 THEN 0
+        \\       ELSE v.value_usd * 100.0 / t.active_total END AS weight_pct
+        \\FROM valued v CROSS JOIN tot t
+        \\WHERE ABS(v.value_usd) > 0.005 OR ABS(v.cash_usd) > 0.005 OR v.stale != 0
+        \\ORDER BY CASE WHEN v.stale != 0 THEN 1 ELSE 0 END, v.value_usd DESC, v.name COLLATE NOCASE
     , .{});
 
     const out = try arena.alloc(AccountRow, rows.len);
@@ -169,6 +175,7 @@ pub fn listAccountRows(arena: std.mem.Allocator) ![]const AccountRow {
                 .account_type = r.account_type,
                 .asset_class = r.asset_class,
                 .notes = r.notes,
+                .stale = r.stale,
             },
             .value_usd = r.value_usd,
             .cash_usd = r.cash_usd,
@@ -179,15 +186,35 @@ pub fn listAccountRows(arena: std.mem.Allocator) ![]const AccountRow {
 }
 
 pub fn listHoldings(arena: std.mem.Allocator) ![]const Holding {
+    return try listHoldingsLimited(arena, null);
+}
+
+pub fn listHoldingsLimited(arena: std.mem.Allocator, limit: ?usize) ![]const Holding {
+    if (limit) |n| {
+        return try zx.db.rows(arena, Holding,
+            \\SELECT h.id, h.account_id, a.name AS account_name, a.external_id AS account_external_id,
+            \\       h.symbol, h.description, h.asset_class, h.category, h.currency,
+            \\       h.quantity, h.market_price, h.market_value, h.market_value_base, h.conid, h.synced_at
+            \\FROM holdings h
+            \\JOIN accounts a ON a.id = h.account_id
+            \\WHERE h.market_value_base > 0.005 AND COALESCE(a.stale, 0) = 0
+            \\ORDER BY h.market_value_base DESC, h.symbol COLLATE NOCASE
+            \\LIMIT ?1
+        , .{n});
+    }
     return try zx.db.rows(arena, Holding,
         \\SELECT h.id, h.account_id, a.name AS account_name, a.external_id AS account_external_id,
         \\       h.symbol, h.description, h.asset_class, h.category, h.currency,
         \\       h.quantity, h.market_price, h.market_value, h.market_value_base, h.conid, h.synced_at
         \\FROM holdings h
         \\JOIN accounts a ON a.id = h.account_id
-        \\WHERE h.market_value_base > 0.005
+        \\WHERE h.market_value_base > 0.005 AND COALESCE(a.stale, 0) = 0
         \\ORDER BY h.market_value_base DESC, h.symbol COLLATE NOCASE
     , .{});
+}
+
+pub fn isAccountStale(account: Account) bool {
+    return account.stale != 0;
 }
 
 pub fn listAllocations(arena: std.mem.Allocator) ![]const Allocation {
@@ -200,108 +227,150 @@ pub fn listAllocations(arena: std.mem.Allocator) ![]const Allocation {
 pub fn getAccount(arena: std.mem.Allocator, id: i64) !?Account {
     return try zx.db.row(arena, Account,
         \\SELECT id, broker, external_id, name, currency, cash, net_liquidation, synced_at,
-        \\       institution, account_type, asset_class, notes
+        \\       institution, account_type, asset_class, notes, stale
         \\FROM accounts WHERE id = ?1
     , .{id});
 }
 
+const SnapshotMeta = struct {
+    net_worth: f64,
+    cash_total: f64,
+    account_count: i64,
+    holding_count: i64,
+    last_synced: ?[]const u8,
+    usd_bdt_rate: f64,
+    fx_as_of: i64,
+};
+
 pub fn snapshot(arena: std.mem.Allocator) !Snapshot {
     const accounts = try listAccountRows(arena);
-    const holdings = try listHoldings(arena);
-    const targets = try listAllocations(arena);
-
-    var net_worth: f64 = 0;
-    var cash_total: f64 = 0;
-    for (accounts) |row| {
-        net_worth += row.value_usd;
-        const a = row.account;
-        const is_cash_account = std.ascii.eqlIgnoreCase(a.account_type, "cash") or
-            std.ascii.eqlIgnoreCase(a.asset_class, "Cash");
-        cash_total += if (is_cash_account) row.value_usd else row.cash_usd;
-    }
-    const usd_bdt_rate = fx.usdBdtRate(arena);
-    const aliases = try classAliases(arena);
-
-    var class_value: std.StringHashMapUnmanaged(f64) = .empty;
-    const classes = try listAssetClasses(arena);
-    for (classes) |c| try class_value.put(arena, c.name, 0);
-
-    for (accounts) |row| {
-        const a = row.account;
-        var from_holdings: f64 = 0;
-        for (holdings) |h| {
-            if (h.account_id != a.id) continue;
-            from_holdings += h.market_value_base;
-            const g = try class_value.getOrPutValue(arena, resolveClass(aliases, h.category), 0);
-            g.value_ptr.* += h.market_value_base;
-        }
-        if (from_holdings > 0.005) {
-            if (row.cash_usd > 0.005)
-                (try class_value.getOrPutValue(arena, "Cash", 0)).value_ptr.* += row.cash_usd;
-        } else {
-            const cash = row.cash_usd;
-            const rest = row.value_usd - cash;
-            if (cash > 0.005)
-                (try class_value.getOrPutValue(arena, "Cash", 0)).value_ptr.* += cash;
-            if (rest > 0.005) {
-                (try class_value.getOrPutValue(arena, resolveClass(aliases, a.asset_class), 0)).value_ptr.* += rest;
-            } else if (cash < 0.005 and row.value_usd > 0.005) {
-                (try class_value.getOrPutValue(arena, resolveClass(aliases, a.asset_class), 0)).value_ptr.* += row.value_usd;
-            }
-        }
-    }
-
-    var allocs: std.ArrayList(AllocationActual) = .empty;
-    for (targets) |t| {
-        const value = class_value.get(t.name) orelse 0;
-        if (value <= 0.005) continue;
-        try allocs.append(arena, .{
-            .name = t.name,
-            .target_pct = t.target_pct,
-            .actual_value = value,
-            .actual_pct = if (net_worth > 0) value / net_worth * 100.0 else 0,
-            .sort_order = t.sort_order,
-        });
-    }
-    var it = class_value.iterator();
-    while (it.next()) |kv| {
-        if (kv.value_ptr.* <= 0.005) continue;
-        var known = false;
-        for (allocs.items) |a| if (std.mem.eql(u8, a.name, kv.key_ptr.*)) {
-            known = true;
-            break;
-        };
-        if (known) continue;
-        try allocs.append(arena, .{
-            .name = kv.key_ptr.*,
-            .target_pct = 0,
-            .actual_value = kv.value_ptr.*,
-            .actual_pct = if (net_worth > 0) kv.value_ptr.* / net_worth * 100.0 else 0,
-            .sort_order = 99,
-        });
-    }
-
-    var last_synced: ?[]const u8 = null;
-    for (accounts) |row| {
-        if (row.account.synced_at) |at| {
-            if (last_synced == null or std.mem.order(u8, at, last_synced.?) == .gt) last_synced = at;
-        }
-    }
+    const allocations = try listAllocationActuals(arena);
+    const holdings = try listHoldingsLimited(arena, 10);
+    const meta = (try zx.db.row(arena, SnapshotMeta,
+        \\WITH valued AS (
+        \\  SELECT
+        \\    a.id, a.account_type, a.asset_class, a.synced_at, COALESCE(a.stale, 0) AS stale,
+        \\    CASE WHEN UPPER(a.currency) = 'USD' THEN a.net_liquidation
+        \\         ELSE a.net_liquidation / COALESCE(NULLIF(fx.rate, 0), 1) END AS value_usd,
+        \\    CASE WHEN UPPER(a.currency) = 'USD' THEN a.cash
+        \\         ELSE a.cash / COALESCE(NULLIF(fx.rate, 0), 1) END AS cash_usd
+        \\  FROM accounts a
+        \\  LEFT JOIN fx_rates fx ON fx.currency = UPPER(a.currency)
+        \\  WHERE COALESCE(a.stale, 0) = 0
+        \\)
+        \\SELECT
+        \\  COALESCE(SUM(value_usd), 0) AS net_worth,
+        \\  COALESCE(SUM(
+        \\    CASE WHEN account_type IN ('cash', 'savings') OR asset_class = 'Cash'
+        \\         THEN value_usd ELSE cash_usd END
+        \\  ), 0) AS cash_total,
+        \\  COUNT(*) AS account_count,
+        \\  (SELECT COUNT(*) FROM holdings h
+        \\     JOIN accounts a2 ON a2.id = h.account_id
+        \\    WHERE h.market_value_base > 0.005 AND COALESCE(a2.stale, 0) = 0) AS holding_count,
+        \\  MAX(synced_at) AS last_synced,
+        \\  COALESCE((SELECT rate FROM fx_rates WHERE currency = 'BDT'), 122) AS usd_bdt_rate,
+        \\  COALESCE((SELECT MAX(fetched_at) FROM fx_rates
+        \\             WHERE fetched_at > 0 AND as_of NOT IN ('seed', '')), 0) AS fx_as_of
+        \\FROM valued
+    , .{})) orelse SnapshotMeta{
+        .net_worth = 0,
+        .cash_total = 0,
+        .account_count = 0,
+        .holding_count = 0,
+        .last_synced = null,
+        .usd_bdt_rate = 122,
+        .fx_as_of = 0,
+    };
 
     return .{
-        .net_worth = net_worth,
-        .cash_total = cash_total,
-        .invested_total = @max(0, net_worth - cash_total),
+        .net_worth = meta.net_worth,
+        .cash_total = meta.cash_total,
+        .invested_total = @max(0, meta.net_worth - meta.cash_total),
         .accounts = accounts,
         .holdings = holdings,
-        .allocations = try allocs.toOwnedSlice(arena),
-        .account_count = accounts.len,
-        .holding_count = holdings.len,
-        .last_synced = last_synced,
-        .usd_bdt_rate = usd_bdt_rate,
-        .net_worth_bdt = net_worth * usd_bdt_rate,
-        .fx_as_of = fx.fetchedAt(arena),
+        .allocations = allocations,
+        .account_count = @intCast(@max(meta.account_count, 0)),
+        .holding_count = @intCast(@max(meta.holding_count, 0)),
+        .last_synced = meta.last_synced,
+        .usd_bdt_rate = if (meta.usd_bdt_rate > 0) meta.usd_bdt_rate else 122,
+        .net_worth_bdt = meta.net_worth * (if (meta.usd_bdt_rate > 0) meta.usd_bdt_rate else 122),
+        .fx_as_of = if (meta.fx_as_of > 0) meta.fx_as_of else null,
     };
+}
+
+fn listAllocationActuals(arena: std.mem.Allocator) ![]const AllocationActual {
+    return try zx.db.rows(arena, AllocationActual,
+        \\WITH valued AS (
+        \\  SELECT
+        \\    a.id, a.asset_class,
+        \\    CASE WHEN UPPER(a.currency) = 'USD' THEN a.net_liquidation
+        \\         ELSE a.net_liquidation / COALESCE(NULLIF(fx.rate, 0), 1) END AS value_usd,
+        \\    CASE WHEN UPPER(a.currency) = 'USD' THEN a.cash
+        \\         ELSE a.cash / COALESCE(NULLIF(fx.rate, 0), 1) END AS cash_usd,
+        \\    EXISTS (
+        \\      SELECT 1 FROM holdings h
+        \\      WHERE h.account_id = a.id AND h.market_value_base > 0.005
+        \\    ) AS has_holdings
+        \\  FROM accounts a
+        \\  LEFT JOIN fx_rates fx ON fx.currency = UPPER(a.currency)
+        \\  WHERE COALESCE(a.stale, 0) = 0
+        \\),
+        \\holding_parts AS (
+        \\  SELECT COALESCE(
+        \\      (SELECT ac.asset_class FROM asset_class_aliases ac
+        \\        WHERE ac.alias = h.category COLLATE NOCASE),
+        \\      'Alternatives'
+        \\    ) AS name,
+        \\    SUM(h.market_value_base) AS value
+        \\  FROM holdings h
+        \\  JOIN valued v ON v.id = h.account_id
+        \\  WHERE h.market_value_base > 0.005
+        \\  GROUP BY 1
+        \\),
+        \\cash_held AS (
+        \\  SELECT 'Cash' AS name, SUM(cash_usd) AS value
+        \\  FROM valued WHERE has_holdings AND cash_usd > 0.005
+        \\),
+        \\cash_plain AS (
+        \\  SELECT 'Cash' AS name, SUM(cash_usd) AS value
+        \\  FROM valued WHERE NOT has_holdings AND cash_usd > 0.005
+        \\),
+        \\rest_plain AS (
+        \\  SELECT COALESCE(
+        \\      (SELECT ac.asset_class FROM asset_class_aliases ac
+        \\        WHERE ac.alias = v.asset_class COLLATE NOCASE),
+        \\      'Alternatives'
+        \\    ) AS name,
+        \\    SUM(value_usd - cash_usd) AS value
+        \\  FROM valued v
+        \\  WHERE NOT has_holdings AND (value_usd - cash_usd) > 0.005
+        \\  GROUP BY 1
+        \\),
+        \\parts AS (
+        \\  SELECT name, value FROM holding_parts
+        \\  UNION ALL SELECT name, value FROM cash_held
+        \\  UNION ALL SELECT name, value FROM cash_plain
+        \\  UNION ALL SELECT name, value FROM rest_plain
+        \\),
+        \\by_class AS (
+        \\  SELECT name, SUM(value) AS actual_value
+        \\  FROM parts GROUP BY name HAVING SUM(value) > 0.005
+        \\),
+        \\net AS (
+        \\  SELECT COALESCE(SUM(value_usd), 0) AS net_worth FROM valued
+        \\)
+        \\SELECT
+        \\  b.name,
+        \\  COALESCE(a.target_pct, 0) AS target_pct,
+        \\  b.actual_value,
+        \\  CASE WHEN n.net_worth > 0 THEN b.actual_value * 100.0 / n.net_worth ELSE 0 END AS actual_pct,
+        \\  COALESCE(a.sort_order, 99) AS sort_order
+        \\FROM by_class b
+        \\CROSS JOIN net n
+        \\LEFT JOIN allocations a ON a.name = b.name
+        \\ORDER BY COALESCE(a.sort_order, 99), b.name COLLATE NOCASE
+    , .{});
 }
 
 pub fn classAliases(arena: std.mem.Allocator) !std.StringHashMapUnmanaged([]const u8) {
@@ -330,6 +399,7 @@ pub fn saveManualAccount(arena: std.mem.Allocator, input: struct {
     currency: []const u8,
     balance: f64,
     notes: []const u8,
+    stale: bool = false,
 }) !void {
     const name = std.mem.trim(u8, input.name, " \t\r\n");
     if (name.len == 0 or !try validAccountType(arena, input.account_type) or !try validAssetClass(arena, input.asset_class))
@@ -344,13 +414,14 @@ pub fn saveManualAccount(arena: std.mem.Allocator, input: struct {
     };
     const notes = std.mem.trim(u8, input.notes, " \t\r\n");
     const now = try nowSecs(arena);
+    const stale: i64 = if (input.stale) 1 else 0;
 
     if (input.id == 0) {
         _ = try zx.db.run(
             \\INSERT INTO accounts
             \\  (broker, external_id, name, currency, cash, net_liquidation, institution,
-            \\   account_type, asset_class, notes, synced_at)
-            \\VALUES ('manual', ?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9)
+            \\   account_type, asset_class, notes, synced_at, stale)
+            \\VALUES ('manual', ?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
         , .{
             try std.fmt.allocPrint(arena, "manual-{s}", .{now}),
             name,
@@ -361,6 +432,7 @@ pub fn saveManualAccount(arena: std.mem.Allocator, input: struct {
             input.asset_class,
             if (notes.len > 0) notes else null,
             now,
+            stale,
         });
         return;
     }
@@ -368,8 +440,8 @@ pub fn saveManualAccount(arena: std.mem.Allocator, input: struct {
     _ = try zx.db.run(
         \\UPDATE accounts SET
         \\  name = ?1, institution = ?2, account_type = ?3, asset_class = ?4,
-        \\  currency = ?5, net_liquidation = ?6, notes = ?7, synced_at = ?8
-        \\WHERE id = ?9 AND broker = 'manual'
+        \\  currency = ?5, net_liquidation = ?6, notes = ?7, synced_at = ?8, stale = ?9
+        \\WHERE id = ?10 AND broker = 'manual'
     , .{
         name,
         institution,
@@ -379,6 +451,7 @@ pub fn saveManualAccount(arena: std.mem.Allocator, input: struct {
         input.balance,
         if (notes.len > 0) notes else null,
         now,
+        stale,
         input.id,
     });
 }
@@ -390,6 +463,10 @@ pub fn deleteManualAccount(id: i64) !void {
 pub fn setAccountAssetClass(arena: std.mem.Allocator, id: i64, asset_class: []const u8) !void {
     if (!try validAssetClass(arena, asset_class)) return error.InvalidName;
     _ = try zx.db.run("UPDATE accounts SET asset_class = ?1 WHERE id = ?2", .{ asset_class, id });
+}
+
+pub fn setAccountStale(id: i64, stale: bool) !void {
+    _ = try zx.db.run("UPDATE accounts SET stale = ?1 WHERE id = ?2", .{ if (stale) @as(i64, 1) else 0, id });
 }
 
 pub fn upsertAccount(arena: std.mem.Allocator, account: struct {
@@ -570,7 +647,7 @@ pub fn deleteZakat(id: i64) !void {
 pub fn goldGrams(arena: std.mem.Allocator) f64 {
     const row = zx.db.row(arena, struct { grams: f64 },
         \\SELECT COALESCE(SUM(net_liquidation), 0) AS grams
-        \\FROM accounts WHERE UPPER(currency) = 'XAU'
+        \\FROM accounts WHERE UPPER(currency) = 'XAU' AND COALESCE(stale, 0) = 0
     , .{}) catch return 0;
     return if (row) |r| r.grams else 0;
 }

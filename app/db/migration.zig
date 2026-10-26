@@ -10,6 +10,7 @@ const migrations = [_]Migration{
     .{ .name = "0004_admin.sql", .sql = @embedFile("migrations/0004_admin.sql") },
     .{ .name = "0005_spam.sql", .sql = @embedFile("migrations/0005_spam.sql") },
     .{ .name = "0006_finance.sql", .sql = @embedFile("migrations/0006_finance.sql") },
+    .{ .name = "0008_finance_stale.sql", .sql = @embedFile("migrations/0008_finance_stale.sql") },
 };
 
 pub fn run() !void {

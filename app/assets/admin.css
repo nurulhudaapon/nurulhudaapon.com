@@ -852,6 +852,89 @@ details.adm-disclosure[open] > summary {
     background: var(--adm-hover);
 }
 
+.adm-row-stale,
+.adm-finance-account.adm-row-stale {
+    opacity: 0.55;
+}
+
+.adm-table-actions {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.adm-btn-icon {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+}
+
+.adm-row-menu {
+    position: relative;
+    display: inline-block;
+    text-align: left;
+}
+
+.adm-row-menu > summary {
+    list-style: none;
+    cursor: pointer;
+}
+
+.adm-row-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.adm-row-menu[open] > summary {
+    background: var(--adm-active);
+}
+
+.adm-row-menu-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 20;
+    min-width: 11rem;
+    padding: 0.25rem;
+    border: 1px solid var(--adm-border);
+    border-radius: var(--adm-radius);
+    background: var(--adm-surface);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--adm-text) 12%, transparent);
+}
+
+.adm-row-menu-panel form {
+    margin: 0;
+}
+
+.adm-row-menu-item {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 0;
+    border-radius: calc(var(--adm-radius) - 2px);
+    background: transparent;
+    color: var(--adm-text);
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.adm-row-menu-item:hover {
+    background: var(--adm-hover);
+}
+
+.adm-row-menu-danger {
+    color: var(--adm-err);
+}
+
+.adm-row-menu-meta {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    color: var(--adm-muted);
+    font-size: 12px;
+}
+
 .adm-table-title {
     font-weight: 500;
 }

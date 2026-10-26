@@ -70,10 +70,16 @@ pub const IbkrForm = struct {
 };
 
 pub fn loadIbkrForm(arena: std.mem.Allocator) IbkrForm {
-    return .{
-        .token_set = has(arena, "ibkr_flex_token"),
-        .query_id = get(arena, "ibkr_flex_query_id") orelse "",
-    };
+    const rows = zx.db.rows(arena, struct { cat: []const u8, val: []const u8 },
+        \\SELECT cat, val FROM credentials
+        \\WHERE cat IN ('ibkr_flex_token', 'ibkr_flex_query_id')
+    , .{}) catch return .{};
+    var out: IbkrForm = .{};
+    for (rows) |r| {
+        if (std.mem.eql(u8, r.cat, "ibkr_flex_token")) out.token_set = r.val.len > 0;
+        if (std.mem.eql(u8, r.cat, "ibkr_flex_query_id")) out.query_id = r.val;
+    }
+    return out;
 }
 
 pub fn githubTokenSet(arena: std.mem.Allocator) bool {

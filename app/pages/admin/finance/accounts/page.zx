@@ -25,6 +25,8 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         .{ "deleted", "Account removed." },
         .{ "synced", "IBKR accounts synced." },
         .{ "class", "Asset class updated." },
+        .{ "stale", "Account marked stale — excluded from portfolio totals." },
+        .{ "restored", "Account restored to portfolio totals." },
         .{ "invalid", "Name, account type, asset class, and a supported currency are required." },
         .{ "not_configured", "Add IBKR Flex credentials under Settings first." },
         .{ "ibkr", "IBKR rejected the Flex request." },
@@ -49,7 +51,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                         </form>
                     </div>
                 </div>
-                <p class="adm-page-desc">Enter balances in native currency. Portfolio totals convert via Frankfurter FX.</p>
+                <p class="adm-page-desc">Enter balances in native currency. Mark accounts stale to keep them listed but exclude them from portfolio totals.</p>
             </div>
             <ui.FlashBanner flash={flash} />
 
@@ -71,12 +73,13 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                             </thead>
                             <tbody>
                                 {for (data.accounts) |row| (
-                                    <tr>
+                                    <tr class={if (finance.isAccountStale(row.account)) "adm-row-stale" else ""}>
                                         <td>
                                             <span class="adm-table-title">{row.account.name}</span>
                                             <span class="adm-table-sub">
                                                 {if (row.account.institution.len > 0) row.account.institution else "—"}
                                                 {if (std.mem.eql(u8, row.account.broker, "ibkr")) " · IBKR" else ""}
+                                                {if (finance.isAccountStale(row.account)) " · stale" else ""}
                                             </span>
                                         </td>
                                         <td class="adm-hide-sm">{finance.accountTypeLabel(ctx.arena, row.account.account_type)}</td>
@@ -97,19 +100,33 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                                 <span class="adm-table-sub">{finance.formatMoney(ctx.arena, row.value_usd, "USD")}</span>
                                             )}
                                         </td>
-                                        <td>{finance.formatPct(ctx.arena, row.weight_pct)}</td>
-                                        <td>
-                                            {if (std.mem.eql(u8, row.account.broker, "manual")) (
-                                                <div class="adm-inline-fields">
-                                                    <a class="adm-btn adm-btn-ghost" href={editHref(ctx.arena, row.account.id)}>Edit</a>
-                                                    <form method="post" action="/admin/finance/accounts" class="adm-inline">
+                                        <td>{if (finance.isAccountStale(row.account)) "—" else finance.formatPct(ctx.arena, row.weight_pct)}</td>
+                                        <td class="adm-table-actions">
+                                            <details class="adm-row-menu">
+                                                <summary class="adm-btn adm-btn-ghost adm-btn-icon" aria-label="Account actions">
+                                                    {ui.icon(ctx.arena, .more)}
+                                                </summary>
+                                                <div class="adm-row-menu-panel">
+                                                    <form method="post" action="/admin/finance/accounts">
                                                         <input type="hidden" name="id" value={row.account.id} />
-                                                        <button class="adm-btn adm-btn-ghost adm-btn-danger" type="submit" name="action" value="delete">Delete</button>
+                                                        <input type="hidden" name="stale" value={if (finance.isAccountStale(row.account)) "0" else "1"} />
+                                                        <button class="adm-row-menu-item" type="submit" name="action" value="set_stale">
+                                                            {if (finance.isAccountStale(row.account)) "Restore to totals" else "Mark stale"}
+                                                        </button>
                                                     </form>
+                                                    {if (std.mem.eql(u8, row.account.broker, "manual")) (
+                                                        <>
+                                                            <a class="adm-row-menu-item" href={editHref(ctx.arena, row.account.id)}>Edit</a>
+                                                            <form method="post" action="/admin/finance/accounts">
+                                                                <input type="hidden" name="id" value={row.account.id} />
+                                                                <button class="adm-row-menu-item adm-row-menu-danger" type="submit" name="action" value="delete">Delete</button>
+                                                            </form>
+                                                        </>
+                                                    ) else (
+                                                        <span class="adm-row-menu-meta">IBKR synced</span>
+                                                    )}
                                                 </div>
-                                            ) else (
-                                                <span class="adm-hint">synced</span>
-                                            )}
+                                            </details>
                                         </td>
                                     </tr>
                                 )}
@@ -179,6 +196,12 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                 <label class="adm-label">Notes</label>
                                 <input class="adm-input" name="notes" value={if (editing) |e| e.notes orelse "" else ""} />
                             </div>
+                            <div class="adm-field" style="grid-column:1 / -1">
+                                <label class="adm-check">
+                                    <input type="checkbox" name="stale" value="on" checked={if (editing) |e| e.stale != 0 else false} />
+                                    <span>Stale — keep listed, exclude from net worth and allocation</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                     <div class="adm-settings-foot">
@@ -211,6 +234,11 @@ fn handle(ctx: zx.PageContext) ![]const u8 {
         try finance.setAccountAssetClass(ctx.arena, try formInt(fd, "id"), fd.get("asset_class") orelse "");
         return "ok=class";
     }
+    if (std.mem.eql(u8, action, "set_stale")) {
+        const stale = std.mem.eql(u8, fd.get("stale") orelse "1", "1");
+        try finance.setAccountStale(try formInt(fd, "id"), stale);
+        return if (stale) "ok=stale" else "ok=restored";
+    }
     if (std.mem.eql(u8, action, "delete")) {
         try finance.deleteManualAccount(try formInt(fd, "id"));
         return "ok=deleted";
@@ -226,6 +254,7 @@ fn handle(ctx: zx.PageContext) ![]const u8 {
             .currency = fd.get("currency") orelse "USD",
             .balance = balance,
             .notes = fd.get("notes") orelse "",
+            .stale = fd.get("stale") != null,
         });
         return "ok=saved";
     }

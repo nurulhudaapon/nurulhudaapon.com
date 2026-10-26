@@ -1,4 +1,4 @@
-pub const Icon = enum { home, question, calendar, clock, file, external, chevron_right, chevrons, menu, user, video, arrow_left, chart, settings };
+pub const Icon = enum { home, question, calendar, clock, file, external, chevron_right, chevrons, menu, more, user, video, arrow_left, chart, settings };
 
 pub fn icon(allocator: zx.Allocator, kind: Icon) zx.Component {
     return switch (kind) {
@@ -61,6 +61,13 @@ pub fn icon(allocator: zx.Allocator, kind: Icon) zx.Component {
                 <path d="M4 6h16" />
                 <path d="M4 12h16" />
                 <path d="M4 18h16" />
+            </svg>
+        ),
+        .more => (
+            <svg @{allocator} class="adm-icon adm-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="5" r="1" />
+                <circle cx="12" cy="12" r="1" />
+                <circle cx="12" cy="19" r="1" />
             </svg>
         ),
         .user => (

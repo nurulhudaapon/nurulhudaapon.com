@@ -153,13 +153,14 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     ) else (
                         <div class="adm-finance-accounts" style="border:0;padding:0.25rem 1.25rem 1rem">
                             {for (data.accounts) |row| (
-                                <div class="adm-finance-account">
+                                <div class={if (finance.isAccountStale(row.account)) "adm-finance-account adm-row-stale" else "adm-finance-account"}>
                                     <div>
                                         <span class="adm-table-title">{row.account.name}</span>
                                         <span class="adm-table-sub">
                                             {if (row.account.institution.len > 0) row.account.institution else row.account.broker}
                                             · {finance.accountTypeLabel(ctx.arena, row.account.account_type)}
                                             · {row.account.asset_class}
+                                            {if (finance.isAccountStale(row.account)) " · stale (excluded)" else ""}
                                         </span>
                                     </div>
                                     <div class="adm-finance-account-vals">
@@ -188,7 +189,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {for (data.holdings[0..@min(data.holdings.len, 10)]) |h| (
+                                    {for (data.holdings) |h| (
                                         <tr>
                                             <td>
                                                 <span class="adm-table-title">{h.symbol}</span>
@@ -274,6 +275,10 @@ fn barWidth(arena: zx.Allocator, pct: f64) []const u8 {
 }
 
 fn accountSub(arena: zx.Allocator, row: finance.AccountRow) []const u8 {
+    if (finance.isAccountStale(row.account)) {
+        if (std.ascii.eqlIgnoreCase(row.account.currency, "USD")) return "excluded";
+        return std.fmt.allocPrint(arena, "{s} · excluded", .{finance.formatMoney(arena, row.value_usd, "USD")}) catch "excluded";
+    }
     const pct = finance.formatPct(arena, row.weight_pct);
     if (row.cash_usd > 0.005) {
         const cash = finance.formatMoney(arena, row.account.cash, row.account.currency);
