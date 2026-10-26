@@ -1,0 +1,495 @@
+const FlashKind = enum { none, ok, err };
+
+const ToolbarState = struct {
+    kind: FlashKind = .none,
+    msg: []const u8 = "",
+    reload_to: []const u8 = "",
+};
+
+const skeleton_rows = [_]void{ {}, {}, {} };
+const alloc_skeleton_rows = [_]void{ {}, {}, {}, {}, {} };
+
+pub fn Toolbar(ctx: *zx.ComponentCtx(struct { needs_ibkr: bool, flash: ?ui.Flash })) zx.Component {
+    const initial: ToolbarState = if (ctx.props.flash) |f| .{
+        .kind = if (f.kind == .ok) .ok else .err,
+        .msg = f.text,
+    } else .{};
+    const flash = ctx.state(ToolbarState, initial);
+    const sync_action = ctx.action(syncIbkr, .{ .on_settle = afterSync });
+    const pending = sync_action.pending;
+    const alloc = ctx.allocator;
+    const state = flash.get();
+
+    return (
+        <div @allocator={alloc}>
+            {if (state.reload_to.len > 0) (
+                <span hidden data-finance-reload={state.reload_to}></span>
+            )}
+            <div class="adm-toolbar">
+                <div class="adm-toolbar-main">
+                    <h1 class="adm-page-title">Portfolio</h1>
+                    <div class="adm-page-actions">
+                        <div class="adm-nav-group">
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/accounts">Accounts</a>
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/allocation">Allocation</a>
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/zakat">Zakat</a>
+                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/rates">Rates</a>
+                        </div>
+                        <form action={sync_action} class="adm-inline">
+                            <button class="adm-btn adm-btn-ghost" type="submit" disabled={pending} title="Pull latest IBKR Flex balances and holdings">
+                                {if (pending) "Refreshing…" else "Refresh"}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                <p class="adm-page-desc">Net worth in USD from the last saved snapshot. Refresh pulls IBKR; update FX under Rates.</p>
+            </div>
+            <ui.FlashBanner flash={bannerFlash(state)} />
+
+            {if (ctx.props.needs_ibkr) (
+                <div class="adm-card" style="padding:1rem 1.25rem;margin-bottom:1rem">
+                    <p class="adm-hint">
+                        Connect read-only IBKR Flex in <a href="/admin/settings">Settings</a> to pull brokerage accounts. Bank, deposits, and physical assets are added under <a href="/admin/finance/accounts">Accounts</a>.
+                    </p>
+                </div>
+            )}
+        </div>
+    );
+}
+
+pub fn Kpis(allocator: zx.Allocator, props: struct { loading: bool }) zx.Component {
+    const data: ?finance.PortfolioSummary = if (props.loading)
+        null
+    else
+        finance.portfolioSummary(allocator) catch null;
+
+    return (
+        <div @allocator={allocator} class="adm-kpis">
+            <div class="adm-kpi">
+                <p class="adm-label">Net worth</p>
+                <p class="adm-kpi-lg">
+                    {if (data) |d| finance.formatMoney(allocator, d.net_worth, "USD") else "…"}
+                </p>
+                <p class="adm-hint">
+                    {if (data) |d| (
+                        <span>
+                            {finance.formatMoney(allocator, d.net_worth_bdt, "BDT")}
+                            · 1 USD = {finance.formatMoney(allocator, d.usd_bdt_rate, "BDT")}
+                        </span>
+                    ) else (
+                        <span>… · …</span>
+                    )}
+                </p>
+            </div>
+            <div class="adm-kpi">
+                <p class="adm-label">Invested</p>
+                <p class="adm-kpi-val">
+                    {if (data) |d| finance.formatMoney(allocator, d.invested_total, "USD") else "…"}
+                </p>
+                <p class="adm-hint">
+                    {if (data) |d| (
+                        <span>{d.holding_count} holdings</span>
+                    ) else (
+                        <span>… holdings</span>
+                    )}
+                </p>
+            </div>
+            <div class="adm-kpi">
+                <p class="adm-label">Cash</p>
+                <p class="adm-kpi-val">
+                    {if (data) |d| finance.formatMoney(allocator, d.cash_total, "USD") else "…"}
+                </p>
+                <p class="adm-hint">
+                    {if (data) |d| (
+                        <span>
+                            {d.account_count} accounts
+                            {if (d.last_synced) |at| (
+                                <span> · IBKR {format.ago(allocator, at)}</span>
+                            )}
+                        </span>
+                    ) else (
+                        <span>… accounts · …</span>
+                    )}
+                </p>
+            </div>
+        </div>
+    );
+}
+
+pub fn AllocationPanel(allocator: zx.Allocator, props: struct { loading: bool }) zx.Component {
+    const allocations: []const finance.AllocationActual = if (props.loading)
+        &.{}
+    else
+        finance.listAllocationActuals(allocator) catch &.{};
+
+    return (
+        <section @allocator={allocator} class="adm-card adm-alloc">
+            <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                <span>Asset allocation</span>
+                <a class="adm-hint" href="/admin/finance/allocation">Edit targets</a>
+            </div>
+            {if (!props.loading and allocations.len == 0) (
+                <div class="adm-alloc-body adm-alloc-empty">
+                    <ui.Empty text="No balances yet. Add accounts or sync IBKR." />
+                </div>
+            ) else (
+                <div class="adm-alloc-body">
+                    <div class="adm-donut">
+                        <svg viewBox="0 0 120 120" aria-hidden="true">
+                            {if (props.loading) (
+                                <circle class="adm-donut-seg" cx="60" cy="60" r="42" stroke="#e4e4e7" stroke-dasharray="264 0" stroke-dashoffset="0" transform="rotate(-90 60 60)"></circle>
+                            ) else (
+                                <g>
+                                    {for (donutSlices(allocator, allocations)) |slice| (
+                                        <circle
+                                            class="adm-donut-seg"
+                                            cx="60"
+                                            cy="60"
+                                            r="42"
+                                            stroke={slice.color}
+                                            stroke-dasharray={slice.dash}
+                                            stroke-dashoffset={slice.offset}
+                                            transform="rotate(-90 60 60)"
+                                        ></circle>
+                                    )}
+                                </g>
+                            )}
+                        </svg>
+                        <div class="adm-donut-mid">
+                            <span class="adm-label">Drift</span>
+                            <span class="adm-donut-val">
+                                {if (props.loading) "…" else finance.formatPct(allocator, allocationDrift(allocations))}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="adm-alloc-list">
+                        {if (props.loading) (
+                            <div class="adm-contents">
+                                {for (alloc_skeleton_rows) |_| (
+                                    <div class="adm-alloc-row">
+                                        <div class="adm-alloc-meta">
+                                            <span class="adm-swatch" style="background:#e4e4e7"></span>
+                                            <div>
+                                                <span class="adm-table-title">…</span>
+                                                <span class="adm-hint">…</span>
+                                            </div>
+                                        </div>
+                                        <div class="adm-bars">
+                                            <div class="adm-bar" title="Actual"></div>
+                                            <div class="adm-bar adm-bar-tgt" title="Target"></div>
+                                        </div>
+                                        <div class="adm-pcts">
+                                            <span>…</span>
+                                            <span class="adm-hint">…</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ) else (
+                            <div class="adm-contents">
+                                {for (allocations, 0..) |a, i| (
+                                    <div class="adm-alloc-row">
+                                        <div class="adm-alloc-meta">
+                                            <span class="adm-swatch" style={swatchStyle(allocator, i)}></span>
+                                            <div>
+                                                <span class="adm-table-title">{a.name}</span>
+                                                <span class="adm-hint">{finance.formatMoney(allocator, a.actual_value, "USD")}</span>
+                                            </div>
+                                        </div>
+                                        <div class="adm-bars">
+                                            <div class="adm-bar" title="Actual">
+                                                <span class="adm-fill" style={barWidth(allocator, a.actual_pct)}></span>
+                                            </div>
+                                            {if (a.target_pct > 0) (
+                                                <div class="adm-bar adm-bar-tgt" title="Target">
+                                                    <span class="adm-fill adm-fill-tgt" style={barWidth(allocator, a.target_pct)}></span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div class="adm-pcts">
+                                            <span>{finance.formatPct(allocator, a.actual_pct)}</span>
+                                            {if (a.target_pct > 0) (
+                                                <span class="adm-hint">{driftLabel(allocator, a)}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </section>
+    );
+}
+
+pub fn AccountsPanel(allocator: zx.Allocator, props: struct { loading: bool }) zx.Component {
+    const accounts: []const finance.AccountRow = if (props.loading)
+        &.{}
+    else
+        finance.listAccountRows(allocator) catch &.{};
+
+    return (
+        <section @allocator={allocator} class="adm-card">
+            <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                <span>Accounts</span>
+                <a class="adm-hint" href="/admin/finance/accounts">Manage</a>
+            </div>
+            {if (props.loading) (
+                <div class="adm-accts" style="border:0;padding:0.25rem 1.25rem 1rem">
+                    {for (skeleton_rows) |_| (
+                        <div class="adm-acct">
+                            <div>
+                                <span class="adm-table-title">…</span>
+                                <span class="adm-table-sub">…</span>
+                            </div>
+                            <div class="adm-acct-vals">
+                                <span>…</span>
+                                <span class="adm-hint">…</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            ) else if (accounts.len == 0) (
+                <div style="padding:1rem 1.25rem"><ui.Empty text="No accounts with a balance." /></div>
+            ) else (
+                <div class="adm-accts" style="border:0;padding:0.25rem 1.25rem 1rem">
+                    {for (accounts) |row| (
+                        <div class={if (finance.isAccountStale(row.account)) "adm-acct adm-row-stale" else "adm-acct"}>
+                            <div>
+                                <span class="adm-table-title">{row.account.name}</span>
+                                <span class="adm-table-sub">
+                                    {if (row.account.institution.len > 0) row.account.institution else row.account.broker}
+                                    · {finance.accountTypeLabel(allocator, row.account.account_type)}
+                                    · {row.account.asset_class}
+                                    {if (finance.isAccountStale(row.account)) " · stale (excluded)" else ""}
+                                </span>
+                            </div>
+                            <div class="adm-acct-vals">
+                                <span>{finance.formatMoney(allocator, row.account.net_liquidation, row.account.currency)}</span>
+                                <span class="adm-hint">{accountSub(allocator, row)}</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+}
+
+pub fn HoldingsPanel(allocator: zx.Allocator, props: struct { loading: bool }) zx.Component {
+    const holdings: []const finance.Holding = if (props.loading)
+        &.{}
+    else
+        finance.listHoldingsLimited(allocator, 10) catch &.{};
+
+    return (
+        <div @allocator={allocator}>
+            {if (props.loading) (
+                <section class="adm-card">
+                    <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                        <span>Top holdings</span>
+                        <span class="adm-hint">From IBKR Flex</span>
+                    </div>
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th class="adm-hide-sm">Class</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {for (skeleton_rows) |_| (
+                                    <tr>
+                                        <td>
+                                            <span class="adm-table-title">…</span>
+                                            <span class="adm-table-sub">…</span>
+                                        </td>
+                                        <td class="adm-hide-sm">…</td>
+                                        <td>…</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            ) else if (holdings.len == 0) (
+                <span></span>
+            ) else (
+                <section class="adm-card">
+                    <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                        <span>Top holdings</span>
+                        <span class="adm-hint">From IBKR Flex</span>
+                    </div>
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th class="adm-hide-sm">Class</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {for (holdings) |h| (
+                                    <tr>
+                                        <td>
+                                            <span class="adm-table-title">{h.symbol}</span>
+                                            <span class="adm-table-sub">{h.account_name}</span>
+                                        </td>
+                                        <td class="adm-hide-sm">{h.category}</td>
+                                        <td>{finance.formatMoney(allocator, h.market_value_base, "USD")}</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            )}
+        </div>
+    );
+}
+
+fn syncIbkr(a: *zx.server.Action.Stateful) void {
+    const flash = a.state(ToolbarState);
+    const arena = a.inner.arena;
+
+    fx.refresh(arena);
+    const result = ibkr_api.sync(arena) catch |err| {
+        const msg: []const u8 = switch (err) {
+            error.NotConfigured => "Add IBKR Flex credentials under Settings first.",
+            error.SendFailed, error.StatementFailed => "IBKR rejected the Flex request. Check token and query ID.",
+            error.StatementPending => "IBKR is still generating the report. Sync again in a few seconds.",
+            error.EmptyReport => "Flex report had no accounts. Confirm the query covers your sub-accounts.",
+            else => blk: {
+                zx.log.err("admin: finance sync failed: {any}", .{err});
+                break :blk "Something went wrong. Check the server logs.";
+            },
+        };
+        return flash.set(.{ .kind = .err, .msg = msg });
+    };
+
+    invalidateFinanceCache();
+
+    if (!result.saw_cash_report and !result.saw_equity_summary) {
+        return flash.set(.{
+            .kind = .ok,
+            .msg = "Synced holdings, but Flex had no Cash Report / Equity Summary — add both in Client Portal so cash is included.",
+            .reload_to = "/admin/finance?ok=synced_no_cash",
+        });
+    }
+    flash.set(.{
+        .kind = .ok,
+        .msg = "IBKR balances and holdings refreshed.",
+        .reload_to = "/admin/finance?ok=synced",
+    });
+}
+
+fn invalidateFinanceCache() void {
+    // Component caches from @caching="15s:finance_*"
+    _ = zx.cache.scoped(.cmp).delPrefix("cmp:finance") catch 0;
+    // Page cache (WASM/edge) is keyed by pathname.
+    zx.kv.scoped(.@"page-cache").delete("/admin/finance") catch {};
+}
+
+fn bannerFlash(state: ToolbarState) ?ui.Flash {
+    return switch (state.kind) {
+        .none => null,
+        .ok => .{ .text = state.msg, .kind = .ok },
+        .err => .{ .text = state.msg, .kind = .err },
+    };
+}
+
+fn afterSync(outcome: zx.ActionHandle.Outcome) void {
+    if (outcome != .ok) return;
+    _ = zx.client.eval(void,
+        \\(() => {
+        \\  const el = document.querySelector("[data-finance-reload]");
+        \\  if (!el) return;
+        \\  const to = el.getAttribute("data-finance-reload");
+        \\  if (to) location.replace(to);
+        \\})()
+    ) catch {};
+}
+
+const chart_colors = [_][]const u8{ "#f6821f", "#2563eb", "#15803d", "#a16207", "#71717a", "#db2777", "#0d9488" };
+
+const DonutSlice = struct {
+    color: []const u8,
+    dash: []const u8,
+    offset: []const u8,
+};
+
+fn donutSlices(arena: zx.Allocator, allocs: []const finance.AllocationActual) []const DonutSlice {
+    const circumference: f64 = 2.0 * std.math.pi * 42.0;
+    var total: f64 = 0;
+    for (allocs) |a| total += @max(@as(f64, 0), a.actual_value);
+    if (total < 0.005) return &.{};
+
+    const out = arena.alloc(DonutSlice, allocs.len) catch return &.{};
+    var cursor: f64 = 0;
+    const gap: f64 = if (allocs.len > 1) @as(f64, 2) else @as(f64, 0);
+    for (allocs, 0..) |a, i| {
+        const frac = @max(@as(f64, 0), a.actual_value) / total;
+        const len = frac * circumference;
+        const visible = @max(@as(f64, 0), len - gap);
+        out[i] = .{
+            .color = chart_colors[i % chart_colors.len],
+            .dash = std.fmt.allocPrint(arena, "{d:.2} {d:.2}", .{ visible, circumference - visible }) catch "0 264",
+            .offset = std.fmt.allocPrint(arena, "{d:.2}", .{-cursor}) catch "0",
+        };
+        cursor += len;
+    }
+    return out;
+}
+
+fn allocationDrift(allocs: []const finance.AllocationActual) f64 {
+    var sum: f64 = 0;
+    for (allocs) |a| {
+        if (a.target_pct <= 0) continue;
+        sum += @abs(a.actual_pct - a.target_pct);
+    }
+    return sum / 2.0;
+}
+
+fn driftLabel(arena: zx.Allocator, a: finance.AllocationActual) []const u8 {
+    const d = a.actual_pct - a.target_pct;
+    if (@abs(d) < 0.05) return std.fmt.allocPrint(arena, "on target", .{}) catch "on target";
+    if (d > 0) return std.fmt.allocPrint(arena, "+{s} vs target", .{finance.formatPct(arena, d)}) catch "";
+    return std.fmt.allocPrint(arena, "{s} vs target", .{finance.formatPct(arena, d)}) catch "";
+}
+
+fn swatchStyle(arena: zx.Allocator, i: usize) []const u8 {
+    return std.fmt.allocPrint(arena, "background:{s}", .{chart_colors[i % chart_colors.len]}) catch "";
+}
+
+fn barWidth(arena: zx.Allocator, pct: f64) []const u8 {
+    const clamped = @max(0, @min(pct, 100));
+    return std.fmt.allocPrint(arena, "width:{d:.1}%", .{clamped}) catch "width:0%";
+}
+
+fn accountSub(arena: zx.Allocator, row: finance.AccountRow) []const u8 {
+    if (finance.isAccountStale(row.account)) {
+        if (std.ascii.eqlIgnoreCase(row.account.currency, "USD")) return "excluded";
+        return std.fmt.allocPrint(arena, "{s} · excluded", .{finance.formatMoney(arena, row.value_usd, "USD")}) catch "excluded";
+    }
+    const pct = finance.formatPct(arena, row.weight_pct);
+    if (row.cash_usd > 0.005) {
+        const cash = finance.formatMoney(arena, row.account.cash, row.account.currency);
+        if (std.ascii.eqlIgnoreCase(row.account.currency, "USD"))
+            return std.fmt.allocPrint(arena, "cash {s} · {s}", .{ cash, pct }) catch pct;
+        return std.fmt.allocPrint(arena, "cash {s} · {s} · {s}", .{ cash, finance.formatMoney(arena, row.value_usd, "USD"), pct }) catch pct;
+    }
+    if (std.ascii.eqlIgnoreCase(row.account.currency, "USD")) return pct;
+    return std.fmt.allocPrint(arena, "{s} · {s}", .{ finance.formatMoney(arena, row.value_usd, "USD"), pct }) catch pct;
+}
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const format = @import("../format.zig");
+const finance = @import("../../finance/db.zig");
+const ibkr_api = @import("../../finance/ibkr.zig");
+const fx = @import("../../finance/fx.zig");

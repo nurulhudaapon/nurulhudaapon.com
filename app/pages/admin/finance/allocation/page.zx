@@ -42,7 +42,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
                         <span>Current vs target</span>
                     </div>
-                    <div class="adm-alloc-list adm-alloc-list-pad">
+                    <div class="adm-alloc-list adm-alloc-pad">
                         {for (data.allocations) |a| (
                             <div class="adm-alloc-row">
                                 <div class="adm-alloc-meta">
@@ -51,17 +51,17 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                         <span class="adm-hint">{finance.formatMoney(ctx.arena, a.actual_value, "USD")}</span>
                                     </div>
                                 </div>
-                                <div class="adm-alloc-bars">
-                                    <div class="adm-alloc-bar">
-                                        <span class="adm-alloc-fill adm-alloc-fill-actual" style={barWidth(ctx.arena, a.actual_pct)}></span>
+                                <div class="adm-bars">
+                                    <div class="adm-bar">
+                                        <span class="adm-fill" style={barWidth(ctx.arena, a.actual_pct)}></span>
                                     </div>
                                     {if (a.target_pct > 0) (
-                                        <div class="adm-alloc-bar adm-alloc-bar-target">
-                                            <span class="adm-alloc-fill adm-alloc-fill-target" style={barWidth(ctx.arena, a.target_pct)}></span>
+                                        <div class="adm-bar adm-bar-tgt">
+                                            <span class="adm-fill adm-fill-tgt" style={barWidth(ctx.arena, a.target_pct)}></span>
                                         </div>
                                     )}
                                 </div>
-                                <div class="adm-alloc-pcts">
+                                <div class="adm-pcts">
                                     <span>{finance.formatPct(ctx.arena, a.actual_pct)}</span>
                                     {if (a.target_pct > 0) (
                                         <span class="adm-hint">of {finance.formatPct(ctx.arena, a.target_pct)}</span>

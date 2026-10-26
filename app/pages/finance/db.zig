@@ -232,6 +232,18 @@ pub fn getAccount(arena: std.mem.Allocator, id: i64) !?Account {
     , .{id});
 }
 
+pub const PortfolioSummary = struct {
+    net_worth: f64,
+    cash_total: f64,
+    invested_total: f64,
+    account_count: usize,
+    holding_count: usize,
+    last_synced: ?[]const u8,
+    usd_bdt_rate: f64,
+    net_worth_bdt: f64,
+    fx_as_of: ?i64,
+};
+
 const SnapshotMeta = struct {
     net_worth: f64,
     cash_total: f64,
@@ -242,10 +254,7 @@ const SnapshotMeta = struct {
     fx_as_of: i64,
 };
 
-pub fn snapshot(arena: std.mem.Allocator) !Snapshot {
-    const accounts = try listAccountRows(arena);
-    const allocations = try listAllocationActuals(arena);
-    const holdings = try listHoldingsLimited(arena, 10);
+pub fn portfolioSummary(arena: std.mem.Allocator) !PortfolioSummary {
     const meta = (try zx.db.row(arena, SnapshotMeta,
         \\WITH valued AS (
         \\  SELECT
@@ -283,23 +292,43 @@ pub fn snapshot(arena: std.mem.Allocator) !Snapshot {
         .fx_as_of = 0,
     };
 
+    const rate = if (meta.usd_bdt_rate > 0) meta.usd_bdt_rate else 122;
     return .{
         .net_worth = meta.net_worth,
         .cash_total = meta.cash_total,
         .invested_total = @max(0, meta.net_worth - meta.cash_total),
-        .accounts = accounts,
-        .holdings = holdings,
-        .allocations = allocations,
         .account_count = @intCast(@max(meta.account_count, 0)),
         .holding_count = @intCast(@max(meta.holding_count, 0)),
         .last_synced = meta.last_synced,
-        .usd_bdt_rate = if (meta.usd_bdt_rate > 0) meta.usd_bdt_rate else 122,
-        .net_worth_bdt = meta.net_worth * (if (meta.usd_bdt_rate > 0) meta.usd_bdt_rate else 122),
+        .usd_bdt_rate = rate,
+        .net_worth_bdt = meta.net_worth * rate,
         .fx_as_of = if (meta.fx_as_of > 0) meta.fx_as_of else null,
     };
 }
 
-fn listAllocationActuals(arena: std.mem.Allocator) ![]const AllocationActual {
+pub fn snapshot(arena: std.mem.Allocator) !Snapshot {
+    const accounts = try listAccountRows(arena);
+    const allocations = try listAllocationActuals(arena);
+    const holdings = try listHoldingsLimited(arena, 10);
+    const meta = try portfolioSummary(arena);
+
+    return .{
+        .net_worth = meta.net_worth,
+        .cash_total = meta.cash_total,
+        .invested_total = meta.invested_total,
+        .accounts = accounts,
+        .holdings = holdings,
+        .allocations = allocations,
+        .account_count = meta.account_count,
+        .holding_count = meta.holding_count,
+        .last_synced = meta.last_synced,
+        .usd_bdt_rate = meta.usd_bdt_rate,
+        .net_worth_bdt = meta.net_worth_bdt,
+        .fx_as_of = meta.fx_as_of,
+    };
+}
+
+pub fn listAllocationActuals(arena: std.mem.Allocator) ![]const AllocationActual {
     return try zx.db.rows(arena, AllocationActual,
         \\WITH valued AS (
         \\  SELECT

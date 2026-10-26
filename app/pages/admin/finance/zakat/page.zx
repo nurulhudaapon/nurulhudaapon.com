@@ -45,20 +45,20 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             </div>
             <ui.FlashBanner flash={flash} />
 
-            <div class="adm-finance-kpis">
-                <div class="adm-finance-kpi">
+            <div class="adm-kpis">
+                <div class="adm-kpi">
                     <p class="adm-label">Net worth</p>
-                    <p class="adm-finance-kpi-value">{finance.formatMoney(ctx.arena, data.net_worth, "USD")}</p>
+                    <p class="adm-kpi-val">{finance.formatMoney(ctx.arena, data.net_worth, "USD")}</p>
                     <p class="adm-hint">{finance.formatMoney(ctx.arena, data.net_worth_bdt, "BDT")}</p>
                 </div>
-                <div class="adm-finance-kpi">
+                <div class="adm-kpi">
                     <p class="adm-label">Est. zakat (2.5%)</p>
-                    <p class="adm-finance-kpi-value">{finance.formatMoney(ctx.arena, due, "USD")}</p>
+                    <p class="adm-kpi-val">{finance.formatMoney(ctx.arena, due, "USD")}</p>
                     <p class="adm-hint">{finance.formatMoney(ctx.arena, due * data.usd_bdt_rate, "BDT")}</p>
                 </div>
-                <div class="adm-finance-kpi">
+                <div class="adm-kpi">
                     <p class="adm-label">Gold held</p>
-                    <p class="adm-finance-kpi-value">{finance.formatMoney(ctx.arena, gold_g, "XAU")}</p>
+                    <p class="adm-kpi-val">{finance.formatMoney(ctx.arena, gold_g, "XAU")}</p>
                     <p class="adm-hint">
                         Gold nisab {finance.formatMoney(ctx.arena, finance.gold_nisab_grams, "XAU")}
                         · {if (gold_g >= finance.gold_nisab_grams) "at/above gold nisab" else "below gold nisab (wealth may still qualify)"}

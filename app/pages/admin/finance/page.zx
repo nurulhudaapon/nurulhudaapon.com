@@ -1,22 +1,6 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    if (ctx.request.method == .POST) {
-        const flag = handle(ctx) catch |err| switch (err) {
-            error.NotConfigured => "err=not_configured",
-            error.SendFailed, error.StatementFailed => "err=ibkr",
-            error.StatementPending => "err=pending",
-            error.EmptyReport => "err=empty",
-            else => blk: {
-                zx.log.err("admin: finance sync failed: {any}", .{err});
-                break :blk "err=failed";
-            },
-        };
-        return ui.redirect(ctx, try ctx.fmt("/admin/finance?{s}", .{flag}));
-    }
-
     const ibkr_form = credentials.loadIbkrForm(ctx.arena);
     const needs_ibkr = !ibkr_form.token_set or ibkr_form.query_id.len == 0;
-
-    const data = try finance.snapshot(ctx.arena);
     const flash = ui.flashFrom(ctx.request.queries, &.{
         .{ "synced", "IBKR balances and holdings refreshed." },
         .{ "synced_no_cash", "Synced holdings, but Flex had no Cash Report / Equity Summary — add both in Client Portal so cash is included." },
@@ -29,277 +13,55 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     return (
         <div @allocator={ctx.arena}>
-            <div class="adm-toolbar">
-                <div class="adm-toolbar-main">
-                    <h1 class="adm-page-title">Portfolio</h1>
-                    <div class="adm-page-actions">
-                        <div class="adm-nav-group">
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/accounts">Accounts</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/allocation">Allocation</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/zakat">Zakat</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/rates">Rates</a>
-                        </div>
-                        {if (data.last_synced) |at| (
-                            <span class="adm-meta">IBKR {format.ago(ctx.arena, at)}</span>
-                        )}
-                        <form method="post" action="/admin/finance" class="adm-inline">
-                            <button class="adm-btn adm-btn-ghost" type="submit" name="action" value="sync" title="Pull latest IBKR Flex balances and holdings">Refresh</button>
-                        </form>
-                    </div>
-                </div>
-                <p class="adm-page-desc">Net worth in USD from the last saved snapshot. Refresh pulls IBKR; update FX under Rates.</p>
-            </div>
-            <ui.FlashBanner flash={flash} />
+            <Toolbar @client needs_ibkr={needs_ibkr} flash={flash} />
 
-            {if (needs_ibkr) (
-                <div class="adm-card" style="padding:1rem 1.25rem;margin-bottom:1rem">
-                    <p class="adm-hint">
-                        Connect read-only IBKR Flex in <a href="/admin/settings">Settings</a> to pull brokerage accounts. Bank, deposits, and physical assets are added under <a href="/admin/finance/accounts">Accounts</a>.
-                    </p>
-                </div>
-            )}
-
-            <div class="adm-finance-kpis">
-                <div class="adm-finance-kpi">
-                    <p class="adm-label">Net worth</p>
-                    <p class="adm-finance-total-value">{finance.formatMoney(ctx.arena, data.net_worth, "USD")}</p>
-                    <p class="adm-hint">
-                        {finance.formatMoney(ctx.arena, data.net_worth_bdt, "BDT")}
-                        · 1 USD = {finance.formatMoney(ctx.arena, data.usd_bdt_rate, "BDT")}
-                    </p>
-                </div>
-                <div class="adm-finance-kpi">
-                    <p class="adm-label">Invested</p>
-                    <p class="adm-finance-kpi-value">{finance.formatMoney(ctx.arena, data.invested_total, "USD")}</p>
-                    <p class="adm-hint">{data.holding_count} holdings</p>
-                </div>
-                <div class="adm-finance-kpi">
-                    <p class="adm-label">Cash</p>
-                    <p class="adm-finance-kpi-value">{finance.formatMoney(ctx.arena, data.cash_total, "USD")}</p>
-                    <p class="adm-hint">{data.account_count} accounts</p>
-                </div>
+            <div
+                @async={.stream}
+                @fallback={(<Kpis loading={true} />)}
+            >
+                <Kpis loading={false} @caching="15s:finance_kpis" />
             </div>
 
-            <section class="adm-card adm-finance-alloc-card">
-                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
-                    <span>Asset allocation</span>
-                    <a class="adm-hint" href="/admin/finance/allocation">Edit targets</a>
+            <div
+                @async={.stream}
+                @fallback={(<AllocationPanel loading={true} />)}
+            >
+                <AllocationPanel loading={false} @caching="15s:finance_allocation" />
+            </div>
+
+            <div class="adm-split">
+                <div
+                    @async={.stream}
+                    @fallback={(<AccountsPanel loading={true} />)}
+                >
+                    <AccountsPanel loading={false} @caching="15s:finance_accounts" />
                 </div>
-                {if (data.allocations.len == 0) (
-                    <div style="padding:1rem 1.25rem"><ui.Empty text="No balances yet. Add accounts or sync IBKR." /></div>
-                ) else (
-                    <div class="adm-finance-alloc-body">
-                        <div class="adm-finance-donut-wrap">
-                            <svg class="adm-finance-donut" viewBox="0 0 120 120" aria-hidden="true">
-                                {for (donutSlices(ctx.arena, data.allocations)) |slice| (
-                                    <circle
-                                        class="adm-finance-donut-seg"
-                                        cx="60"
-                                        cy="60"
-                                        r="42"
-                                        stroke={slice.color}
-                                        stroke-dasharray={slice.dash}
-                                        stroke-dashoffset={slice.offset}
-                                        transform="rotate(-90 60 60)"
-                                    ></circle>
-                                )}
-                            </svg>
-                            <div class="adm-finance-donut-center">
-                                <span class="adm-label">Drift</span>
-                                <span class="adm-finance-donut-metric">{finance.formatPct(ctx.arena, allocationDrift(data.allocations))}</span>
-                            </div>
-                        </div>
-                        <div class="adm-alloc-list">
-                            {for (data.allocations, 0..) |a, i| (
-                                <div class="adm-alloc-row">
-                                    <div class="adm-alloc-meta">
-                                        <span class="adm-alloc-swatch" style={swatchStyle(ctx.arena, i)}></span>
-                                        <div>
-                                            <span class="adm-table-title">{a.name}</span>
-                                            <span class="adm-hint">{finance.formatMoney(ctx.arena, a.actual_value, "USD")}</span>
-                                        </div>
-                                    </div>
-                                    <div class="adm-alloc-bars">
-                                        <div class="adm-alloc-bar" title="Actual">
-                                            <span class="adm-alloc-fill adm-alloc-fill-actual" style={barWidth(ctx.arena, a.actual_pct)}></span>
-                                        </div>
-                                        {if (a.target_pct > 0) (
-                                            <div class="adm-alloc-bar adm-alloc-bar-target" title="Target">
-                                                <span class="adm-alloc-fill adm-alloc-fill-target" style={barWidth(ctx.arena, a.target_pct)}></span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div class="adm-alloc-pcts">
-                                        <span>{finance.formatPct(ctx.arena, a.actual_pct)}</span>
-                                        {if (a.target_pct > 0) (
-                                            <span class="adm-hint">{driftLabel(ctx.arena, a)}</span>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-            </section>
 
-            <div class="adm-finance-dashboard">
-                <section class="adm-card">
-                    <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
-                        <span>Accounts</span>
-                        <a class="adm-hint" href="/admin/finance/accounts">Manage</a>
-                    </div>
-                    {if (data.accounts.len == 0) (
-                        <div style="padding:1rem 1.25rem"><ui.Empty text="No accounts with a balance." /></div>
-                    ) else (
-                        <div class="adm-finance-accounts" style="border:0;padding:0.25rem 1.25rem 1rem">
-                            {for (data.accounts) |row| (
-                                <div class={if (finance.isAccountStale(row.account)) "adm-finance-account adm-row-stale" else "adm-finance-account"}>
-                                    <div>
-                                        <span class="adm-table-title">{row.account.name}</span>
-                                        <span class="adm-table-sub">
-                                            {if (row.account.institution.len > 0) row.account.institution else row.account.broker}
-                                            · {finance.accountTypeLabel(ctx.arena, row.account.account_type)}
-                                            · {row.account.asset_class}
-                                            {if (finance.isAccountStale(row.account)) " · stale (excluded)" else ""}
-                                        </span>
-                                    </div>
-                                    <div class="adm-finance-account-vals">
-                                        <span>{finance.formatMoney(ctx.arena, row.account.net_liquidation, row.account.currency)}</span>
-                                        <span class="adm-hint">{accountSub(ctx.arena, row)}</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </section>
-
-                {if (data.holdings.len > 0) (
-                    <section class="adm-card">
-                        <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
-                            <span>Top holdings</span>
-                            <span class="adm-hint">From IBKR Flex</span>
-                        </div>
-                        <div class="adm-table-wrap">
-                            <table class="adm-table">
-                                <thead>
-                                    <tr>
-                                        <th>Symbol</th>
-                                        <th class="adm-hide-sm">Class</th>
-                                        <th>Value</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {for (data.holdings) |h| (
-                                        <tr>
-                                            <td>
-                                                <span class="adm-table-title">{h.symbol}</span>
-                                                <span class="adm-table-sub">{h.account_name}</span>
-                                            </td>
-                                            <td class="adm-hide-sm">{h.category}</td>
-                                            <td>{finance.formatMoney(ctx.arena, h.market_value_base, "USD")}</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </section>
-                )}
+                <div
+                    @async={.stream}
+                    @fallback={(<HoldingsPanel loading={true} />)}
+                >
+                    <HoldingsPanel loading={false} @caching="15s:finance_holdings" />
+                </div>
             </div>
         </div>
     );
 }
 
-fn handle(ctx: zx.PageContext) ![]const u8 {
-    const action = ctx.request.formData().get("action") orelse return error.NotConfigured;
-    if (!std.mem.eql(u8, action, "sync")) return error.NotConfigured;
-    fx.refresh(ctx.arena);
-    const result = try ibkr_api.sync(ctx.arena);
-    if (!result.saw_cash_report and !result.saw_equity_summary) return "ok=synced_no_cash";
-    return "ok=synced";
-}
-
-const chart_colors = [_][]const u8{ "#f6821f", "#2563eb", "#15803d", "#a16207", "#71717a", "#db2777", "#0d9488" };
-
-const DonutSlice = struct {
-    color: []const u8,
-    dash: []const u8,
-    offset: []const u8,
-};
-
-fn donutSlices(arena: zx.Allocator, allocs: []const finance.AllocationActual) []const DonutSlice {
-    const circumference: f64 = 2.0 * std.math.pi * 42.0;
-    var total: f64 = 0;
-    for (allocs) |a| total += @max(@as(f64, 0), a.actual_value);
-    if (total < 0.005) return &.{};
-
-    const out = arena.alloc(DonutSlice, allocs.len) catch return &.{};
-    var cursor: f64 = 0;
-    const gap: f64 = if (allocs.len > 1) @as(f64, 2) else @as(f64, 0);
-    for (allocs, 0..) |a, i| {
-        const frac = @max(@as(f64, 0), a.actual_value) / total;
-        const len = frac * circumference;
-        const visible = @max(@as(f64, 0), len - gap);
-        out[i] = .{
-            .color = chart_colors[i % chart_colors.len],
-            .dash = std.fmt.allocPrint(arena, "{d:.2} {d:.2}", .{ visible, circumference - visible }) catch "0 264",
-            .offset = std.fmt.allocPrint(arena, "{d:.2}", .{-cursor}) catch "0",
-        };
-        cursor += len;
-    }
-    return out;
-}
-
-fn allocationDrift(allocs: []const finance.AllocationActual) f64 {
-    var sum: f64 = 0;
-    for (allocs) |a| {
-        if (a.target_pct <= 0) continue;
-        sum += @abs(a.actual_pct - a.target_pct);
-    }
-    return sum / 2.0;
-}
-
-fn driftLabel(arena: zx.Allocator, a: finance.AllocationActual) []const u8 {
-    const d = a.actual_pct - a.target_pct;
-    if (@abs(d) < 0.05) return std.fmt.allocPrint(arena, "on target", .{}) catch "on target";
-    if (d > 0) return std.fmt.allocPrint(arena, "+{s} vs target", .{finance.formatPct(arena, d)}) catch "";
-    return std.fmt.allocPrint(arena, "{s} vs target", .{finance.formatPct(arena, d)}) catch "";
-}
-
-fn swatchStyle(arena: zx.Allocator, i: usize) []const u8 {
-    return std.fmt.allocPrint(arena, "background:{s}", .{chart_colors[i % chart_colors.len]}) catch "";
-}
-
-fn barWidth(arena: zx.Allocator, pct: f64) []const u8 {
-    const clamped = @max(0, @min(pct, 100));
-    return std.fmt.allocPrint(arena, "width:{d:.1}%", .{clamped}) catch "width:0%";
-}
-
-fn accountSub(arena: zx.Allocator, row: finance.AccountRow) []const u8 {
-    if (finance.isAccountStale(row.account)) {
-        if (std.ascii.eqlIgnoreCase(row.account.currency, "USD")) return "excluded";
-        return std.fmt.allocPrint(arena, "{s} · excluded", .{finance.formatMoney(arena, row.value_usd, "USD")}) catch "excluded";
-    }
-    const pct = finance.formatPct(arena, row.weight_pct);
-    if (row.cash_usd > 0.005) {
-        const cash = finance.formatMoney(arena, row.account.cash, row.account.currency);
-        if (std.ascii.eqlIgnoreCase(row.account.currency, "USD"))
-            return std.fmt.allocPrint(arena, "cash {s} · {s}", .{ cash, pct }) catch pct;
-        return std.fmt.allocPrint(arena, "cash {s} · {s} · {s}", .{ cash, finance.formatMoney(arena, row.value_usd, "USD"), pct }) catch pct;
-    }
-    if (std.ascii.eqlIgnoreCase(row.account.currency, "USD")) return pct;
-    return std.fmt.allocPrint(arena, "{s} · {s}", .{ finance.formatMoney(arena, row.value_usd, "USD"), pct }) catch pct;
-}
-
 pub const options: zx.PageOptions = .{
-    .methods = &.{ .GET, .POST },
-    .rendering = .request,
+    .methods = &.{.GET},
+    .rendering = .streamed,
+    .caching = .tag("15s:finance_page"),
 };
 
-const std = @import("std");
 const zx = @import("zx");
+
 const ui = @import("../ui.zx");
-const format = @import("../format.zig");
-const finance = @import("../../finance/db.zig");
-const ibkr_api = @import("../../finance/ibkr.zig");
-const fx = @import("../../finance/fx.zig");
 const credentials = @import("../../../db/credentials.zig");
+
+const dashboard = @import("dashboard.zx");
+pub const Toolbar = dashboard.Toolbar;
+const Kpis = dashboard.Kpis;
+const AllocationPanel = dashboard.AllocationPanel;
+const AccountsPanel = dashboard.AccountsPanel;
+const HoldingsPanel = dashboard.HoldingsPanel;
