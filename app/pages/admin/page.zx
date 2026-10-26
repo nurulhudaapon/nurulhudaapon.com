@@ -8,6 +8,20 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         <div @allocator={ctx.arena} class="adm-home">
             <h1 class="adm-home-title">What needs you today?</h1>
 
+            <div class="adm-home-glance">
+                <NetWorthGlance @client />
+                <a class="adm-glance" href="/admin/questions">
+                    <span class="adm-glance-label">Unanswered</span>
+                    <span class="adm-glance-value">{unanswered.len}</span>
+                    <span class="adm-glance-sub">Questions from /ask</span>
+                </a>
+                <a class="adm-glance" href="/admin/bookings">
+                    <span class="adm-glance-label">Upcoming</span>
+                    <span class="adm-glance-value">{booking.counts(ctx.arena).upcoming}</span>
+                    <span class="adm-glance-sub">Bookings on /schedule</span>
+                </a>
+            </div>
+
             <div class="adm-columns">
                 <section class="adm-column">
                     <a class="adm-column-head" href="/admin/questions">
@@ -57,6 +71,9 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                         <span class="adm-pill">{sources.len}</span>
                         {ui.icon(ctx.arena, .chevron_right)}
                     </a>
+                    {if (sources.len == 0) (
+                        <ui.Empty text="No posts yet." />
+                    )}
                     {for (sources[0..@min(sources.len, 5)]) |p| (
                         <a class="adm-row" href=`/admin/posts/{p.slug}`>
                             {ui.icon(ctx.arena, .file)}
@@ -73,7 +90,113 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     );
 }
 
-pub const options: zx.PageOptions = .{ .rendering = .request };
+const reveal_ms: u32 = 4000;
+
+const PeekState = struct {
+    amount: []const u8 = "",
+    account_count: usize = 0,
+    visible: bool = false,
+};
+
+var peek_state: ?*zx.State(PeekState) = null;
+var peek_pending: u32 = 0;
+
+pub fn NetWorthGlance(ctx: *zx.ComponentCtx(struct {})) zx.Component {
+    const peek = ctx.state(PeekState, .{});
+    peek_state = peek;
+    const load = ctx.action(loadNetWorth, .{ .on_settle = afterPeek });
+    const pending = load.pending;
+    const alloc = ctx.allocator;
+    const p = peek.get();
+    const shown = p.visible;
+    const has_amount = p.amount.len > 0;
+
+    return (
+        <div @allocator={alloc} class="adm-glance">
+            <div class="adm-glance-label-row">
+                <span class="adm-glance-label">Net worth</span>
+                {if (shown) (
+                    <button
+                        type="button"
+                        class="adm-glance-peek"
+                        onclick={ctx.bind(hideBalance)}
+                        title="Hide balance"
+                        aria-label="Hide balance"
+                        aria-pressed="true"
+                    >
+                        {ui.icon(alloc, .eye_off)}
+                    </button>
+                ) else (
+                    <form action={load} class="adm-inline">
+                        <button
+                            type="submit"
+                            class="adm-glance-peek"
+                            disabled={pending}
+                            title="Show balance for a few seconds"
+                            aria-label="Show balance for a few seconds"
+                            aria-pressed="false"
+                        >
+                            {ui.icon(alloc, if (pending) .refresh else .eye)}
+                        </button>
+                    </form>
+                )}
+            </div>
+            <span class={if (shown) "adm-glance-value" else "adm-glance-value adm-glance-value-masked"}>
+                {if (shown and has_amount) p.amount else "••••••"}
+            </span>
+            <a class="adm-glance-sub" href="/admin/finance">
+                {if (has_amount) (
+                    <span>{p.account_count} accounts · Open portfolio</span>
+                ) else (
+                    <span>Open portfolio</span>
+                )}
+            </a>
+        </div>
+    );
+}
+
+fn loadNetWorth(a: *zx.server.Action.Stateful) void {
+    const peek = a.state(PeekState);
+    const summary = finance.portfolioSummary(a.inner.arena) catch {
+        peek.set(.{});
+        return;
+    };
+    peek.set(.{
+        .amount = finance.formatMoney(a.inner.arena, summary.net_worth, "USD"),
+        .account_count = summary.account_count,
+        .visible = true,
+    });
+}
+
+fn afterPeek(outcome: zx.ActionHandle.Outcome) void {
+    if (outcome != .ok) return;
+    peek_pending += 1;
+    _ = zx.client.setTimeout(autoHideBalance, reveal_ms);
+}
+
+fn hideBalance(e: *zx.client.Event.Stateful) void {
+    const peek = e.state(PeekState);
+    var next = peek.get();
+    next.visible = false;
+    peek.set(next);
+    peek_pending = 0;
+}
+
+fn autoHideBalance() void {
+    if (peek_pending > 0) peek_pending -= 1;
+    if (peek_pending != 0) return;
+    if (peek_state) |s| {
+        var next = s.get();
+        if (!next.visible) return;
+        next.visible = false;
+        s.set(next);
+    }
+}
+
+pub const options: zx.PageOptions = .{
+    .rendering = .request,
+    .methods = &.{.POST},
+};
 
 const zx = @import("zx");
 const ui = @import("ui.zx");
@@ -81,3 +204,4 @@ const format = @import("format.zig");
 const questions_db = @import("../ask/db.zig");
 const booking = @import("../schedule/booking.zig");
 const posts = @import("../blog/posts.zig");
+const finance = @import("../finance/db.zig");

@@ -27,18 +27,27 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 <div class="adm-toolbar-main">
                     <h1 class="adm-page-title">Rates</h1>
                     <div class="adm-page-actions">
-                        <div class="adm-nav-group">
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance">{ui.icon(ctx.arena, .arrow_left)} Portfolio</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/zakat">Zakat</a>
+                        <div class="adm-finance-nav">
+                            <div class="adm-finance-lead">
+                                <form method="post" action="/admin/finance/rates" class="adm-inline">
+                                    <button
+                                        class="adm-btn adm-btn-ghost adm-btn-icon"
+                                        type="submit"
+                                        name="action"
+                                        value="sync"
+                                        title="Sync FX and gold rates"
+                                        aria-label="Sync FX and gold rates"
+                                    >
+                                        {ui.icon(ctx.arena, .refresh)}
+                                    </button>
+                                </form>
+                            </div>
+                            <ui.FinanceNav current={.rates} />
                         </div>
-                        <form method="post" action="/admin/finance/rates" class="adm-inline">
-                            <button class="adm-btn adm-btn-primary" type="submit" name="action" value="sync">Sync rates</button>
-                        </form>
                     </div>
                 </div>
                 <p class="adm-page-desc">
-                    Fiat from Frankfurter; gold (XAU, grams) from <a href="https://www.bajus.org/gold-price" target="_blank" rel="noopener">BAJUS 22K</a> at 85% of list.
-                    Sync rates to refresh; portfolio Refresh also soft-refreshes when the cache is older than ~12h.
+                    Fiat from Frankfurter; gold from <a href="https://www.bajus.org/gold-price" target="_blank" rel="noopener">BAJUS</a>.
                     {if (fetched) |at| (
                         <span> Last sync {format.ago(ctx.arena, try ctx.fmt("{d}", .{at}))}.</span>
                     )}
@@ -47,8 +56,8 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             <ui.FlashBanner flash={flash} />
 
             <section class="adm-card adm-settings">
-                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
-                    <span>fx_rates</span>
+                <div class="adm-section-head">
+                    <span>Exchange rates</span>
                     <span class="adm-hint">USD = amount ÷ rate</span>
                 </div>
                 {for (rates) |r| (

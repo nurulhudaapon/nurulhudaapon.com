@@ -8,10 +8,9 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
         <div @allocator={ctx.arena} class="adm">
             <input type="checkbox" id="adm-nav-toggle" class="adm-nav-toggle" aria-hidden="true" />
             <aside class="adm-sidebar">
-                <a class="adm-account" href="/admin">
+                <a class="adm-account" href="/admin" title="Overview">
                     <img class="adm-account-avatar" src="/og/avatar.png" alt="" width="28" height="28" />
                     <span class="adm-account-name">Nurul Huda (Apon)</span>
-                    {ui.icon(ctx.arena, .chevrons)}
                 </a>
                 <nav class="adm-nav" aria-label="Admin">
                     <NavItem href="/admin" label="Overview" kind={.home} active={std.mem.eql(u8, path, "/admin")} badge={0} />
@@ -25,21 +24,18 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
 
                     <p class="adm-nav-section">Finance</p>
                     <NavItem href="/admin/finance" label="Portfolio" kind={.chart} active={std.mem.eql(u8, path, "/admin/finance")} badge={0} />
-                    <NavItem href="/admin/finance/accounts" label="Accounts" kind={.file} active={isUnder(path, "/admin/finance/accounts")} badge={0} />
-                    <NavItem href="/admin/finance/allocation" label="Allocation" kind={.chart} active={isUnder(path, "/admin/finance/allocation")} badge={0} />
-                    <NavItem href="/admin/finance/zakat" label="Zakat" kind={.chart} active={isUnder(path, "/admin/finance/zakat")} badge={0} />
-                    <NavItem href="/admin/finance/rates" label="Rates" kind={.settings} active={isUnder(path, "/admin/finance/rates")} badge={0} />
+                    <NavItem href="/admin/finance/accounts" label="Accounts" kind={.wallet} active={isUnder(path, "/admin/finance/accounts")} badge={0} />
+                    <NavItem href="/admin/finance/allocation" label="Allocation" kind={.pie} active={isUnder(path, "/admin/finance/allocation")} badge={0} />
+                    <NavItem href="/admin/finance/zakat" label="Zakat" kind={.heart} active={isUnder(path, "/admin/finance/zakat")} badge={0} />
+                    <NavItem href="/admin/finance/rates" label="Rates" kind={.percent} active={isUnder(path, "/admin/finance/rates")} badge={0} />
 
                     <p class="adm-nav-section">Content</p>
                     <NavItem href="/admin/posts" label="Posts" kind={.file} active={isUnder(path, "/admin/posts")} badge={0} />
-
-                    <p class="adm-nav-section">System</p>
-                    <NavItem href="/admin/settings" label="Settings" kind={.settings} active={isUnder(path, "/admin/settings")} badge={0} />
                 </nav>
                 <div class="adm-sidebar-foot">
-                    <a class="adm-nav-item" href="/" target="_blank" rel="noopener">
+                    <NavItem href="/admin/settings" label="Settings" kind={.settings} active={isUnder(path, "/admin/settings")} badge={0} />
+                    <a class="adm-nav-icon" href="/" target="_blank" rel="noopener" title="View site" aria-label="View site">
                         {ui.icon(ctx.arena, .external)}
-                        <span>View site</span>
                     </a>
                 </div>
             </aside>
@@ -51,8 +47,8 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                     </label>
                     <span class="adm-topbar-crumb">{crumb(path)}</span>
                     <div class="adm-topbar-right">
-                        <a class="adm-topbar-link" href="/schedule" target="_blank" rel="noopener">Schedule page</a>
-                        <a class="adm-topbar-link" href="/ask" target="_blank" rel="noopener">Ask page</a>
+                        <a class="adm-topbar-link" href="/ask" target="_blank" rel="noopener" title="Open /ask">Ask</a>
+                        <a class="adm-topbar-link" href="/schedule" target="_blank" rel="noopener" title="Open /schedule">Schedule</a>
                         <span class="adm-user" title={user}>
                             {ui.icon(ctx.arena, .user)}
                         </span>
@@ -99,7 +95,7 @@ fn crumb(path: []const u8) []const u8 {
     if (isUnder(path, "/admin/finance/rates")) return "Finance / Rates";
     if (isUnder(path, "/admin/finance")) return "Finance / Portfolio";
     if (isUnder(path, "/admin/posts")) return "Content / Posts";
-    if (isUnder(path, "/admin/settings")) return "System / Settings";
+    if (isUnder(path, "/admin/settings")) return "Settings";
     return "Overview";
 }
 

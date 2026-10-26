@@ -29,25 +29,30 @@ pub fn Toolbar(ctx: *zx.ComponentCtx(struct { needs_ibkr: bool, flash: ?ui.Flash
                 <div class="adm-toolbar-main">
                     <h1 class="adm-page-title">Portfolio</h1>
                     <div class="adm-page-actions">
-                        <div class="adm-nav-group">
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/accounts">Accounts</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/allocation">Allocation</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/zakat">Zakat</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/rates">Rates</a>
+                        <div class="adm-finance-nav">
+                            <div class="adm-finance-lead">
+                                <form action={sync_action} class="adm-inline">
+                                    <button
+                                        class="adm-btn adm-btn-ghost adm-btn-icon"
+                                        type="submit"
+                                        disabled={pending}
+                                        title="Refresh IBKR balances and holdings"
+                                        aria-label="Refresh IBKR balances and holdings"
+                                    >
+                                        {ui.icon(alloc, .refresh)}
+                                    </button>
+                                </form>
+                            </div>
+                            <ui.FinanceNav current={.portfolio} />
                         </div>
-                        <form action={sync_action} class="adm-inline">
-                            <button class="adm-btn adm-btn-ghost" type="submit" disabled={pending} title="Pull latest IBKR Flex balances and holdings">
-                                {if (pending) "Refreshing…" else "Refresh"}
-                            </button>
-                        </form>
                     </div>
                 </div>
-                <p class="adm-page-desc">Net worth in USD from the last saved snapshot. Refresh pulls IBKR; update FX under Rates.</p>
+                <p class="adm-page-desc">Net worth in USD from the last saved snapshot.</p>
             </div>
             <ui.FlashBanner flash={bannerFlash(state)} />
 
             {if (ctx.props.needs_ibkr) (
-                <div class="adm-card" style="padding:1rem 1.25rem;margin-bottom:1rem">
+                <div class="adm-card adm-card-pad adm-card-gap">
                     <p class="adm-hint">
                         Connect read-only IBKR Flex in <a href="/admin/settings">Settings</a> to pull brokerage accounts. Bank, deposits, and physical assets are added under <a href="/admin/finance/accounts">Accounts</a>.
                     </p>
@@ -124,7 +129,7 @@ pub fn AllocationPanel(allocator: zx.Allocator, props: struct { loading: bool })
 
     return (
         <section @allocator={allocator} class="adm-card adm-alloc">
-            <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+            <div class="adm-section-head">
                 <span>Asset allocation</span>
                 <a class="adm-hint" href="/admin/finance/allocation">Edit targets</a>
             </div>
@@ -231,7 +236,7 @@ pub fn AccountsPanel(allocator: zx.Allocator, props: struct { loading: bool }) z
 
     return (
         <section @allocator={allocator} class="adm-card">
-            <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+            <div class="adm-section-head">
                 <span>Accounts</span>
                 <a class="adm-hint" href="/admin/finance/accounts">Manage</a>
             </div>
@@ -251,7 +256,7 @@ pub fn AccountsPanel(allocator: zx.Allocator, props: struct { loading: bool }) z
                     )}
                 </div>
             ) else if (accounts.len == 0) (
-                <div style="padding:1rem 1.25rem"><ui.Empty text="No accounts with a balance." /></div>
+                <div class="adm-card-pad"><ui.Empty text="No accounts with a balance." /></div>
             ) else (
                 <div class="adm-accts" style="border:0;padding:0.25rem 1.25rem 1rem">
                     {for (accounts) |row| (
@@ -287,7 +292,7 @@ pub fn HoldingsPanel(allocator: zx.Allocator, props: struct { loading: bool }) z
         <div @allocator={allocator}>
             {if (props.loading) (
                 <section class="adm-card">
-                    <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                    <div class="adm-section-head">
                         <span>Top holdings</span>
                         <span class="adm-hint">From IBKR Flex</span>
                     </div>
@@ -319,7 +324,7 @@ pub fn HoldingsPanel(allocator: zx.Allocator, props: struct { loading: bool }) z
                 <span></span>
             ) else (
                 <section class="adm-card">
-                    <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                    <div class="adm-section-head">
                         <span>Top holdings</span>
                         <span class="adm-hint">From IBKR Flex</span>
                     </div>
@@ -376,7 +381,7 @@ fn syncIbkr(a: *zx.server.Action.Stateful) void {
     if (!result.saw_cash_report and !result.saw_equity_summary) {
         return flash.set(.{
             .kind = .ok,
-            .msg = "Synced holdings, but Flex had no Cash Report / Equity Summary — add both in Client Portal so cash is included.",
+            .msg = "Synced holdings, but Flex had no Cash Report / Equity Summary - add both in Client Portal so cash is included.",
             .reload_to = "/admin/finance?ok=synced_no_cash",
         });
     }

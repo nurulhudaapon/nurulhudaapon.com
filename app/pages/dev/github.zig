@@ -28,6 +28,10 @@ pub fn setToken(token: []const u8) !void {
     auth_header = try std.fmt.allocPrint(zx.allocator, "Bearer {s}", .{token});
 }
 
+pub fn authorization() ?[]const u8 {
+    return auth_header;
+}
+
 const owners = [_][]const u8{ "ziex-dev", "nurulhudaapon" };
 
 const pinned = [_][]const u8{

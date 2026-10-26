@@ -213,7 +213,7 @@ fn applyReport(arena: std.mem.Allocator, body: []const u8) !Result {
     }
 
     if (!parsed.saw_cash_report and !parsed.saw_equity_summary) {
-        zx.log.warn("ibkr: Flex XML had no CashReport or EquitySummary — enable both in the Flex Query to capture cash", .{});
+        zx.log.warn("ibkr: Flex XML had no CashReport or EquitySummary - enable both in the Flex Query to capture cash", .{});
     } else if (cash_total < 0.005) {
         zx.log.info("ibkr: synced with cash≈0 (cash_report={any} equity_summary={any})", .{ parsed.saw_cash_report, parsed.saw_equity_summary });
     }

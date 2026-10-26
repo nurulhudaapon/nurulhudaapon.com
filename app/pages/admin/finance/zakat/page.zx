@@ -35,13 +35,13 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 <div class="adm-toolbar-main">
                     <h1 class="adm-page-title">Zakat</h1>
                     <div class="adm-page-actions">
-                        <div class="adm-nav-group">
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance">{ui.icon(ctx.arena, .arrow_left)} Portfolio</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/rates">Rates</a>
+                        <div class="adm-finance-nav">
+                            <div class="adm-finance-lead"></div>
+                            <ui.FinanceNav current={.zakat} />
                         </div>
                     </div>
                 </div>
-                <p class="adm-page-desc">Record zakat paid by year. Estimate below is 2.5% of current net worth — adjust for debts and non-zakatable assets yourself.</p>
+                <p class="adm-page-desc">Record zakat paid by year. Estimate is 2.5% of net worth.</p>
             </div>
             <ui.FlashBanner flash={flash} />
 
@@ -66,8 +66,8 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 </div>
             </div>
 
-            <section class="adm-card adm-settings" style="margin-bottom:1rem">
-                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+            <section class="adm-card adm-settings adm-card-gap">
+                <div class="adm-section-head">
                     <span>{if (editing != null) "Edit entry" else "Add year"}</span>
                 </div>
                 <form method="post" action="/admin/finance/zakat" class="adm-settings-row">
@@ -95,7 +95,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                         </div>
                         <div class="adm-field" style="grid-column:1 / -1">
                             <label class="adm-label">Notes</label>
-                            <input class="adm-input" name="notes" value={if (editing) |e| e.notes orelse "" else ""} placeholder="Optional — Hijri year, method, etc." />
+                            <input class="adm-input" name="notes" value={if (editing) |e| e.notes orelse "" else ""} placeholder="Optional - Hijri year, method, etc." />
                         </div>
                     </div>
                     <div class="adm-inline-fields" style="align-items:flex-end;margin-top:0.75rem">
@@ -108,12 +108,12 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             </section>
 
             <section class="adm-card">
-                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                <div class="adm-section-head">
                     <span>Previous years</span>
                     <span class="adm-hint">{entries.len} recorded</span>
                 </div>
                 {if (entries.len == 0) (
-                    <div style="padding:1rem 1.25rem"><ui.Empty text="No zakat entries yet." /></div>
+                    <div class="adm-card-pad"><ui.Empty text="No zakat entries yet." /></div>
                 ) else (
                     <div class="adm-table-wrap">
                         <table class="adm-table">
@@ -131,8 +131,8 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                     <tr>
                                         <td><span class="adm-table-title">{e.year}</span></td>
                                         <td>{finance.formatMoney(ctx.arena, e.amount, e.currency)}</td>
-                                        <td class="adm-hide-sm">{e.paid_on orelse "—"}</td>
-                                        <td class="adm-hide-sm">{e.notes orelse "—"}</td>
+                                        <td class="adm-hide-sm">{e.paid_on orelse "-"}</td>
+                                        <td class="adm-hide-sm">{e.notes orelse "-"}</td>
                                         <td>
                                             <div class="adm-inline-fields" style="justify-content:flex-end">
                                                 <a class="adm-btn adm-btn-ghost" href={try ctx.fmt("/admin/finance/zakat?edit={d}", .{e.id})}>Edit</a>

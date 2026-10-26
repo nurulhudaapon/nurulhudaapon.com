@@ -25,39 +25,49 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         .{ "deleted", "Account removed." },
         .{ "synced", "IBKR accounts synced." },
         .{ "class", "Asset class updated." },
-        .{ "stale", "Account marked stale — excluded from portfolio totals." },
+        .{ "stale", "Account marked stale: excluded from portfolio totals." },
         .{ "restored", "Account restored to portfolio totals." },
         .{ "invalid", "Name, account type, asset class, and a supported currency are required." },
         .{ "not_configured", "Add IBKR Flex credentials under Settings first." },
         .{ "ibkr", "IBKR rejected the Flex request." },
-        .{ "pending", "IBKR report still generating — try again shortly." },
+        .{ "pending", "IBKR report still generating. Try again shortly." },
         .{ "empty", "Flex report had no accounts." },
         .{ "failed", "Something went wrong. Check the server logs." },
     });
 
     return (
         <div @allocator={ctx.arena}>
+            <RowMenuOutsideClose @client />
             <div class="adm-toolbar">
                 <div class="adm-toolbar-main">
                     <h1 class="adm-page-title">Accounts</h1>
                     <div class="adm-page-actions">
-                        <div class="adm-nav-group">
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance">{ui.icon(ctx.arena, .arrow_left)} Portfolio</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/allocation">Allocation</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/zakat">Zakat</a>
+                        <div class="adm-finance-nav">
+                            <div class="adm-finance-lead">
+                                <form method="post" action="/admin/finance/accounts" class="adm-inline">
+                                    <button
+                                        class="adm-btn adm-btn-ghost adm-btn-icon"
+                                        type="submit"
+                                        name="action"
+                                        value="sync"
+                                        title="Refresh IBKR balances and holdings"
+                                        aria-label="Refresh IBKR balances and holdings"
+                                    >
+                                        {ui.icon(ctx.arena, .refresh)}
+                                    </button>
+                                </form>
+                            </div>
+                            <ui.FinanceNav current={.accounts} />
                         </div>
-                        <form method="post" action="/admin/finance/accounts" class="adm-inline">
-                            <button class="adm-btn adm-btn-ghost" type="submit" name="action" value="sync" title="Force refresh">Refresh IBKR</button>
-                        </form>
                     </div>
                 </div>
-                <p class="adm-page-desc">Enter balances in native currency. Mark accounts stale to keep them listed but exclude them from portfolio totals.</p>
+                <p class="adm-page-desc">Balances in native currency. Stale accounts stay out of totals.</p>
             </div>
             <ui.FlashBanner flash={flash} />
 
-            <section class="adm-card" style="margin-bottom:1rem">
+            <section class="adm-card adm-card-gap">
                 {if (data.accounts.len == 0) (
-                    <div style="padding:1rem 1.25rem"><ui.Empty text="No accounts yet. Add one below or sync IBKR." /></div>
+                    <div class="adm-card-pad"><ui.Empty text="No accounts yet. Add one below or sync IBKR." /></div>
                 ) else (
                     <div class="adm-table-wrap">
                         <table class="adm-table">
@@ -77,7 +87,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                         <td>
                                             <span class="adm-table-title">{row.account.name}</span>
                                             <span class="adm-table-sub">
-                                                {if (row.account.institution.len > 0) row.account.institution else "—"}
+                                                {if (row.account.institution.len > 0) row.account.institution else "-"}
                                                 {if (std.mem.eql(u8, row.account.broker, "ibkr")) " · IBKR" else ""}
                                                 {if (finance.isAccountStale(row.account)) " · stale" else ""}
                                             </span>
@@ -100,7 +110,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                                 <span class="adm-table-sub">{finance.formatMoney(ctx.arena, row.value_usd, "USD")}</span>
                                             )}
                                         </td>
-                                        <td>{if (finance.isAccountStale(row.account)) "—" else finance.formatPct(ctx.arena, row.weight_pct)}</td>
+                                        <td>{if (finance.isAccountStale(row.account)) "-" else finance.formatPct(ctx.arena, row.weight_pct)}</td>
                                         <td class="adm-table-actions">
                                             <details class="adm-row-menu">
                                                 <summary class="adm-btn adm-btn-ghost adm-btn-icon" aria-label="Account actions">
@@ -136,8 +146,8 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 )}
             </section>
 
-            <section class="adm-card adm-settings" style="margin-bottom:1rem">
-                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+            <section class="adm-card adm-settings adm-card-gap">
+                <div class="adm-section-head">
                     <span>{if (editing != null) "Edit account" else "Add account"}</span>
                     <span class="adm-hint">Manual balances (bank, physical, crowdfund, …)</span>
                 </div>
@@ -199,7 +209,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                             <div class="adm-field" style="grid-column:1 / -1">
                                 <label class="adm-check">
                                     <input type="checkbox" name="stale" value="on" checked={if (editing) |e| e.stale != 0 else false} />
-                                    <span>Stale — keep listed, exclude from net worth and allocation</span>
+                                    <span>Stale: keep listed, exclude from net worth and allocation</span>
                                 </label>
                             </div>
                         </div>
@@ -282,6 +292,29 @@ fn editingClass(editing: ?finance.Account, c: []const u8) bool {
 fn editingCurrency(editing: ?finance.Account, c: []const u8) bool {
     const e = editing orelse return std.mem.eql(u8, c, "BDT");
     return std.ascii.eqlIgnoreCase(e.currency, c);
+}
+
+pub fn RowMenuOutsideClose(ctx: *zx.ComponentCtx(struct {})) zx.Component {
+    if (comptime zx.platform.role == .client) ensureRowMenuOutsideClose();
+    return (<span @allocator={ctx.allocator} hidden aria-hidden="true"></span>);
+}
+
+var row_menu_listener = false;
+
+fn ensureRowMenuOutsideClose() void {
+    if (row_menu_listener) return;
+    row_menu_listener = true;
+    _ = zx.client.eval(void,
+        \\(() => {
+        \\  if (window.__admRowMenuOutside) return;
+        \\  window.__admRowMenuOutside = true;
+        \\  document.addEventListener("click", (e) => {
+        \\    document.querySelectorAll("details.adm-row-menu[open]").forEach((d) => {
+        \\      if (!d.contains(e.target)) d.removeAttribute("open");
+        \\    });
+        \\  });
+        \\})()
+    ) catch {};
 }
 
 pub const options: zx.PageOptions = .{

@@ -1,5 +1,6 @@
 const std = @import("std");
 const zx = @import("zx");
+const github = @import("../dev/github.zig");
 
 pub const Archive = struct {
     files: std.StringArrayHashMapUnmanaged([]u8),
@@ -150,7 +151,7 @@ fn fetchRemoteFileCached(allocator: std.mem.Allocator, repo: Repository, relativ
     };
     errdefer allocator.free(body);
 
-    try blogs_kv.put(cache_key, body, .{});
+    try blogs_kv.put(cache_key, body, .{ .ttl = tarball_cache_ttl });
     return body;
 }
 
@@ -171,7 +172,11 @@ fn fileUrlPath(url: []const u8) ?[]const u8 {
     return if (path.len > 0) path else null;
 }
 
+/// Soft TTL so a failed SHA check cannot pin a stale archive forever.
+const tarball_cache_ttl: std.Io.Duration = .fromSeconds(60 * 60);
+
 /// Fetch the raw GitHub tarball bytes, using `zx.kv` as a persistent cache.
+/// Invalidates automatically when the remote ref tip SHA changes.
 pub fn fetchTarballCached(allocator: std.mem.Allocator, repo: Repository) ![]u8 {
     const parsed = try parseGitHubUrl(repo.url);
     const ref = try normalizeTarballRef(allocator, repo.ref orelse "HEAD");
@@ -183,8 +188,36 @@ pub fn fetchTarballCached(allocator: std.mem.Allocator, repo: Repository) ![]u8 
         .{ parsed.owner, parsed.repo, ref },
     );
     defer allocator.free(cache_key);
+    const sha_key = try std.fmt.allocPrint(
+        allocator,
+        "tarball-sha:{s}/{s}:{s}",
+        .{ parsed.owner, parsed.repo, ref },
+    );
+    defer allocator.free(sha_key);
 
     const blogs_kv = zx.kv.scoped(.blogs);
+    const remote_sha = resolveRefSha(allocator, parsed, repo.ref orelse "main") catch null;
+    defer if (remote_sha) |s| allocator.free(s);
+
+    if (remote_sha) |sha| {
+        if (try blogs_kv.get(allocator, sha_key)) |cached_sha| {
+            defer allocator.free(cached_sha);
+            if (!std.mem.eql(u8, cached_sha, sha)) {
+                zx.log.info("git.fetchTarballCached: tip moved {s} -> {s}, invalidating", .{ cached_sha, sha });
+                blogs_kv.delete(cache_key) catch {};
+                const file_prefix = try std.fmt.allocPrint(allocator, "file:{s}/{s}:", .{ parsed.owner, parsed.repo });
+                defer allocator.free(file_prefix);
+                if (blogs_kv.list(allocator, file_prefix)) |keys| {
+                    defer allocator.free(keys);
+                    for (keys) |k| {
+                        defer allocator.free(k);
+                        blogs_kv.delete(k) catch {};
+                    }
+                } else |_| {}
+            }
+        }
+    }
+
     if (try blogs_kv.get(allocator, cache_key)) |cached| {
         defer allocator.free(cached);
         zx.log.debug("git.fetchTarballCached: kv hit key={s} bytes={d}", .{ cache_key, cached.len });
@@ -202,9 +235,34 @@ pub fn fetchTarballCached(allocator: std.mem.Allocator, repo: Repository) ![]u8 
 
     const encoded = try encodeCachedTarball(allocator, gz);
     defer allocator.free(encoded);
-    try blogs_kv.put(cache_key, encoded, .{});
+    try blogs_kv.put(cache_key, encoded, .{ .ttl = tarball_cache_ttl });
+    if (remote_sha) |sha| {
+        blogs_kv.put(sha_key, sha, .{ .ttl = tarball_cache_ttl }) catch |err| {
+            zx.log.warn("git.fetchTarballCached: failed to store tip sha: {any}", .{err});
+        };
+    }
     zx.log.debug("git.fetchTarballCached: stored in kv key={s} raw={d} encoded={d}", .{ cache_key, gz.len, encoded.len });
     return gz;
+}
+
+fn resolveRefSha(allocator: std.mem.Allocator, parsed: GitHubRepo, ref: []const u8) ![]u8 {
+    const url = try std.fmt.allocPrint(
+        allocator,
+        "https://api.github.com/repos/{s}/{s}/commits/{s}",
+        .{ parsed.owner, parsed.repo, ref },
+    );
+    defer allocator.free(url);
+
+    const body = try fetchBytes(allocator, url, .{ .accept = "application/vnd.github+json" });
+    defer allocator.free(body);
+
+    // Commit payloads start with {"sha":"..."} - avoid a full JSON dependency here.
+    const key = "\"sha\":\"";
+    const start = std.mem.indexOf(u8, body, key) orelse return error.InvalidCommitPayload;
+    const sha_start = start + key.len;
+    const sha_end = std.mem.indexOfScalarPos(u8, body, sha_start, '"') orelse return error.InvalidCommitPayload;
+    if (sha_end <= sha_start) return error.InvalidCommitPayload;
+    return try allocator.dupe(u8, body[sha_start..sha_end]);
 }
 
 fn encodeCachedTarball(allocator: std.mem.Allocator, gz: []const u8) ![]u8 {
@@ -291,17 +349,20 @@ fn fetchBytes(allocator: std.mem.Allocator, url: []const u8, opts: FetchOpts) ![
 
     headers_buf[headers_len] = .{ .name = "Accept", .value = opts.accept };
     headers_len += 1;
-    headers_buf[headers_len] = .{ .name = "User-Agent", .value = "ziex-example-blog" };
+    headers_buf[headers_len] = .{ .name = "User-Agent", .value = "nurulhudaapon.com" };
     headers_len += 1;
 
-    var auth: ?[]const u8 = null;
-    defer if (auth) |a| allocator.free(a);
+    var auth_owned: ?[]const u8 = null;
+    defer if (auth_owned) |a| allocator.free(a);
 
-    if (std.c.getenv("GITHUB_TOKEN")) |token_c| {
+    if (github.authorization()) |auth| {
+        headers_buf[headers_len] = .{ .name = "Authorization", .value = auth };
+        headers_len += 1;
+    } else if (std.c.getenv("GITHUB_TOKEN")) |token_c| {
         const token = std.mem.span(token_c);
         if (token.len > 0) {
-            auth = try std.fmt.allocPrint(allocator, "Bearer {s}", .{token});
-            headers_buf[headers_len] = .{ .name = "Authorization", .value = auth.? };
+            auth_owned = try std.fmt.allocPrint(allocator, "Bearer {s}", .{token});
+            headers_buf[headers_len] = .{ .name = "Authorization", .value = auth_owned.? };
             headers_len += 1;
         }
     }

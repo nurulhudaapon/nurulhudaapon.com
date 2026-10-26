@@ -33,5 +33,5 @@ pub fn timeRange(arena: std.mem.Allocator, start: i64, end: i64) []const u8 {
     const offset = slots.config.utc_offset_s;
     const a = slots.formatTime(arena, start, offset) catch "";
     const b = slots.formatTime(arena, end, offset) catch "";
-    return std.fmt.allocPrint(arena, "{s} – {s}", .{ a, b }) catch "";
+    return std.fmt.allocPrint(arena, "{s} - {s}", .{ a, b }) catch "";
 }

@@ -3,7 +3,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const needs_ibkr = !ibkr_form.token_set or ibkr_form.query_id.len == 0;
     const flash = ui.flashFrom(ctx.request.queries, &.{
         .{ "synced", "IBKR balances and holdings refreshed." },
-        .{ "synced_no_cash", "Synced holdings, but Flex had no Cash Report / Equity Summary — add both in Client Portal so cash is included." },
+        .{ "synced_no_cash", "Synced holdings, but Flex had no Cash Report / Equity Summary - add both in Client Portal so cash is included." },
         .{ "not_configured", "Add IBKR Flex credentials under Settings first." },
         .{ "ibkr", "IBKR rejected the Flex request. Check token and query ID." },
         .{ "pending", "IBKR is still generating the report. Sync again in a few seconds." },
@@ -49,7 +49,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 }
 
 pub const options: zx.PageOptions = .{
-    .methods = &.{.GET},
+    .methods = &.{.GET, .POST},
     .rendering = .streamed,
 };
 

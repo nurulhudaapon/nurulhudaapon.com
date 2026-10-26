@@ -8,8 +8,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     var state: State = .original;
     if (ctx.request.method == .POST) {
         const fd = ctx.request.formData();
-        const action = fd.get("action") orelse "preview";
-        // Browsers submit textareas with CRLF line endings.
+        const action = fd.get("action") orelse "save";
         const posted = try std.mem.replaceOwned(u8, ctx.arena, fd.get("markdown") orelse "", "\r\n", "\n");
         if (std.mem.eql(u8, action, "save")) {
             try drafts.put(slug, posted, .{});
@@ -28,7 +27,11 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     const preview = posts.renderPreview(ctx.arena, markdown) catch |err| blk: {
         zx.log.warn("admin: preview of {s} failed: {any}", .{ slug, err });
-        break :blk posts.Preview{ .title = "", .html = "<p>Couldn't render this markdown. Check the frontmatter block.</p>", .read_minutes = 0 };
+        break :blk posts.Preview{
+            .title = "",
+            .html = "<p>Couldn't render this markdown. Check the frontmatter block.</p>",
+            .read_minutes = 0,
+        };
     };
     const flash = ui.flashFrom(ctx.request.queries, &.{
         .{ "saved", "Draft saved on this site. GitHub is unchanged." },
@@ -40,46 +43,181 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         <div @allocator={ctx.arena} class="adm-page-fill">
             <a class="adm-back" href="/admin/posts">{ui.icon(ctx.arena, .arrow_left)} All posts</a>
             <ui.FlashBanner flash={flash} />
-            <form method="post" action={self_url} class="adm-editor-form">
-                <div class="adm-editor-bar">
-                    <h1 class="adm-page-title">{source.title}</h1>
-                    <span class={stateClass(state)}>{stateLabel(state)}</span>
-                    {if (!source.draft) (
-                        <a class="adm-btn adm-btn-ghost" href={live_url} target="_blank" rel="noopener">View live {ui.icon(ctx.arena, .external)}</a>
-                    )}
-                    {if (state != .original) (
-                        <button class="adm-btn adm-btn-ghost" type="submit" name="action" value="discard" formnovalidate>Discard draft</button>
-                    )}
-                    <button class="adm-btn" type="submit" name="action" value="preview">Update preview</button>
-                    <button class="adm-btn adm-btn-primary" type="submit" name="action" value="save">Save draft</button>
-                </div>
-                <div class="adm-editor">
-                    <section class="adm-card adm-pane">
-                        <div class="adm-pane-head">
-                            <span>Markdown</span>
-                            <span class="adm-pane-path">{source.path}</span>
-                        </div>
-                        <textarea class="adm-source" name="markdown" spellcheck="true" aria-label="Markdown source">{markdown}</textarea>
-                    </section>
-                    <section class="adm-card adm-pane">
-                        <div class="adm-pane-head">
-                            <span>Preview</span>
-                            <span>{preview.read_minutes} min read</span>
-                        </div>
-                        <article class="adm-preview">
-                            <h1 class="post-title">{if (preview.title.len > 0) preview.title else source.title}</h1>
-                            <div class="post-content">
-                                <div @escaping={.none}>{preview.html}</div>
-                            </div>
-                        </article>
-                    </section>
-                </div>
-            </form>
+            <PostEditor
+                @client
+                self_url={self_url}
+                live_url={live_url}
+                path={source.path}
+                title={source.title}
+                draft={source.draft}
+                markdown={markdown}
+                state={state}
+                preview_title={if (preview.title.len > 0) preview.title else source.title}
+                preview_html={preview.html}
+                preview_minutes={preview.read_minutes}
+            />
         </div>
     );
 }
 
 const State = enum { original, draft, unsaved };
+
+const PreviewState = struct {
+    open: bool = false,
+    title: []const u8 = "",
+    html: []const u8 = "",
+    read_minutes: u32 = 0,
+};
+
+const PreviewInput = struct {
+    markdown: []const u8 = "",
+};
+
+pub fn PostEditor(ctx: *zx.ComponentCtx(struct {
+    self_url: []const u8,
+    live_url: []const u8,
+    path: []const u8,
+    title: []const u8,
+    draft: bool,
+    markdown: []const u8,
+    state: State,
+    preview_title: []const u8,
+    preview_html: []const u8,
+    preview_minutes: u32,
+})) zx.Component {
+    const preview = ctx.state(PreviewState, .{
+        .open = false,
+        .title = ctx.props.preview_title,
+        .html = ctx.props.preview_html,
+        .read_minutes = ctx.props.preview_minutes,
+    });
+    const render_action = ctx.action(renderPreviewAction, .{});
+    const alloc = ctx.allocator;
+    const p = preview.get();
+    const editor_class = if (p.open) "adm-editor adm-editor-split" else "adm-editor adm-editor-focus";
+
+    return (
+        <div @allocator={alloc} class="adm-editor-form">
+            <form method="post" action={ctx.props.self_url} class="adm-editor-save">
+                <div class="adm-editor-bar">
+                    <div class="adm-editor-bar-lead">
+                        <h1 class="adm-page-title">{ctx.props.title}</h1>
+                        <span class={stateClass(ctx.props.state)}>{stateLabel(ctx.props.state)}</span>
+                    </div>
+                    <div class="adm-page-actions">
+                        {if (!ctx.props.draft) (
+                            <a class="adm-btn adm-btn-ghost" href={ctx.props.live_url} target="_blank" rel="noopener">
+                                View live {ui.icon(alloc, .external)}
+                            </a>
+                        )}
+                        {if (ctx.props.state != .original) (
+                            <button class="adm-btn adm-btn-ghost" type="submit" name="action" value="discard" formnovalidate>Discard draft</button>
+                        )}
+                        <button
+                            type="button"
+                            class={if (p.open) "adm-btn adm-btn-ghost adm-btn-active" else "adm-btn adm-btn-ghost"}
+                            onclick={ctx.bind(togglePreview)}
+                            aria-pressed={if (p.open) "true" else "false"}
+                        >
+                            {if (p.open) "Hide preview" else "Show preview"}
+                        </button>
+                        <button class="adm-btn adm-btn-primary" type="submit" name="action" value="save">Save draft</button>
+                    </div>
+                </div>
+
+                <div class={editor_class}>
+                    <section class="adm-card adm-pane">
+                        <div class="adm-pane-head">
+                            <span>Markdown</span>
+                            <span class="adm-pane-path">{ctx.props.path}</span>
+                        </div>
+                        <textarea
+                            class="adm-source"
+                            name="markdown"
+                            spellcheck="true"
+                            aria-label="Markdown source"
+                            data-post-source
+                            oninput={ctx.bind(queuePreview)}
+                        >{ctx.props.markdown}</textarea>
+                    </section>
+
+                    {if (p.open) (
+                        <section class="adm-card adm-pane">
+                            <div class="adm-pane-head">
+                                <span>Preview</span>
+                                <span>{p.read_minutes} min read</span>
+                            </div>
+                            <article class="adm-preview">
+                                <h1 class="post-title">{p.title}</h1>
+                                <div class="post-content">
+                                    <div @escaping={.none}>{p.html}</div>
+                                </div>
+                            </article>
+                        </section>
+                    )}
+                </div>
+            </form>
+
+            <form class="adm-hidden" data-preview-form action={render_action} aria-hidden="true">
+                <textarea name="markdown" data-preview-markdown tabindex="-1">{ctx.props.markdown}</textarea>
+            </form>
+        </div>
+    );
+}
+
+fn togglePreview(e: *zx.client.Event.Stateful) void {
+    const preview = e.state(PreviewState);
+    var next = preview.get();
+    next.open = !next.open;
+    preview.set(next);
+    if (next.open) schedulePreviewSubmit();
+}
+
+fn queuePreview(e: *zx.client.Event.Stateful) void {
+    const preview = e.state(PreviewState);
+    if (!preview.get().open) return;
+    schedulePreviewSubmit();
+}
+
+var preview_pending: u32 = 0;
+
+fn schedulePreviewSubmit() void {
+    preview_pending += 1;
+    _ = zx.client.setTimeout(flushPreviewSubmit, 350);
+}
+
+fn flushPreviewSubmit() void {
+    if (preview_pending > 0) preview_pending -= 1;
+    if (preview_pending != 0) return;
+    _ = zx.client.eval(void,
+        \\(() => {
+        \\  const source = document.querySelector("[data-post-source]");
+        \\  const mirror = document.querySelector("[data-preview-markdown]");
+        \\  const form = document.querySelector("[data-preview-form]");
+        \\  if (!source || !mirror || !form) return;
+        \\  mirror.value = source.value;
+        \\  if (typeof form.requestSubmit === "function") form.requestSubmit();
+        \\  else form.submit();
+        \\})()
+    ) catch {};
+}
+
+fn renderPreviewAction(a: *zx.server.Action.Stateful) void {
+    const preview = a.state(PreviewState);
+    const input = a.data(PreviewInput);
+    const markdown = std.mem.replaceOwned(u8, a.inner.arena, input.markdown, "\r\n", "\n") catch input.markdown;
+    const rendered = posts.renderPreview(a.inner.arena, markdown) catch posts.Preview{
+        .title = "",
+        .html = "<p>Couldn't render this markdown. Check the frontmatter block.</p>",
+        .read_minutes = 0,
+    };
+    preview.set(.{
+        .open = true,
+        .title = if (rendered.title.len > 0) rendered.title else preview.get().title,
+        .html = rendered.html,
+        .read_minutes = rendered.read_minutes,
+    });
+}
 
 fn stateLabel(state: State) []const u8 {
     return switch (state) {

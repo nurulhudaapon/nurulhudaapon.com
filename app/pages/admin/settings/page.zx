@@ -34,7 +34,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     <div class="adm-stack-fields">
                         <div class="adm-field">
                             <label class="adm-label" for="ibkr_flex_token">Access token</label>
-                            <input class="adm-input" id="ibkr_flex_token" type="password" name="ibkr_flex_token" autocomplete="off" placeholder={if (ibkr.token_set) "•••••••• (saved — leave blank to keep)" else "Flex Web Service token"} />
+                            <input class="adm-input" id="ibkr_flex_token" type="password" name="ibkr_flex_token" autocomplete="off" placeholder={if (ibkr.token_set) "•••••••• (saved - leave blank to keep)" else "Flex Web Service token"} />
                         </div>
                         <div class="adm-field">
                             <label class="adm-label" for="ibkr_flex_query_id">Query ID</label>
@@ -59,7 +59,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                         </div>
                         <div class="adm-field">
                             <label class="adm-label" for="caldav_password">App-specific password</label>
-                            <input class="adm-input" id="caldav_password" type="password" name="caldav_password" autocomplete="new-password" placeholder={if (caldav.password_set) "•••••••• (saved — leave blank to keep)" else "App-specific password"} />
+                            <input class="adm-input" id="caldav_password" type="password" name="caldav_password" autocomplete="new-password" placeholder={if (caldav.password_set) "•••••••• (saved - leave blank to keep)" else "App-specific password"} />
                         </div>
                         <div class="adm-field">
                             <label class="adm-label" for="caldav_calendar_url">Calendar URL</label>
@@ -88,7 +88,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     <div class="adm-stack-fields">
                         <div class="adm-field">
                             <label class="adm-label" for="github_token">Personal access token</label>
-                            <input class="adm-input" id="github_token" type="password" name="github_token" autocomplete="off" placeholder={if (github_set) "•••••••• (saved — leave blank to keep)" else "ghp_…"} />
+                            <input class="adm-input" id="github_token" type="password" name="github_token" autocomplete="off" placeholder={if (github_set) "•••••••• (saved - leave blank to keep)" else "ghp_…"} />
                         </div>
                         <label class="adm-check">
                             <input type="checkbox" name="clear_github_token" value="on" />

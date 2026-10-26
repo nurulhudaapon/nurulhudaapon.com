@@ -10,14 +10,13 @@ pub fn Page(ctx: zx.PageContext) zx.Component {
                 <div class="about-content">
                     <p>
                         I currently live in Dhaka, Bangladesh and work remotely as a Staff Engineer at{" "}
-                        <a href="https://vyg.ai" target="_blank" rel="noopener noreferrer">Voyage Mobile, Inc</a>
-                        . My academic background is in Computer Science and Engineering from{" "}
-                        <a href="https://green.edu.bd" target="_blank" rel="noopener noreferrer">Green University of Bangladesh</a>
-                        .
+                        <a href="https://vyg.ai" target="_blank" rel="noopener noreferrer">Voyage Mobile, Inc.</a>{" "}
+                        My academic background is in Computer Science and Engineering from{" "}
+                        <a href="https://green.edu.bd" target="_blank" rel="noopener noreferrer">Green University of Bangladesh</a>.
                     </p>
                     <p>
                         I started programming in 2019, near the end of high school. Around the same time, I started my professional{" "}
-                        career as a QA Engineer. I've grown with the same company and now working as a Staff Engineer.
+                        career as a QA Engineer. I've grown with the same company and am now working as a Staff Engineer.
                     </p>
                     <p>Balancing full-time work and studies was tough, but it taught me good time management and perseverance.</p>
                     <p>
@@ -26,10 +25,8 @@ pub fn Page(ctx: zx.PageContext) zx.Component {
                     </p>
                     <p>
                         Currently I'm building{" "}
-                        <a href="https://ziex.dev" target="_blank" rel="noopener noreferrer">Ziex</a>
-                        , a full-stack web framework for{" "}
-                        <a href="https://ziglang.org" target="_blank" rel="noopener noreferrer">Zig</a>
-                        .
+                        <a href="https://ziex.dev" target="_blank" rel="noopener noreferrer">Ziex</a>, a full-stack web framework for{" "}
+                        <a href="https://ziglang.org" target="_blank" rel="noopener noreferrer">Zig</a>.
                     </p>
                 </div>
             </div>

@@ -26,20 +26,19 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 <div class="adm-toolbar-main">
                     <h1 class="adm-page-title">Allocation</h1>
                     <div class="adm-page-actions">
-                        <div class="adm-nav-group">
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance">{ui.icon(ctx.arena, .arrow_left)} Portfolio</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/accounts">Accounts</a>
-                            <a class="adm-btn adm-btn-ghost" href="/admin/finance/rates">Rates</a>
+                        <div class="adm-finance-nav">
+                            <div class="adm-finance-lead"></div>
+                            <ui.FinanceNav current={.allocation} />
                         </div>
                     </div>
                 </div>
-                <p class="adm-page-desc">Target weights by asset class. Empty classes stay hidden on the portfolio dashboard.</p>
+                <p class="adm-page-desc">Target weights by asset class.</p>
             </div>
             <ui.FlashBanner flash={flash} />
 
             {if (data.allocations.len > 0) (
-                <section class="adm-card" style="margin-bottom:1rem">
-                    <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                <section class="adm-card adm-card-gap">
+                    <div class="adm-section-head">
                         <span>Current vs target</span>
                     </div>
                     <div class="adm-alloc-list adm-alloc-pad">
@@ -74,7 +73,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             )}
 
             <section class="adm-card adm-settings">
-                <div class="adm-column-head" style="padding:1rem 1.25rem;border-bottom:1px solid var(--adm-border)">
+                <div class="adm-section-head">
                     <span>Targets</span>
                 </div>
                 {for (targets) |t| (
