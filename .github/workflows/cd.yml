@@ -14,7 +14,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  deploy:
+    environment:
+      name: nurulhudaapon.com
+      url: https://nurulhudaapon.com
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,44 +28,10 @@ jobs:
         with:
           version: 0.17.0
 
-      - name: Build
-        run: zig build zx -- build --target wasm32-wasi --release small --prerender
-
-      - name: Bundle
-        run: npx wrangler@4.100.0 deploy --dry-run --outdir .wrangler-artifact --assets ./zig-out/static
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifact
-          path: |
-            .wrangler-artifact
-            zig-out/static
-          include-hidden-files: true
-          retention-days: 1
-
-  deploy:
-    environment:
-      name: nurulhudaapon.com
-      url: https://nurulhudaapon.com
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifact
-
-      - name: Disable custom build (artifact is prebuilt)
-        run: |
-          sed -i '/"build": {/,/^\t},$/d' wrangler.jsonc
-
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: 4
-          command: deploy .wrangler-artifact/main.js --no-bundle --assets ./zig-out/static
+          wranglerVersion: "4.100.0"
+          command: deploy
