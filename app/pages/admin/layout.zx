@@ -102,6 +102,7 @@ fn crumb(path: []const u8) []const u8 {
     if (isUnder(path, "/admin/finance/rates")) return "Finance / Rates";
     if (isUnder(path, "/admin/finance")) return "Finance / Portfolio";
     if (isUnder(path, "/admin/posts")) return "Content / Posts";
+    if (isUnder(path, "/admin/mcp")) return "MCP";
     if (isUnder(path, "/admin/settings")) return "Settings";
     return "Overview";
 }

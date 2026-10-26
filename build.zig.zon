@@ -5,7 +5,7 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .ziex = .{
-            .url = "git+https://github.com/ziex-dev/ziex#14b0e6ec0c8b22f7f414e4f5528ad74c8e64b85d",
+            .url = "git+https://github.com/ziex-dev/ziex#a67ca62846d10337bca69984790ed2c9c306d3b4",
             .hash = "ziex-0.1.0-dev-Z3YcvSZcnQGujMj5UGWktD80cQasmcEtWuJsEVzW9tLI",
         },
         .markz = .{
@@ -26,6 +26,9 @@
         },
         .highlight = .{
             .path = "lib/highlight",
+        },
+        .mcp = .{
+            .path = "lib/mcp",
         },
         .xml = .{
             .url = "git+https://github.com/ianprime0509/zig-xml.git#4beab29d68ab308af4bd12a4fc4187c24fdad0d6",

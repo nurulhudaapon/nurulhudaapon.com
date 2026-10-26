@@ -2,6 +2,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     if (ctx.request.method == .POST) {
         const flag = save(ctx) catch |err| switch (err) {
             error.InvalidUrl => "err=bad_url",
+            error.InvalidTtl => "err=bad_ttl",
             else => blk: {
                 zx.log.err("admin: saving settings failed: {any}", .{err});
                 break :blk "err=failed";
@@ -13,10 +14,13 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const caldav = credentials.loadCaldavForm(ctx.arena);
     const ibkr = credentials.loadIbkrForm(ctx.arena);
     const github_set = credentials.githubTokenSet(ctx.arena);
+    const mcp_set = credentials.mcpTokenSet(ctx.arena);
+    const mcp_ttl_days = try ctx.fmt("{d}", .{credentials.mcpTokenTtlDays(ctx.arena)});
     const flash = ui.flashFrom(ctx.request.queries, &.{
         .{ "saved", "Credentials saved. They’re stored in the database and used on the next request." },
         .{ "cleared", "Selected secrets were cleared." },
         .{ "bad_url", "URLs must start with https:// or http://." },
+        .{ "bad_ttl", "MCP token lifetime must be between 1 and 365 days." },
         .{ "failed", "Something went wrong. Check the server logs." },
     });
 
@@ -97,6 +101,27 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     </div>
                 </div>
 
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">MCP</p>
+                        <p class="adm-hint">Enables MCP. Clearing the secret disables <code>/mcp</code> (including previously approved client tokens). Clients OAuth through <a href="/admin/mcp">MCP consent</a> (Zero Trust).</p>
+                    </div>
+                    <div class="adm-stack-fields">
+                        <div class="adm-field">
+                            <label class="adm-label" for="mcp_token">Enablement secret</label>
+                            <input class="adm-input" id="mcp_token" type="password" name="mcp_token" autocomplete="off" placeholder={if (mcp_set) "•••••••• (saved - leave blank to keep)" else "mcp_…"} />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label" for="mcp_token_ttl_days">Access token lifetime (days)</label>
+                            <input class="adm-input" id="mcp_token_ttl_days" type="number" name="mcp_token_ttl_days" min="1" max="365" step="1" value={mcp_ttl_days} />
+                        </div>
+                        <label class="adm-check">
+                            <input type="checkbox" name="clear_mcp_token" value="on" />
+                            <span>Disable MCP (clear secret)</span>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="adm-settings-foot">
                     <a class="adm-btn adm-btn-ghost" href="/admin/settings">Discard</a>
                     <button class="adm-btn adm-btn-primary" type="submit" name="action" value="save">Save credentials</button>
@@ -140,6 +165,21 @@ fn save(ctx: zx.PageContext) ![]const u8 {
     } else {
         try credentials.putUnlessEmpty("github_token", fd.get("github_token") orelse "");
     }
+
+    if (fd.get("clear_mcp_token") != null) {
+        try credentials.remove("mcp_token");
+        cleared = true;
+    } else {
+        try credentials.putUnlessEmpty("mcp_token", fd.get("mcp_token") orelse "");
+    }
+
+    const ttl_raw = std.mem.trim(u8, fd.get("mcp_token_ttl_days") orelse "", " \t\r\n");
+    if (ttl_raw.len > 0) {
+        const days = std.fmt.parseInt(u32, ttl_raw, 10) catch return error.InvalidTtl;
+        if (days < 1 or days > credentials.mcp_token_ttl_days_max) return error.InvalidTtl;
+        try credentials.put("mcp_token_ttl_days", try std.fmt.allocPrint(ctx.arena, "{d}", .{days}));
+    }
+
     credentials.applyRuntime(ctx.arena);
 
     return if (cleared) "ok=cleared" else "ok=saved";

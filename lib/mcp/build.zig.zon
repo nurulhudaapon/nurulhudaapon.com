@@ -1,0 +1,23 @@
+.{
+    .name = .mcp,
+    .version = "0.1.0",
+    .fingerprint = 0xa19bc8398903ca69,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .mcp_spec = .{
+            .url = "git+https://github.com/modelcontextprotocol/modelcontextprotocol?ref=2025-11-25#38c84e9f93ad191d9eb26d92b945d17bd0efcaf3",
+            .hash = "N-V-__8AAAw5mgFjVCtfROEiRoZm8KRE6LU5LAc-ea3ynH3z",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "gen.zig",
+        "root.zig",
+        "jsonrpc.zig",
+        "types.zig",
+        "server.zig",
+        "http.zig",
+        "oauth.zig",
+    },
+}

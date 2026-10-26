@@ -85,3 +85,17 @@ pub fn loadIbkrForm(arena: std.mem.Allocator) IbkrForm {
 pub fn githubTokenSet(arena: std.mem.Allocator) bool {
     return has(arena, "github_token");
 }
+
+pub fn mcpTokenSet(arena: std.mem.Allocator) bool {
+    return has(arena, "mcp_token");
+}
+
+pub const mcp_token_ttl_days_default: u32 = 1;
+pub const mcp_token_ttl_days_max: u32 = 365;
+
+pub fn mcpTokenTtlDays(arena: std.mem.Allocator) u32 {
+    const raw = get(arena, "mcp_token_ttl_days") orelse return mcp_token_ttl_days_default;
+    const n = std.fmt.parseInt(u32, std.mem.trim(u8, raw, " \t\r\n"), 10) catch return mcp_token_ttl_days_default;
+    if (n == 0) return mcp_token_ttl_days_default;
+    return @min(n, mcp_token_ttl_days_max);
+}
