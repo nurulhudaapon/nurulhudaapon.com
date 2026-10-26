@@ -131,7 +131,7 @@ const AccountUsdRow = struct {
 };
 
 pub fn listAccountRows(arena: std.mem.Allocator) ![]const AccountRow {
-    fx.refresh(arena);
+    // Do not call fx.refresh here — portfolio GETs must stay D1-only on Workers.
     const rows = try zx.db.rows(arena, AccountUsdRow,
         \\WITH valued AS (
         \\  SELECT
@@ -206,38 +206,20 @@ pub fn getAccount(arena: std.mem.Allocator, id: i64) !?Account {
 }
 
 pub fn snapshot(arena: std.mem.Allocator) !Snapshot {
-    fx.refresh(arena);
     const accounts = try listAccountRows(arena);
     const holdings = try listHoldings(arena);
     const targets = try listAllocations(arena);
 
-    const Totals = struct {
-        net_worth: f64,
-        cash_total: f64,
-        usd_bdt_rate: f64,
-        net_worth_bdt: f64,
-    };
-    const totals = (try zx.db.row(arena, Totals,
-        \\SELECT
-        \\  COALESCE(SUM(
-        \\    CASE WHEN UPPER(a.currency) = 'USD' THEN a.net_liquidation
-        \\         ELSE a.net_liquidation / COALESCE(NULLIF(fx.rate, 0), 1) END
-        \\  ), 0) AS net_worth,
-        \\  COALESCE(SUM(
-        \\    CASE WHEN UPPER(a.currency) = 'USD' THEN a.cash
-        \\         ELSE a.cash / COALESCE(NULLIF(fx.rate, 0), 1) END
-        \\  ), 0) AS cash_total,
-        \\  COALESCE((SELECT rate FROM fx_rates WHERE currency = 'BDT'), 122) AS usd_bdt_rate,
-        \\  COALESCE(SUM(
-        \\    CASE WHEN UPPER(a.currency) = 'USD' THEN a.net_liquidation
-        \\         ELSE a.net_liquidation / COALESCE(NULLIF(fx.rate, 0), 1) END
-        \\  ), 0) * COALESCE((SELECT rate FROM fx_rates WHERE currency = 'BDT'), 122) AS net_worth_bdt
-        \\FROM accounts a
-        \\LEFT JOIN fx_rates fx ON fx.currency = UPPER(a.currency)
-    , .{})) orelse Totals{ .net_worth = 0, .cash_total = 0, .usd_bdt_rate = 122, .net_worth_bdt = 0 };
-
-    const net_worth = totals.net_worth;
-    const cash_total = totals.cash_total;
+    var net_worth: f64 = 0;
+    var cash_total: f64 = 0;
+    for (accounts) |row| {
+        net_worth += row.value_usd;
+        const a = row.account;
+        const is_cash_account = std.ascii.eqlIgnoreCase(a.account_type, "cash") or
+            std.ascii.eqlIgnoreCase(a.asset_class, "Cash");
+        cash_total += if (is_cash_account) row.value_usd else row.cash_usd;
+    }
+    const usd_bdt_rate = fx.usdBdtRate(arena);
     const aliases = try classAliases(arena);
 
     var class_value: std.StringHashMapUnmanaged(f64) = .empty;
@@ -316,8 +298,8 @@ pub fn snapshot(arena: std.mem.Allocator) !Snapshot {
         .account_count = accounts.len,
         .holding_count = holdings.len,
         .last_synced = last_synced,
-        .usd_bdt_rate = totals.usd_bdt_rate,
-        .net_worth_bdt = totals.net_worth_bdt,
+        .usd_bdt_rate = usd_bdt_rate,
+        .net_worth_bdt = net_worth * usd_bdt_rate,
         .fx_as_of = fx.fetchedAt(arena),
     };
 }

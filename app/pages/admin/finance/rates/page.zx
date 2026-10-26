@@ -38,7 +38,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 </div>
                 <p class="adm-page-desc">
                     Fiat from Frankfurter; gold (XAU, grams) from <a href="https://www.bajus.org/gold-price" target="_blank" rel="noopener">BAJUS 22K</a> at 85% of list.
-                    Cached ~12h; also refreshes when you open Portfolio.
+                    Sync rates to refresh; portfolio Refresh also soft-refreshes when the cache is older than ~12h.
                     {if (fetched) |at| (
                         <span> Last sync {format.ago(ctx.arena, try ctx.fmt("{d}", .{at}))}.</span>
                     )}

@@ -15,12 +15,6 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     const ibkr_form = credentials.loadIbkrForm(ctx.arena);
     const needs_ibkr = !ibkr_form.token_set or ibkr_form.query_id.len == 0;
-    // Auto-refresh IBKR at most every 10 minutes when credentials are set.
-    if (!needs_ibkr) {
-        _ = ibkr_api.syncIfStale(ctx.arena) catch |err| {
-            zx.log.warn("admin: finance auto-sync skipped: {any}", .{err});
-        };
-    }
 
     const data = try finance.snapshot(ctx.arena);
     const flash = ui.flashFrom(ctx.request.queries, &.{
@@ -49,11 +43,11 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                             <span class="adm-meta">IBKR {format.ago(ctx.arena, at)}</span>
                         )}
                         <form method="post" action="/admin/finance" class="adm-inline">
-                            <button class="adm-btn adm-btn-ghost" type="submit" name="action" value="sync" title="Force refresh (auto-syncs every 10 minutes)">Refresh</button>
+                            <button class="adm-btn adm-btn-ghost" type="submit" name="action" value="sync" title="Pull latest IBKR Flex balances and holdings">Refresh</button>
                         </form>
                     </div>
                 </div>
-                <p class="adm-page-desc">Net worth in USD with live FX. IBKR refreshes automatically when this page loads (cached 10 minutes).</p>
+                <p class="adm-page-desc">Net worth in USD from the last saved snapshot. Refresh pulls IBKR; update FX under Rates.</p>
             </div>
             <ui.FlashBanner flash={flash} />
 
@@ -217,6 +211,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 fn handle(ctx: zx.PageContext) ![]const u8 {
     const action = ctx.request.formData().get("action") orelse return error.NotConfigured;
     if (!std.mem.eql(u8, action, "sync")) return error.NotConfigured;
+    fx.refresh(ctx.arena);
     const result = try ibkr_api.sync(ctx.arena);
     if (!result.saw_cash_report and !result.saw_equity_summary) return "ok=synced_no_cash";
     return "ok=synced";
@@ -301,4 +296,5 @@ const ui = @import("../ui.zx");
 const format = @import("../format.zig");
 const finance = @import("../../finance/db.zig");
 const ibkr_api = @import("../../finance/ibkr.zig");
+const fx = @import("../../finance/fx.zig");
 const credentials = @import("../../../db/credentials.zig");

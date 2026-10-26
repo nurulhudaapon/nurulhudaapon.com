@@ -25,7 +25,6 @@ pub fn syncNow(arena: std.mem.Allocator) !void {
 }
 
 pub fn listRates(arena: std.mem.Allocator) ![]const Rate {
-    refresh(arena);
     return try zx.db.rows(arena, Rate,
         \\SELECT currency, rate, as_of, fetched_at FROM fx_rates
         \\ORDER BY
