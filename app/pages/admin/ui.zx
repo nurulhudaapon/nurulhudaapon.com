@@ -161,8 +161,6 @@ pub fn FinanceNav(allocator: zx.Allocator, props: struct { current: FinancePage 
         .{ .page = .portfolio, .href = "/admin/finance", .label = "Portfolio" },
         .{ .page = .accounts, .href = "/admin/finance/accounts", .label = "Accounts" },
         .{ .page = .allocation, .href = "/admin/finance/allocation", .label = "Allocation" },
-        .{ .page = .zakat, .href = "/admin/finance/zakat", .label = "Zakat" },
-        .{ .page = .rates, .href = "/admin/finance/rates", .label = "Rates" },
     };
     return (
         <div @{allocator} class="adm-nav-group" role="navigation" aria-label="Finance">

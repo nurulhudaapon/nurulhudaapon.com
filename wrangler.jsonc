@@ -1,5 +1,5 @@
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
+	"$schema": "https://cdn.jsdelivr.net/npm/wrangler/config-schema.json",
 	"name": "nurulhudaapon",
 	"main": "app/main.ts",
 	"compatibility_date": "2026-03-10",
@@ -9,8 +9,8 @@
 	"kv_namespaces": [
 		{
 			"binding": "KV",
-			"id": "2f723ba2ce6c4d2e816369e709427cd7",
-		},
+			"id": "2f723ba2ce6c4d2e816369e709427cd7"
+		}
 	],
 	"d1_databases": [
 		{
@@ -25,6 +25,6 @@
 	},
 	"assets": {
 		"directory": "./zig-out/static",
-		"binding": "ASSETS",
-	},
+		"binding": "ASSETS"
+	}
 }

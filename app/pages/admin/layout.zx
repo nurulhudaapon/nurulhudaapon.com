@@ -1,7 +1,6 @@
 pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
     const path = ctx.request.pathname;
-    const unanswered = questions_db.counts(ctx.arena).unanswered;
-    const upcoming = booking.counts(ctx.arena).upcoming;
+    const badges = sidebarBadges(ctx.arena);
     const user = ctx.request.headers.get("cf-access-authenticated-user-email") orelse "local";
 
     return (
@@ -16,18 +15,16 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                     <NavItem href="/admin" label="Overview" kind={.home} active={std.mem.eql(u8, path, "/admin")} badge={0} />
 
                     <p class="adm-nav-section">Inbox</p>
-                    <NavItem href="/admin/questions" label="Questions" kind={.question} active={isUnder(path, "/admin/questions")} badge={unanswered} />
+                    <NavItem href="/admin/questions" label="Questions" kind={.question} active={isUnder(path, "/admin/questions")} badge={badges.unanswered} />
 
                     <p class="adm-nav-section">Schedule</p>
-                    <NavItem href="/admin/bookings" label="Bookings" kind={.calendar} active={isUnder(path, "/admin/bookings")} badge={upcoming} />
+                    <NavItem href="/admin/bookings" label="Bookings" kind={.calendar} active={isUnder(path, "/admin/bookings")} badge={badges.upcoming} />
                     <NavItem href="/admin/availability" label="Availability" kind={.clock} active={isUnder(path, "/admin/availability")} badge={0} />
 
                     <p class="adm-nav-section">Finance</p>
                     <NavItem href="/admin/finance" label="Portfolio" kind={.chart} active={std.mem.eql(u8, path, "/admin/finance")} badge={0} />
                     <NavItem href="/admin/finance/accounts" label="Accounts" kind={.wallet} active={isUnder(path, "/admin/finance/accounts")} badge={0} />
                     <NavItem href="/admin/finance/allocation" label="Allocation" kind={.pie} active={isUnder(path, "/admin/finance/allocation")} badge={0} />
-                    <NavItem href="/admin/finance/zakat" label="Zakat" kind={.heart} active={isUnder(path, "/admin/finance/zakat")} badge={0} />
-                    <NavItem href="/admin/finance/rates" label="Rates" kind={.percent} active={isUnder(path, "/admin/finance/rates")} badge={0} />
 
                     <p class="adm-nav-section">Content</p>
                     <NavItem href="/admin/posts" label="Posts" kind={.file} active={isUnder(path, "/admin/posts")} badge={0} />
@@ -85,6 +82,16 @@ fn isUnder(path: []const u8, prefix: []const u8) bool {
     return path.len == prefix.len or path[prefix.len] == '/';
 }
 
+const SidebarBadges = struct { unanswered: i64 = 0, upcoming: i64 = 0 };
+fn sidebarBadges(arena: zx.Allocator) SidebarBadges {
+    const row = zx.db.row(arena, SidebarBadges,
+        \\SELECT
+        \\  COALESCE((SELECT SUM(answer IS NULL) FROM questions WHERE deleted = 0), 0) AS unanswered,
+        \\  COALESCE((SELECT SUM(cancelled_at IS NULL AND ends_at >= ?1) FROM bookings), 0) AS upcoming
+    , .{booking.nowUnix()}) catch return .{};
+    return row orelse .{};
+}
+
 fn crumb(path: []const u8) []const u8 {
     if (isUnder(path, "/admin/questions")) return "Inbox / Questions";
     if (isUnder(path, "/admin/bookings")) return "Schedule / Bookings";
@@ -102,5 +109,4 @@ fn crumb(path: []const u8) []const u8 {
 const std = @import("std");
 const zx = @import("zx");
 const ui = @import("ui.zx");
-const questions_db = @import("../ask/db.zig");
 const booking = @import("../schedule/booking.zig");

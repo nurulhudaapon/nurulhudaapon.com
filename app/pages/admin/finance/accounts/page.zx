@@ -14,10 +14,11 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         return ui.redirect(ctx, try ctx.fmt("/admin/finance/accounts?{s}", .{flag}));
     }
 
-    const data = try finance.snapshot(ctx.arena);
+    const accounts = try finance.listAccountRows(ctx.arena);
     const account_types = try finance.listAccountTypes(ctx.arena);
     const asset_classes = try finance.listAssetClasses(ctx.arena);
     const currencies = try finance.listCurrencies(ctx.arena);
+    const usd_bdt_rate = finance.usdBdtRate(ctx.arena);
     const edit_id = std.fmt.parseInt(i64, ctx.request.queries.get("edit") orelse "", 10) catch 0;
     const editing = if (edit_id > 0) try finance.getAccount(ctx.arena, edit_id) else null;
     const flash = ui.flashFrom(ctx.request.queries, &.{
@@ -66,7 +67,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             <ui.FlashBanner flash={flash} />
 
             <section class="adm-card adm-card-gap">
-                {if (data.accounts.len == 0) (
+                {if (accounts.len == 0) (
                     <div class="adm-card-pad"><ui.Empty text="No accounts yet. Add one below or sync IBKR." /></div>
                 ) else (
                     <div class="adm-table-wrap">
@@ -82,7 +83,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                 </tr>
                             </thead>
                             <tbody>
-                                {for (data.accounts) |row| (
+                                {for (accounts) |row| (
                                     <tr class={if (finance.isAccountStale(row.account)) "adm-row-stale" else ""}>
                                         <td>
                                             <span class="adm-table-title">{row.account.name}</span>
@@ -226,7 +227,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             </section>
 
             <p class="adm-hint" style="margin-top:0.5rem">
-                FX via Frankfurter · 1 USD = {finance.formatMoney(ctx.arena, data.usd_bdt_rate, "BDT")} · <a href="/admin/finance/rates">Manage rates</a>
+                FX via Frankfurter · 1 USD = {finance.formatMoney(ctx.arena, usd_bdt_rate, "BDT")} · <a href="/admin/finance/rates">Manage rates</a>
             </p>
         </div>
     );

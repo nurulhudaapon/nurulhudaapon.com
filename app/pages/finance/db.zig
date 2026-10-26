@@ -21,6 +21,10 @@ pub fn listCurrencies(arena: std.mem.Allocator) ![]const []const u8 {
     return fx.listCurrencies(arena);
 }
 
+pub fn usdBdtRate(arena: std.mem.Allocator) f64 {
+    return fx.usdBdtRate(arena);
+}
+
 pub const Account = struct {
     id: i64,
     broker: []const u8,
