@@ -197,25 +197,16 @@ const built_with_ziex = [_]struct { name: []const u8, href: []const u8, note: []
 };
 
 const repos_url = components.github_url ++ "?tab=repositories";
-const schedule_url = components.site_url ++ "/schedule";
+const schedule_url = site.url ++ "/schedule";
 
-const ziex_snippet =
-    \\pub fn Page(ctx: zx.PageContext) zx.Component {
-    \\    const name = "Zig";
-    \\    return (
-    \\        <main @allocator={ctx.arena}>
-    \\            <h1>Hello, {name}!</h1>
-    \\            <Counter @client />
-    \\        </main>
-    \\    );
-    \\}
-;
+const ziex_snippet = @embedFile("ziex_snippet.zx");
 
 pub const RepoStats = live.RepoStats;
 pub const TotalStat = live.TotalStat;
 const live = @import("live.zx");
 const icons = components.icons;
 const components = @import("components.zx");
+const site = @import("../../site.zig");
 const github = @import("github.zig");
 const highlight = @import("highlight");
 

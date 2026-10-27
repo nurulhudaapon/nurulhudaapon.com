@@ -13,7 +13,7 @@ pub fn of(ctx: anytype) !Auth {
         .io = zx.io(),
         .userdata = host,
         .vtable = &vtable,
-        .origin = booking.origin(ctx.request),
+        .origin = site.origin(ctx.request),
         .name = "nurulhudaapon.com",
         .home = home,
         .providers = &.{Auth.OAuth.providers.github},
@@ -36,7 +36,7 @@ pub fn startUrl(arena: std.mem.Allocator, request: zx.server.Request, p: Auth.OA
 
 pub fn withNext(arena: std.mem.Allocator, request: zx.server.Request, path: []const u8, next: []const u8) ![]const u8 {
     var out: std.Io.Writer.Allocating = .init(arena);
-    try out.writer.print("{s}{s}?next=", .{ booking.origin(request), path });
+    try out.writer.print("{s}{s}?next=", .{ site.origin(request), path });
     try std.Uri.Component.percentEncode(&out.writer, next, isPathChar);
     return out.toOwnedSlice();
 }
@@ -214,4 +214,4 @@ fn deletePasskey(_: ?*anyopaque, id: []const u8, owner: Auth.Account) anyerror!v
 const std = @import("std");
 const zx = @import("zx");
 const Auth = @import("auth");
-const booking = @import("../pages/schedule/booking.zig");
+const site = @import("../site.zig");

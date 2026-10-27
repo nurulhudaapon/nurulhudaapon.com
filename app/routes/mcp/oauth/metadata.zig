@@ -2,10 +2,10 @@ const std = @import("std");
 const zx = @import("zx");
 const mcp = @import("mcp");
 const store = @import("../store.zig");
-const booking = @import("../../../pages/schedule/booking.zig");
+const site = @import("../../../site.zig");
 
 pub fn write(ctx: zx.RouteContext) !void {
-    const base = booking.origin(ctx.request);
+    const base = site.origin(ctx.request);
     const issuer = try store.authorizationServerIssuer(ctx.arena, ctx.request);
     const body = try mcp.oauth.writeAuthorizationServer(ctx.arena, .{
         .issuer = issuer,

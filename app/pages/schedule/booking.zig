@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const zx = @import("zx");
 const slots = @import("slots.zig");
 const caldav = @import("caldav.zig");
@@ -28,7 +27,6 @@ const Booking = struct {
     ip_hash: []const u8,
 };
 
-const site_url = "https://nurulhudaapon.com";
 const whitespace = " \t\r\n";
 const max_upcoming_per_email = 2;
 const max_daily_per_ip = 3;
@@ -171,12 +169,6 @@ fn logInviteStatus(arena: std.mem.Allocator, creds: caldav.Credentials, id: []co
     };
     const status = stored[at + marker.len ..];
     zx.log.info("schedule: invitation SCHEDULE-STATUS={s}", .{status[0 .. std.mem.indexOfAny(u8, status, ";:\r\n") orelse status.len]});
-}
-
-pub fn origin(request: zx.server.Request) []const u8 {
-    if (builtin.optimize != .debug) return site_url;
-    const host = request.headers.get("host") orelse return site_url;
-    return request.arena.print("http://{s}", .{host}) catch site_url;
 }
 
 pub fn nowUnix() i64 {

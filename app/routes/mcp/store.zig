@@ -2,6 +2,7 @@ const std = @import("std");
 const zx = @import("zx");
 const credentials = @import("../../db/credentials.zig");
 const booking = @import("../../pages/schedule/booking.zig");
+const site = @import("../../site.zig");
 
 pub const code_ttl_secs: i64 = 10 * 60;
 
@@ -119,17 +120,17 @@ pub fn issueAccessToken(
 }
 
 pub fn resourceUrl(arena: std.mem.Allocator, request: zx.server.Request) ![]const u8 {
-    const base = booking.origin(request);
+    const base = site.origin(request);
     return try arena.print("{s}/mcp", .{base});
 }
 
 pub fn authorizationServerIssuer(arena: std.mem.Allocator, request: zx.server.Request) ![]const u8 {
     _ = arena;
-    return booking.origin(request);
+    return site.origin(request);
 }
 
 pub fn protectedResourceMetadataUrl(arena: std.mem.Allocator, request: zx.server.Request) ![]const u8 {
-    const base = booking.origin(request);
+    const base = site.origin(request);
     return try arena.print("{s}/.well-known/oauth-protected-resource/mcp", .{base});
 }
 

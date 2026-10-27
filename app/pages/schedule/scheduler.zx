@@ -153,7 +153,7 @@ fn book(a: *zx.server.Action.Stateful) void {
         .email = input.email,
         .notes = input.notes,
         .honeypot = input.website,
-        .origin = booking.origin(a.inner.request),
+        .origin = site.origin(a.inner.request),
         .ip = a.inner.request.headers.get("cf-connecting-ip"),
     });
     switch (outcome) {
@@ -241,3 +241,4 @@ const zx = @import("zx");
 const std = @import("std");
 const slots = @import("slots.zig");
 const booking = @import("booking.zig");
+const site = @import("../../site.zig");

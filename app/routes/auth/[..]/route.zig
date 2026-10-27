@@ -2,6 +2,10 @@ pub fn Route(ctx: zx.RouteContext) !void {
     return handle(ctx);
 }
 
+pub const options: zx.RouteOptions = .{
+    .rendering = .request,
+};
+
 const login_path = "/auth/login";
 const settings_path = "/admin/settings";
 
@@ -63,13 +67,13 @@ fn handle(ctx: zx.RouteContext) !void {
         },
         // The passkey endpoints answer the page script in JSON: ceremony options as
         // `{"publicKey": …}`, or `{"redirect": url}` once only a page is left to show.
-        .@"passkey/login/options" => options(ctx, try auth.passkeyRequestOptions(ctx.arena)),
+        .@"passkey/login/options" => opts(ctx, try auth.passkeyRequestOptions(ctx.arena)),
         .@"passkey/login" => {
             const next = auth.signInWithPasskey(ctx.arena, ctx.request.text() orelse "", q.get("next")) catch |err|
                 return jsonRedirect(ctx, try failure(ctx, login_path, err));
             jsonRedirect(ctx, next);
         },
-        .@"passkey/register/options" => options(ctx, auth.passkeyCreationOptions(ctx.arena) catch |err|
+        .@"passkey/register/options" => opts(ctx, auth.passkeyCreationOptions(ctx.arena) catch |err|
             return jsonRedirect(ctx, try failure(ctx, settings_path, err))),
         .@"passkey/register" => {
             auth.addPasskey(ctx.arena, ctx.request.text() orelse "") catch |err|
@@ -108,7 +112,7 @@ fn redirect(ctx: zx.RouteContext, url: []const u8) void {
     ctx.response.redirect(url, 303);
 }
 
-fn options(ctx: zx.RouteContext, json: []const u8) void {
+fn opts(ctx: zx.RouteContext, json: []const u8) void {
     ctx.response.setContentType(.@"application/json");
     ctx.response.text(json);
 }
