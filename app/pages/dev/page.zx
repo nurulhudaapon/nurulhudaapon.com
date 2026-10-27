@@ -200,6 +200,7 @@ const repos_url = components.github_url ++ "?tab=repositories";
 const schedule_url = site.url ++ "/schedule";
 
 const ziex_snippet = @embedFile("ziex_snippet.zx");
+// const ziex_snippet_check = @import("ziex_snippet.zx");
 
 pub const RepoStats = live.RepoStats;
 pub const TotalStat = live.TotalStat;

@@ -7,5 +7,3 @@ pub fn Page(ctx: zx.PageContext) zx.Component {
         </main>
     );
 }
-
-const zx = @import("zx");
