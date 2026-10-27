@@ -33,9 +33,7 @@ pub fn fetchArchive(allocator: std.mem.Allocator, repo: Repository) !Archive {
         return archive;
     }
 
-    const gz = try fetchTarballCached(allocator, repo);
-    defer allocator.free(gz);
-    return try archiveFromTarball(allocator, gz);
+    return try fetchArchiveCached(allocator, repo);
 }
 
 pub fn fetchDefaultArchive(allocator: std.mem.Allocator) !Archive {
@@ -150,7 +148,7 @@ fn fetchRemoteFileCached(allocator: std.mem.Allocator, repo: Repository, relativ
     };
     errdefer allocator.free(body);
 
-    try blogs_kv.put(cache_key, body, .{ .ttl = tarball_cache_ttl });
+    try blogs_kv.put(cache_key, body, .{ .ttl = file_cache_ttl });
     return body;
 }
 
@@ -172,74 +170,88 @@ fn fileUrlPath(url: []const u8) ?[]const u8 {
 }
 
 /// Soft TTL so a failed SHA check cannot pin a stale archive forever.
-const tarball_cache_ttl: std.Io.Duration = .fromSeconds(60 * 60);
+// Raw files are also dropped whenever the archive is rebuilt for a new tip.
+const file_cache_ttl: std.Io.Duration = .fromSeconds(60 * 60);
 
-/// Fetch the raw GitHub tarball bytes, using `zx.kv` as a persistent cache.
-/// Invalidates automatically when the remote ref tip SHA changes.
-pub fn fetchTarballCached(allocator: std.mem.Allocator, repo: Repository) ![]u8 {
+// How long a cached archive is trusted before asking GitHub whether the tip moved.
+const freshness_ttl: std.Io.Duration = .fromSeconds(5 * 60);
+
+/// The repo's `.md` files, cached in `zx.kv` as one small blob. The tarball (mostly
+/// images) is only downloaded and unpacked when the branch tip moves, and the tip is
+/// checked at most once per `freshness_ttl`, so a request is a KV read plus a parse.
+pub fn fetchArchiveCached(allocator: std.mem.Allocator, repo: Repository) !Archive {
     const parsed = try parseGitHubUrl(repo.url);
-    const ref = try normalizeTarballRef(allocator, repo.ref orelse "HEAD");
-    defer if (!std.mem.eql(u8, ref, "HEAD")) allocator.free(ref);
-
-    const cache_key = try allocator.print(
-        "tarball:{s}/{s}:{s}",
-        .{ parsed.owner, parsed.repo, ref },
-    );
-    defer allocator.free(cache_key);
-    const sha_key = try allocator.print(
-        "tarball-sha:{s}/{s}:{s}",
-        .{ parsed.owner, parsed.repo, ref },
-    );
-    defer allocator.free(sha_key);
+    const ref = repo.ref orelse "main";
+    const archive_key = try allocator.print("archive:{s}/{s}:{s}", .{ parsed.owner, parsed.repo, ref });
+    const sha_key = try allocator.print("archive-sha:{s}/{s}:{s}", .{ parsed.owner, parsed.repo, ref });
+    const fresh_key = try allocator.print("archive-fresh:{s}/{s}:{s}", .{ parsed.owner, parsed.repo, ref });
 
     const blogs_kv = zx.kv.scoped(.blogs);
-    const remote_sha = resolveRefSha(allocator, parsed, repo.ref orelse "main") catch null;
-    defer if (remote_sha) |s| allocator.free(s);
-
-    if (remote_sha) |sha| {
-        if (try blogs_kv.get(allocator, sha_key)) |cached_sha| {
-            defer allocator.free(cached_sha);
-            if (!std.mem.eql(u8, cached_sha, sha)) {
-                zx.log.info("git.fetchTarballCached: tip moved {s} -> {s}, invalidating", .{ cached_sha, sha });
-                blogs_kv.delete(cache_key) catch {};
-                const file_prefix = try allocator.print("file:{s}/{s}:", .{ parsed.owner, parsed.repo });
-                defer allocator.free(file_prefix);
-                if (blogs_kv.list(allocator, file_prefix)) |keys| {
-                    defer allocator.free(keys);
-                    for (keys) |k| {
-                        defer allocator.free(k);
-                        blogs_kv.delete(k) catch {};
-                    }
-                } else |_| {}
-            }
+    const cached = try blogs_kv.get(allocator, archive_key);
+    if (cached) |data| {
+        if (try blogs_kv.get(allocator, fresh_key) != null) {
+            if (decodeArchive(allocator, data)) |archive| return archive else |_| {}
         }
     }
 
-    if (try blogs_kv.get(allocator, cache_key)) |cached| {
-        defer allocator.free(cached);
-        zx.log.debug("git.fetchTarballCached: kv hit key={s} bytes={d}", .{ cache_key, cached.len });
-        if (decodeCachedTarball(allocator, cached)) |gz| {
-            return gz;
-        } else |err| {
-            zx.log.warn("git.fetchTarballCached: invalid cache entry key={s} err={any}, refetching", .{ cache_key, err });
-            blogs_kv.delete(cache_key) catch {};
-        }
+    const remote_sha = resolveRefSha(allocator, parsed, ref) catch |err| blk: {
+        zx.log.warn("git.fetchArchiveCached: tip check failed: {any}", .{err});
+        break :blk null;
+    };
+    const cached_sha = try blogs_kv.get(allocator, sha_key);
+    const tip_unchanged = remote_sha == null or
+        (cached_sha != null and std.mem.eql(u8, cached_sha.?, remote_sha.?));
+    if (cached != null and tip_unchanged) {
+        if (decodeArchive(allocator, cached.?)) |archive| {
+            blogs_kv.put(fresh_key, "1", .{ .ttl = freshness_ttl }) catch {};
+            return archive;
+        } else |err| zx.log.warn("git.fetchArchiveCached: invalid cache entry: {any}", .{err});
     }
 
-    zx.log.debug("git.fetchTarballCached: kv miss key={s}, downloading", .{cache_key});
-    const gz = try fetchTarball(allocator, parsed, ref);
-    errdefer allocator.free(gz);
+    zx.log.info("git.fetchArchiveCached: rebuilding from tarball (tip {s})", .{remote_sha orelse "unknown"});
+    const gz = try fetchTarball(allocator, parsed, try normalizeTarballRef(allocator, ref));
+    defer allocator.free(gz);
+    const archive = try archiveFromTarball(allocator, gz);
 
-    const encoded = try encodeCachedTarball(allocator, gz);
-    defer allocator.free(encoded);
-    try blogs_kv.put(cache_key, encoded, .{ .ttl = tarball_cache_ttl });
-    if (remote_sha) |sha| {
-        blogs_kv.put(sha_key, sha, .{ .ttl = tarball_cache_ttl }) catch |err| {
-            zx.log.warn("git.fetchTarballCached: failed to store tip sha: {any}", .{err});
-        };
+    try blogs_kv.put(archive_key, try encodeArchive(allocator, archive), .{});
+    if (remote_sha) |sha| blogs_kv.put(sha_key, sha, .{}) catch {};
+    blogs_kv.put(fresh_key, "1", .{ .ttl = freshness_ttl }) catch {};
+    invalidateFileCache(allocator, parsed);
+    return archive;
+}
+
+fn invalidateFileCache(allocator: std.mem.Allocator, parsed: GitHubRepo) void {
+    const blogs_kv = zx.kv.scoped(.blogs);
+    const prefix = allocator.print("file:{s}/{s}:", .{ parsed.owner, parsed.repo }) catch return;
+    const keys = blogs_kv.list(allocator, prefix) catch return;
+    for (keys) |k| blogs_kv.delete(k) catch {};
+}
+
+// `path\nlen\ncontent` per file; paths never contain newlines.
+fn encodeArchive(allocator: std.mem.Allocator, archive: Archive) ![]u8 {
+    var out: std.Io.Writer.Allocating = .init(allocator);
+    var it = archive.files.iterator();
+    while (it.next()) |entry| {
+        try out.writer.print("{s}\n{d}\n{s}", .{ entry.key_ptr.*, entry.value_ptr.len, entry.value_ptr.* });
     }
-    zx.log.debug("git.fetchTarballCached: stored in kv key={s} raw={d} encoded={d}", .{ cache_key, gz.len, encoded.len });
-    return gz;
+    return out.toOwnedSlice();
+}
+
+fn decodeArchive(allocator: std.mem.Allocator, data: []u8) !Archive {
+    var archive: Archive = .{ .files = .empty };
+    var rest = data;
+    while (rest.len > 0) {
+        const path_end = std.mem.indexOfScalar(u8, rest, '\n') orelse return error.InvalidCachedArchive;
+        const path = rest[0..path_end];
+        rest = rest[path_end + 1 ..];
+        const len_end = std.mem.indexOfScalar(u8, rest, '\n') orelse return error.InvalidCachedArchive;
+        const len = std.fmt.parseInt(usize, rest[0..len_end], 10) catch return error.InvalidCachedArchive;
+        rest = rest[len_end + 1 ..];
+        if (len > rest.len) return error.InvalidCachedArchive;
+        try archive.files.put(allocator, path, rest[0..len]);
+        rest = rest[len..];
+    }
+    return archive;
 }
 
 fn resolveRefSha(allocator: std.mem.Allocator, parsed: GitHubRepo, ref: []const u8) ![]u8 {
@@ -259,23 +271,6 @@ fn resolveRefSha(allocator: std.mem.Allocator, parsed: GitHubRepo, ref: []const 
     const sha_end = std.mem.indexOfScalarPos(u8, body, sha_start, '"') orelse return error.InvalidCommitPayload;
     if (sha_end <= sha_start) return error.InvalidCommitPayload;
     return try allocator.dupe(u8, body[sha_start..sha_end]);
-}
-
-fn encodeCachedTarball(allocator: std.mem.Allocator, gz: []const u8) ![]u8 {
-    const enc = std.base64.standard.Encoder;
-    const out = try allocator.alloc(u8, enc.calcSize(gz.len));
-    _ = enc.encode(out, gz);
-    return out;
-}
-
-fn decodeCachedTarball(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
-    const dec = std.base64.standard.Decoder;
-    const out_len = try dec.calcSizeForSlice(encoded);
-    const out = try allocator.alloc(u8, out_len);
-    errdefer allocator.free(out);
-    try dec.decode(out, encoded);
-    if (out.len < 2 or out[0] != 0x1f or out[1] != 0x8b) return error.InvalidCachedTarball;
-    return out;
 }
 
 pub fn archiveFromTarball(allocator: std.mem.Allocator, gz: []const u8) !Archive {

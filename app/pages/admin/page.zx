@@ -2,7 +2,6 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const unanswered = try questions_db.listFiltered(ctx.arena, .unanswered);
     booking.syncUpcoming(ctx.arena);
     const upcoming = try booking.list(ctx.arena, .upcoming, 5);
-    const sources = posts.listSources(ctx.arena) catch &.{};
 
     return (
         <div @allocator={ctx.arena} class="adm-home">
@@ -65,26 +64,6 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     )}
                 </section>
 
-                <section class="adm-column">
-                    <a class="adm-column-head" href="/admin/posts">
-                        <span>Posts</span>
-                        <span class="adm-pill">{sources.len}</span>
-                        {ui.icon(ctx.arena, .chevron_right)}
-                    </a>
-                    {if (sources.len == 0) (
-                        <ui.Empty text="No posts yet." />
-                    )}
-                    {for (sources[0..@min(sources.len, 5)]) |p| (
-                        <a class="adm-row" href=`/admin/posts/{p.slug}`>
-                            {ui.icon(ctx.arena, .file)}
-                            <span class="adm-row-main">
-                                <span class="adm-row-title">{p.title}</span>
-                                <span class="adm-row-sub">{if (p.draft) "Draft" else p.published_at}</span>
-                            </span>
-                            {ui.icon(ctx.arena, .chevron_right)}
-                        </a>
-                    )}
-                </section>
             </div>
         </div>
     );
@@ -203,5 +182,4 @@ const ui = @import("ui.zx");
 const format = @import("format.zig");
 const questions_db = @import("../ask/db.zig");
 const booking = @import("../schedule/booking.zig");
-const posts = @import("../blog/posts.zig");
 const finance = @import("../finance/db.zig");
