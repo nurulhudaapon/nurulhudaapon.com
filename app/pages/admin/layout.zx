@@ -1,6 +1,7 @@
 pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
     const path = ctx.request.pathname;
-    const user = ctx.request.headers.get("cf-access-authenticated-user-email") orelse "local";
+    const signed_in = adapter.account(ctx);
+    const user = if (signed_in) |s| s.login else "local";
 
     return (
         <div @allocator={ctx.arena} class="adm">
@@ -48,6 +49,11 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                         <span class="adm-user" title={user}>
                             {ui.icon(ctx.arena, .user)}
                         </span>
+                        {if (signed_in != null) (
+                            <form method="post" action="/auth/logout" class="adm-inline">
+                                <button class="adm-topbar-link adm-link-button" type="submit">Sign out</button>
+                            </form>
+                        )}
                     </div>
                 </header>
                 <main class="adm-content">
@@ -114,15 +120,7 @@ const badge_feed = struct {
         defer res.deinit();
         if (!res.ok()) return;
 
-        const source = zx.allocator.dupeSentinel(u8, res.text() catch return, 0) catch return;
-        defer zx.allocator.free(source);
-        var diagnostics: std.zon.parse.Diagnostics = undefined;
-        const counts = std.zon.parse.fromSliceNoAlloc(badges.Counts, .{
-            .gpa = zx.allocator,
-            .arena = zx.allocator,
-            .source = source,
-            .diagnostics = &diagnostics,
-        }) catch return;
+        const counts = zx.util.zxon.parse(badges.Counts, zx.allocator, res.text() catch return, .{}) catch return;
 
         for (watchers[0..len]) |w| w.count.set(switch (w.kind) {
             .unanswered => counts.unanswered,
@@ -155,3 +153,4 @@ const std = @import("std");
 const zx = @import("zx");
 const ui = @import("ui.zx");
 const badges = @import("badges/route.zig");
+const adapter = @import("../../auth/adapter.zig");

@@ -1,0 +1,12 @@
+.{
+    .name = .auth,
+    .version = "0.1.0",
+    .fingerprint = 0xf8deb0597623a1b3,
+    .minimum_zig_version = "0.17.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "Auth.zig",
+        "Auth",
+    },
+}

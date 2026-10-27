@@ -97,7 +97,8 @@ fn AdminDocument(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
 }
 
 fn isAdminPath(path: []const u8) bool {
-    return std.mem.eql(u8, path, "/admin") or std.mem.startsWith(u8, path, "/admin/");
+    return std.mem.eql(u8, path, "/admin") or std.mem.startsWith(u8, path, "/admin/") or
+        std.mem.startsWith(u8, path, "/auth/");
 }
 
 fn isDevPath(path: []const u8) bool {

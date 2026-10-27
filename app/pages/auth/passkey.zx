@@ -1,0 +1,62 @@
+// Runs a passkey ceremony from any `[data-passkey]` button: fetch the options,
+// hand them to the browser, post its answer back and follow the redirect.
+// `navigator.credentials` is promise-based, which Zig can't await, so this stays
+// in JS. Render it after the buttons so unsupported browsers can hide them.
+pub fn Script(allocator: zx.Allocator) zx.Component {
+    return (
+        <script @allocator={allocator} @escaping={.none}>{script}</script>
+    );
+}
+
+const script =
+    \\(() => {
+    \\  const buttons = document.querySelectorAll("[data-passkey]");
+    \\  if (!window.PublicKeyCredential) return buttons.forEach((b) => (b.hidden = true));
+    \\  const decode = (s) => Uint8Array.from(atob(s.replaceAll("-", "+").replaceAll("_", "/")), (c) => c.charCodeAt(0));
+    \\  const encode = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+    \\  const post = async (url, body) => {
+    \\    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
+    \\    return res.json();
+    \\  };
+    \\  async function run(d) {
+    \\    const options = await post(d.options);
+    \\    if (options.redirect) return location.assign(options.redirect);
+    \\    const pk = options.publicKey;
+    \\    pk.challenge = decode(pk.challenge);
+    \\    let body;
+    \\    if (d.passkey === "register") {
+    \\      pk.user.id = decode(pk.user.id);
+    \\      pk.excludeCredentials = pk.excludeCredentials.map((c) => ({ ...c, id: decode(c.id) }));
+    \\      const cred = await navigator.credentials.create({ publicKey: pk });
+    \\      body = {
+    \\        id: cred.id,
+    \\        name: document.getElementById(d.name)?.value ?? "",
+    \\        response: { clientDataJSON: encode(cred.response.clientDataJSON), attestationObject: encode(cred.response.attestationObject) },
+    \\      };
+    \\    } else {
+    \\      const cred = await navigator.credentials.get({ publicKey: pk });
+    \\      body = {
+    \\        id: cred.id,
+    \\        response: {
+    \\          clientDataJSON: encode(cred.response.clientDataJSON),
+    \\          authenticatorData: encode(cred.response.authenticatorData),
+    \\          signature: encode(cred.response.signature),
+    \\        },
+    \\      };
+    \\    }
+    \\    location.assign((await post(d.verify, body)).redirect);
+    \\  }
+    \\  buttons.forEach((b) => b.addEventListener("click", () => {
+    \\    b.disabled = true;
+    \\    run(b.dataset)
+    \\      .catch((err) => {
+    \\        // Cancelling the browser prompt is not an error worth a page.
+    \\        if (err.name === "NotAllowedError" || err.name === "AbortError") return;
+    \\        location.assign((err.name === "InvalidStateError" && b.dataset.exists) || b.dataset.error);
+    \\      })
+    \\      .finally(() => (b.disabled = false));
+    \\  }));
+    \\})();
+;
+
+const zx = @import("zx");

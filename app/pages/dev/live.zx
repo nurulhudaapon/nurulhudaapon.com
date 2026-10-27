@@ -65,14 +65,7 @@ const feed = struct {
         defer res.deinit();
         if (!res.ok()) return;
 
-        const source = zx.allocator.dupeSentinel(u8, res.text() catch return, 0) catch return;
-        var diagnostics: std.zon.parse.Diagnostics = undefined;
-        const payload = std.zon.parse.fromSlice(struct { repos: []const github.Stats }, .{
-            .gpa = zx.allocator,
-            .arena = zx.allocator,
-            .source = source,
-            .diagnostics = &diagnostics,
-        }) catch return;
+        const payload = zx.util.zxon.parse(struct { repos: []const github.Stats }, zx.allocator, res.text() catch return, .{}) catch return;
 
         for (watchers[0..len]) |w| {
             if (countsFor(payload.repos, w.repo)) |c| w.counts.set(c);

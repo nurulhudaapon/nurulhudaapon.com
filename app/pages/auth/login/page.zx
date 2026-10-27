@@ -1,0 +1,64 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    const next = ctx.request.queries.get("next") orelse "/admin";
+    const auth = try adapter.of(ctx);
+    if (auth.account(ctx.arena) != null) return ui.redirect(ctx, "/admin");
+    ctx.response.headers.add("Cache-Control", "no-store");
+
+    var available: std.ArrayList(Option) = .empty;
+    for (try auth.availableProviders(ctx.arena)) |p| {
+        try available.append(ctx.arena, .{ .name = p.name, .href = try adapter.startUrl(ctx.arena, ctx.request, p, next) });
+    }
+    const has_passkeys = adapter.hasPasskeys(ctx.arena);
+    const passkey_verify = try adapter.withNext(ctx.arena, ctx.request, "/auth/passkey/login", next);
+    const flash = ui.flashFrom(ctx.request.queries, &.{
+        .{ "signed_out", "Signed out." },
+        .{ "not_allowed", "That account isn't allowed to sign in here." },
+        .{ "expired", "The sign-in took too long or was started elsewhere. Try again." },
+        .{ "denied", "Sign-in was cancelled." },
+        .{ "provider", "The sign-in provider didn't respond as expected. Try again." },
+        .{ "not_configured", "That sign-in method isn't set up yet." },
+        .{ "unknown_provider", "Unknown sign-in method." },
+        .{ "passkey", "That passkey couldn't be verified. Try again." },
+        .{ "passkey_unknown", "That passkey isn't registered here. It may have been removed." },
+        .{ "failed", "Something went wrong. Check the server logs." },
+    });
+
+    return (
+        <main @allocator={ctx.arena} class="adm-login">
+            <section class="adm-card adm-card-pad adm-login-card">
+                <h1 class="adm-page-title">Sign in</h1>
+                <p class="adm-hint">Admin for nurulhudaapon.com</p>
+                <ui.FlashBanner flash={flash} />
+                {if (available.items.len == 0 and !has_passkeys) (
+                    <p class="adm-hint">No sign-in method is configured.</p>
+                )}
+                {for (available.items) |o| (
+                    <a class="adm-btn adm-btn-primary adm-login-btn" href={o.href}>Continue with {o.name}</a>
+                )}
+                {if (has_passkeys) (
+                    <button
+                        type="button"
+                        class="adm-btn adm-login-btn"
+                        data-passkey="login"
+                        data-options="/auth/passkey/login/options"
+                        data-verify={passkey_verify}
+                        data-error="/auth/login?err=passkey"
+                    >
+                        Sign in with a passkey
+                    </button>
+                )}
+                <passkey_ui.Script />
+            </section>
+        </main>
+    );
+}
+
+const Option = struct { name: []const u8, href: []const u8 };
+
+pub const options: zx.PageOptions = .{ .rendering = .request };
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../../admin/ui.zx");
+const adapter = @import("../../../auth/adapter.zig");
+const passkey_ui = @import("../passkey.zx");

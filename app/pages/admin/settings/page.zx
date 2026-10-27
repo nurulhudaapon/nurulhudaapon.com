@@ -16,18 +16,68 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const github_set = credentials.githubTokenSet(ctx.arena);
     const mcp_set = credentials.mcpTokenSet(ctx.arena);
     const mcp_ttl_days = try ctx.fmt("{d}", .{credentials.mcpTokenTtlDays(ctx.arena)});
+    const auth = try adapter.of(ctx);
+    const owner = auth.account(ctx.arena);
+    const keys = try passkeyRows(ctx.arena, if (owner != null) try auth.passkeys(ctx.arena) else &.{});
     const flash = ui.flashFrom(ctx.request.queries, &.{
         .{ "saved", "Credentials saved. They’re stored in the database and used on the next request." },
         .{ "cleared", "Selected secrets were cleared." },
         .{ "bad_url", "URLs must start with https:// or http://." },
         .{ "bad_ttl", "MCP token lifetime must be between 1 and 365 days." },
         .{ "failed", "Something went wrong. Check the server logs." },
+        .{ "passkey_added", "Passkey added. You can now sign in with it." },
+        .{ "passkey_removed", "Passkey removed." },
+        .{ "passkey", "The passkey couldn't be added. Try again." },
+        .{ "expired", "Adding the passkey took too long. Try again." },
+        .{ "passkey_exists", "This device already has a passkey here." },
     });
 
     return (
         <div @allocator={ctx.arena}>
             <ui.PageHeader title="Settings" description="Integration credentials. Leave a secret blank to keep the current value." />
             <ui.FlashBanner flash={flash} />
+
+            {if (owner != null) (
+                <section class="adm-card adm-settings" style="margin-bottom:1rem">
+                    <div class="adm-settings-row">
+                        <div>
+                            <p class="adm-label">Passkeys</p>
+                            <p class="adm-hint">Sign in with Touch ID, Face ID, Windows Hello or a security key instead of GitHub. Each passkey stays tied to the GitHub account that added it, and stops working if that account is removed from the allowed list.</p>
+                        </div>
+                        <div class="adm-stack-fields">
+                            {for (keys) |k| (
+                                <form method="post" action="/auth/passkey/remove" class="adm-passkey">
+                                    <div>
+                                        <p class="adm-item-title">{k.name}</p>
+                                        <p class="adm-hint">{k.meta}</p>
+                                    </div>
+                                    <input type="hidden" name="credential_id" value={k.id} />
+                                    <button class="adm-btn adm-btn-danger" type="submit">Remove</button>
+                                </form>
+                            )}
+                            <div class="adm-field">
+                                <label class="adm-label" for="passkey_name">Name</label>
+                                <input class="adm-input" id="passkey_name" maxlength="60" autocomplete="off" placeholder="e.g. MacBook Touch ID" />
+                            </div>
+                            <div>
+                                <button
+                                    type="button"
+                                    class="adm-btn adm-btn-primary"
+                                    data-passkey="register"
+                                    data-options="/auth/passkey/register/options"
+                                    data-verify="/auth/passkey/register"
+                                    data-name="passkey_name"
+                                    data-error="/admin/settings?err=passkey"
+                                    data-exists="/admin/settings?err=passkey_exists"
+                                >
+                                    Add a passkey
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <passkey_ui.Script />
+                </section>
+            )}
 
             <form method="post" action="/admin/settings" class="adm-card adm-settings" style="margin-bottom:1rem">
                 <div class="adm-settings-row">
@@ -131,6 +181,21 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     );
 }
 
+const PasskeyRow = struct { id: []const u8, name: []const u8, meta: []const u8 };
+
+fn passkeyRows(arena: std.mem.Allocator, keys: []const Auth.Passkey) ![]const PasskeyRow {
+    const rows = try arena.alloc(PasskeyRow, keys.len);
+    for (rows, keys) |*row, k| row.* = .{
+        .id = k.id,
+        .name = k.name,
+        .meta = if (k.last_used_at) |used|
+            try arena.print("Added {s} · last used {s}", .{ format.date(arena, k.created_at), format.date(arena, used) })
+        else
+            try arena.print("Added {s} · never used", .{format.date(arena, k.created_at)}),
+    };
+    return rows;
+}
+
 fn save(ctx: zx.PageContext) ![]const u8 {
     const fd = ctx.request.formData();
     var cleared = false;
@@ -195,3 +260,7 @@ const zx = @import("zx");
 const ui = @import("../ui.zx");
 const credentials = @import("../../../db/credentials.zig");
 const settings = @import("../../schedule/settings.zig");
+const format = @import("../format.zig");
+const adapter = @import("../../../auth/adapter.zig");
+const Auth = @import("auth");
+const passkey_ui = @import("../../auth/passkey.zx");

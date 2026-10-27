@@ -2,6 +2,7 @@
 //! CALDAV_USER, CALDAV_PASS and MEET_LINK; optionally CALDAV_CALENDAR_URL (else
 //! discovered), CALDAV_CALENDAR (name to pick) and CALDAV_ORGANIZER_EMAIL.
 //! GITHUB_TOKEN, IBKR_FLEX_TOKEN, IBKR_FLEX_QUERY_ID, MCP_TOKEN. Prefer /admin/settings in prod.
+//! OAUTH_GITHUB_CLIENT_ID, OAUTH_GITHUB_CLIENT_SECRET and OAUTH_GITHUB_ALLOWED (account ids) for admin sign-in.
 const std = @import("std");
 const zx = @import("zx");
 const caldav = @import("../pages/schedule/caldav.zig");
@@ -24,7 +25,7 @@ pub fn load(init: zx.Init) void {
 }
 
 const Vars = std.StringHashMapUnmanaged([]const u8);
-const names = .{ "CALDAV_USER", "CALDAV_PASS", "CALDAV_CALENDAR_URL", "CALDAV_CALENDAR", "CALDAV_ORGANIZER_EMAIL", "MEET_LINK", "GITHUB_TOKEN", "IBKR_FLEX_TOKEN", "IBKR_FLEX_QUERY_ID", "MCP_TOKEN" };
+const names = .{ "CALDAV_USER", "CALDAV_PASS", "CALDAV_CALENDAR_URL", "CALDAV_CALENDAR", "CALDAV_ORGANIZER_EMAIL", "MEET_LINK", "GITHUB_TOKEN", "IBKR_FLEX_TOKEN", "IBKR_FLEX_QUERY_ID", "MCP_TOKEN", "OAUTH_GITHUB_CLIENT_ID", "OAUTH_GITHUB_CLIENT_SECRET", "OAUTH_GITHUB_ALLOWED" };
 
 fn read(arena: std.mem.Allocator, init: std.process.Init) !Vars {
     var vars: Vars = .empty;
@@ -58,6 +59,9 @@ fn apply(arena: std.mem.Allocator, vars: Vars) !void {
     if (vars.get("MEET_LINK")) |url| try put("caldav_meeting_url", url);
     if (vars.get("IBKR_FLEX_TOKEN")) |token| try put("ibkr_flex_token", token);
     if (vars.get("IBKR_FLEX_QUERY_ID")) |id| try put("ibkr_flex_query_id", id);
+    if (vars.get("OAUTH_GITHUB_CLIENT_ID")) |id| try put("oauth_github_client_id", id);
+    if (vars.get("OAUTH_GITHUB_CLIENT_SECRET")) |secret| try put("oauth_github_client_secret", secret);
+    if (vars.get("OAUTH_GITHUB_ALLOWED")) |ids| try put("oauth_github_allowed", ids);
 
     const user = vars.get("CALDAV_USER") orelse return;
     const pass = vars.get("CALDAV_PASS") orelse return;

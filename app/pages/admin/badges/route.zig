@@ -8,7 +8,7 @@ pub fn GET(ctx: zx.RouteContext) !void {
     , .{booking.nowUnix()}) orelse Counts{};
 
     var aw = std.Io.Writer.Allocating.init(ctx.arena);
-    try std.zon.stringify.serialize(counts, .{ .whitespace = false }, &aw.writer);
+    try zx.util.zxon.serialize(counts, &aw.writer, .{});
     ctx.response.headers.add("Cache-Control", "no-store");
     ctx.response.text(aw.written());
 }

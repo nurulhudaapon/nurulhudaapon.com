@@ -7,7 +7,8 @@ pub fn GET(ctx: zx.RouteContext) !void {
     };
 
     var aw = std.Io.Writer.Allocating.init(ctx.arena);
-    try std.zon.stringify.serialize(.{ .repos = repos }, .{ .whitespace = false }, &aw.writer);
+    try zx.util.zxon.serialize(.{ .repos = repos }, &aw.writer, .{});
+    ctx.response.setContentType(.@"application/json");
     ctx.response.text(aw.written());
 }
 

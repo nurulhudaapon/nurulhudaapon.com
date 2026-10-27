@@ -1,13 +1,20 @@
 pub fn Proxy(ctx: *zx.ProxyContext) void {
-    // Local debug only. Production relies on CF Access + this header check.
-    if (builtin.optimize == .debug) return;
-    if (ctx.request.headers.get("cf-access-jwt-assertion")) |jwt| if (jwt.len > 0) return;
+    if (allowed(ctx)) return;
 
-    ctx.response.setStatus(.forbidden);
     ctx.response.headers.add("Cache-Control", "no-store");
-    ctx.response.text("Forbidden");
+    if (ctx.request.method == .GET) {
+        ctx.response.redirect(adapter.loginUrl(ctx.arena, ctx.request, ctx.request.pathname), 302);
+    } else {
+        ctx.response.setStatus(.unauthorized);
+        ctx.response.text("Sign in required");
+    }
     ctx.abort();
 }
 
-const builtin = @import("builtin");
+fn allowed(ctx: *zx.ProxyContext) bool {
+    const auth = adapter.of(ctx) catch return false;
+    return auth.account(ctx.arena) != null;
+}
+
 const zx = @import("zx");
+const adapter = @import("../../auth/adapter.zig");

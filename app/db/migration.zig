@@ -13,6 +13,8 @@ const migrations = [_]Migration{
     .{ .name = "0008_finance_stale.sql", .sql = @embedFile("migrations/0008_finance_stale.sql") },
     .{ .name = "0009_mcp.sql", .sql = @embedFile("migrations/0009_mcp.sql") },
     .{ .name = "0010_finance_accounts.sql", .sql = @embedFile("migrations/0010_finance_accounts.sql") },
+    .{ .name = "0011_auth_sessions.sql", .sql = @embedFile("migrations/0011_auth_sessions.sql") },
+    .{ .name = "0012_auth_passkeys.sql", .sql = @embedFile("migrations/0012_auth_passkeys.sql") },
 };
 
 pub fn run() !void {

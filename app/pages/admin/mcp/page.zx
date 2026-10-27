@@ -16,7 +16,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         .{ "missing", "No pending MCP authorization request. Start from an MCP client." },
         .{ "failed", "Something went wrong issuing the authorization code." },
         .{ "no_token", "Enable MCP under Settings before approving clients." },
-        .{ "no_access", "Cloudflare Access identity required to approve MCP clients." },
+        .{ "no_access", "Sign in to approve MCP clients." },
         .{ "no_pkce", "MCP clients must use PKCE (S256)." },
     });
 
@@ -113,13 +113,8 @@ fn handlePost(ctx: zx.PageContext) !zx.Component {
         return ui.redirect(ctx, "/admin/mcp?err=no_pkce");
     }
 
-    const user = blk: {
-        if (ctx.request.headers.get("cf-access-authenticated-user-email")) |email| {
-            if (email.len > 0) break :blk email;
-        }
-        if (builtin.optimize == .debug) break :blk "local";
-        return ui.redirect(ctx, "/admin/mcp?err=no_access");
-    };
+    const owner = adapter.account(ctx) orelse return ui.redirect(ctx, "/admin/mcp?err=no_access");
+    const user = try ctx.fmt("{s}:{s}", .{ owner.provider, owner.login });
 
     const code = try store.randomToken(ctx.arena);
     store.insertCode(.{
@@ -177,8 +172,8 @@ pub const options: zx.PageOptions = .{
 };
 
 const std = @import("std");
-const builtin = @import("builtin");
 const zx = @import("zx");
 const ui = @import("../ui.zx");
 const store = @import("../../../routes/mcp/store.zig");
 const booking = @import("../../schedule/booking.zig");
+const adapter = @import("../../../auth/adapter.zig");

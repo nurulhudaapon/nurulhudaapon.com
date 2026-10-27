@@ -47,6 +47,8 @@ pub fn build(b: *std.Build) !void {
     ziex_b.addImport("geist_fonts", addGeistFontsModule(b));
     ziex_b.addImport("highlight", b.dependency("highlight", .{ .target = target, .optimize = optimize }).module("highlight"));
     ziex_b.addImport("mcp", b.dependency("mcp", .{ .target = target, .optimize = optimize }).module("mcp"));
+    const auth_mod = b.dependency("auth", .{ .target = target, .optimize = optimize }).module("auth");
+    ziex_b.addImport("auth", auth_mod);
     ziex_b.addImport("xml", b.dependency("xml", .{ .target = target, .optimize = optimize }).module("xml"));
 
     const ical_mod = libical.addLibical(b, target, optimize);
@@ -86,6 +88,7 @@ pub fn build(b: *std.Build) !void {
         }) });
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = auth_mod })).step);
 }
 
 fn addGeistFontsModule(b: *std.Build) *std.Build.Module {
