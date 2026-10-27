@@ -1,7 +1,6 @@
-pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
+pub fn Layout(ctx: zx.LayoutContext, children: zx.Component, _: void, signed_in: ?Auth.Account) zx.Component {
     const path = ctx.request.pathname;
-    const signed_in = adapter.account(ctx);
-    const user = if (signed_in) |s| s.login else "local";
+    const user = if (signed_in) |s| s.name else "local";
 
     return (
         <div @allocator={ctx.arena} class="adm">
@@ -153,4 +152,4 @@ const std = @import("std");
 const zx = @import("zx");
 const ui = @import("ui.zx");
 const badges = @import("badges/route.zig");
-const adapter = @import("../../auth/adapter.zig");
+const Auth = @import("auth");

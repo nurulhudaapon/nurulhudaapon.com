@@ -1,7 +1,7 @@
 // OAuth 2.0 authorization-code flow. Builds the provider requests and parses
 // their responses; sending them is left to `Auth.VTable.fetch`.
 
-pub const Identity = struct { id: []const u8, login: []const u8 };
+pub const Identity = struct { id: []const u8, name: []const u8 };
 
 pub const Provider = struct {
     id: []const u8,
@@ -28,21 +28,10 @@ pub const providers = struct {
 // Numeric ids are stable; logins can be renamed and re-registered by someone else.
 fn parseGitHubUser(arena: std.mem.Allocator, body: []const u8) !Identity {
     const user = try std.json.parseFromSliceLeaky(struct { id: u64, login: []const u8 }, arena, body, .{ .ignore_unknown_fields = true });
-    return .{ .id = try arena.print("{d}", .{user.id}), .login = user.login };
+    return .{ .id = try arena.print("{d}", .{user.id}), .name = user.login };
 }
 
-// `allowed` lists the account ids that may sign in, comma-separated.
-pub const Config = struct {
-    client_id: []const u8,
-    client_secret: []const u8,
-    allowed: []const u8,
-
-    pub fn allows(cfg: Config, account_id: []const u8) bool {
-        var ids = std.mem.tokenizeAny(u8, cfg.allowed, ", \t\r\n");
-        while (ids.next()) |id| if (std.mem.eql(u8, id, account_id)) return true;
-        return false;
-    }
-};
+pub const Config = struct { client_id: []const u8, client_secret: []const u8 };
 
 pub const Request = struct {
     method: std.http.Method,
@@ -166,7 +155,7 @@ test authorizeUrl {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const flow: Flow = .{ .state = @splat('s'), .verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk".*, .next = "" };
-    const url = try authorizeUrl(arena_state.allocator(), providers.github, .{ .client_id = "id 1", .client_secret = "", .allowed = "" }, "https://x.test/cb", flow);
+    const url = try authorizeUrl(arena_state.allocator(), providers.github, .{ .client_id = "id 1", .client_secret = "" }, "https://x.test/cb", flow);
     try std.testing.expectEqualStrings(
         "https://github.com/login/oauth/authorize?response_type=code&client_id=id%201&redirect_uri=https%3A%2F%2Fx.test%2Fcb&scope=read%3Auser" ++
             "&state=ssssssssssssssssssssssssssssssss&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
@@ -185,14 +174,6 @@ test accessToken {
         \\{"error":"bad_verification_code"}
     ));
     try std.testing.expectError(error.TokenExchangeFailed, accessToken(arena, "not json"));
-}
-
-test "Config.allows" {
-    const cfg: Config = .{ .client_id = "", .client_secret = "", .allowed = " 1, 22 ,333" };
-    try std.testing.expect(cfg.allows("22"));
-    try std.testing.expect(cfg.allows("333"));
-    try std.testing.expect(!cfg.allows("2"));
-    try std.testing.expect(!cfg.allows(""));
 }
 
 test Flow {

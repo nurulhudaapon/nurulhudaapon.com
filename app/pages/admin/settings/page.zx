@@ -1,4 +1,4 @@
-pub fn Page(ctx: zx.PageContext) !zx.Component {
+pub fn Page(ctx: zx.PageContext, _: void, owner: ?Auth.Account) !zx.Component {
     if (ctx.request.method == .POST) {
         const flag = save(ctx) catch |err| switch (err) {
             error.InvalidUrl => "err=bad_url",
@@ -16,9 +16,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const github_set = credentials.githubTokenSet(ctx.arena);
     const mcp_set = credentials.mcpTokenSet(ctx.arena);
     const mcp_ttl_days = try ctx.fmt("{d}", .{credentials.mcpTokenTtlDays(ctx.arena)});
-    const auth = try adapter.of(ctx);
-    const owner = auth.account(ctx.arena);
-    const keys = try passkeyRows(ctx.arena, if (owner != null) try auth.passkeys(ctx.arena) else &.{});
+    const keys = try passkeyRows(ctx.arena, if (owner) |o| try (try adapter.of(ctx)).passkeys(ctx.arena, o) else &.{});
     const flash = ui.flashFrom(ctx.request.queries, &.{
         .{ "saved", "Credentials saved. They’re stored in the database and used on the next request." },
         .{ "cleared", "Selected secrets were cleared." },

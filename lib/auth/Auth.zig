@@ -13,11 +13,13 @@ vtable: *const VTable,
 // (local dev) browsers refuse `Secure` cookies, so cookies go without it there.
 origin: []const u8,
 // Shown by the browser when creating a passkey.
-name: []const u8,
-// Landing page after sign-in, and the only prefix a `next` path may use.
-home: []const u8,
+site_name: []const u8,
+// Where sign-in lands when no usable `next` path is given.
+home: []const u8 = "/",
+// Joined with the provider id into the OAuth redirect URI.
 callback_path: []const u8 = "/auth/callback/",
 providers: []const OAuth.Provider,
+session_max_age_s: i64 = 14 * std.time.s_per_day,
 
 pub const VTable = struct {
     cookie: *const fn (?*anyopaque, name: []const u8) ?[]const u8,
@@ -25,6 +27,8 @@ pub const VTable = struct {
     config: *const fn (?*anyopaque, std.mem.Allocator, provider: []const u8) ?OAuth.Config,
     // The body of a 2xx response, or an error.
     fetch: *const fn (?*anyopaque, std.mem.Allocator, OAuth.Request) anyerror![]const u8,
+    // Whether this account may sign in. Asked on every sign-in, by OAuth or passkey.
+    authorize: *const fn (?*anyopaque, std.mem.Allocator, Account) anyerror!bool,
 
     putSession: *const fn (?*anyopaque, token_hash: []const u8, Account, max_age_s: i64) anyerror!void,
     getSession: *const fn (?*anyopaque, std.mem.Allocator, token_hash: []const u8) anyerror!?Account,
@@ -37,10 +41,11 @@ pub const VTable = struct {
     deletePasskey: *const fn (?*anyopaque, id: []const u8, owner: Account) anyerror!void,
 };
 
-pub const Account = struct { provider: []const u8, id: []const u8, login: []const u8 };
+// `id` is the provider's stable account id; `name` is for display and may change.
+pub const Account = struct { provider: []const u8, id: []const u8, name: []const u8 };
 
 // A passkey belongs to the provider account that registered it, and signs in only
-// while that account is still allowed.
+// while `authorize` still accepts that account.
 pub const Passkey = struct {
     id: []const u8,
     owner: Account,
@@ -52,8 +57,16 @@ pub const Passkey = struct {
     last_used_at: ?i64 = null,
 };
 
-// Always HttpOnly, SameSite=Lax and Path=/. A max age of 0 deletes it.
-pub const Cookie = struct { name: []const u8, value: []const u8, max_age_s: i64, secure: bool };
+// A max age of 0 deletes the cookie.
+pub const Cookie = struct {
+    name: []const u8,
+    value: []const u8,
+    max_age_s: i64,
+    secure: bool,
+    http_only: bool = true,
+    same_site: enum { strict, lax, none } = .lax,
+    path: []const u8 = "/",
+};
 
 pub const Error = error{
     UnknownProvider,
@@ -67,9 +80,10 @@ pub const Error = error{
     SignInRequired,
 };
 
-const CookieSpec = struct { name: []const u8, max_age_s: i64 };
+// A null max age means the session lifetime.
+const CookieSpec = struct { name: []const u8, max_age_s: ?i64 };
 
-const session_cookie: CookieSpec = .{ .name = "auth_session", .max_age_s = 14 * std.time.s_per_day };
+const session_cookie: CookieSpec = .{ .name = "auth_session", .max_age_s = null };
 const state_cookie: CookieSpec = .{ .name = "auth_state", .max_age_s = 10 * std.time.s_per_min };
 const challenge_cookie: CookieSpec = .{ .name = "auth_challenge", .max_age_s = 5 * std.time.s_per_min };
 
@@ -78,10 +92,7 @@ const log = std.log.scoped(.auth);
 
 pub fn account(auth: Auth, arena: std.mem.Allocator) ?Account {
     const token = auth.getCookie(session_cookie) orelse return null;
-    const owner = (auth.vtable.getSession(auth.userdata, arena, &hashToken(token)) catch null) orelse return null;
-    // Taking an account off the allow-list ends its sessions too.
-    _, const cfg = auth.resolve(arena, owner.provider) catch return null;
-    return if (cfg.allows(owner.id)) owner else null;
+    return auth.vtable.getSession(auth.userdata, arena, &hashToken(token)) catch null;
 }
 
 pub fn signOut(auth: Auth) void {
@@ -117,16 +128,13 @@ pub fn finishOAuth(auth: Auth, arena: std.mem.Allocator, provider_id: []const u8
         log.warn("{s} sign-in failed: {t}", .{ p.id, err });
         return error.ProviderFailed;
     };
-    if (!cfg.allows(identity.id)) {
-        log.warn("refused {s} account {s} ({s})", .{ p.id, identity.id, identity.login });
-        return error.NotAllowed;
-    }
-    try auth.startSession(arena, .{ .provider = p.id, .id = identity.id, .login = identity.login });
+    const owner: Account = .{ .provider = p.id, .id = identity.id, .name = identity.name };
+    try auth.checkAuthorized(arena, owner);
+    try auth.startSession(arena, owner);
     return auth.safeNext(flow.next);
 }
 
-pub fn passkeys(auth: Auth, arena: std.mem.Allocator) ![]const Passkey {
-    const owner = auth.account(arena) orelse return error.SignInRequired;
+pub fn passkeys(auth: Auth, arena: std.mem.Allocator, owner: Account) ![]const Passkey {
     return auth.vtable.listPasskeys(auth.userdata, arena, owner);
 }
 
@@ -138,24 +146,23 @@ pub fn passkeyCreationOptions(auth: Auth, arena: std.mem.Allocator) ![]const u8 
 
     const challenge = try auth.newChallenge(arena);
     const handle = userHandle(owner);
-    return WebAuthn.creationOptions(arena, try auth.relyingParty(), .{ .handle = &handle, .name = owner.login }, &challenge, exclude);
+    return WebAuthn.creationOptions(arena, try auth.relyingParty(), .{ .handle = &handle, .name = owner.name }, &challenge, exclude);
 }
 
-// `body` is the browser's answer plus an optional `name` for the passkey.
-pub fn addPasskey(auth: Auth, arena: std.mem.Allocator, body: []const u8) !void {
+// `response` is the browser's `navigator.credentials.create` answer as JSON; `name`
+// labels the passkey for its owner.
+pub fn addPasskey(auth: Auth, arena: std.mem.Allocator, response: []const u8, name: []const u8) !void {
     const owner = auth.account(arena) orelse return error.SignInRequired;
     const challenge = try auth.takeChallenge();
-    const cred = WebAuthn.verifyRegistration(arena, try auth.relyingParty(), challenge, body) catch |err| {
+    const cred = WebAuthn.verifyRegistration(arena, try auth.relyingParty(), challenge, response) catch |err| {
         log.warn("passkey registration refused: {t}", .{err});
         return error.PasskeyRejected;
     };
-    const label = std.json.parseFromSliceLeaky(struct { name: []const u8 = "" }, arena, body, .{ .ignore_unknown_fields = true }) catch
-        return error.PasskeyRejected;
 
     try auth.vtable.putPasskey(auth.userdata, .{
         .id = cred.id,
         .owner = owner,
-        .name = passkeyName(label.name),
+        .name = passkeyName(name),
         .algorithm = cred.algorithm,
         .public_key = cred.public_key,
         .sign_count = cred.sign_count,
@@ -173,34 +180,36 @@ pub fn passkeyRequestOptions(auth: Auth, arena: std.mem.Allocator) ![]const u8 {
     return WebAuthn.requestOptions(arena, try auth.relyingParty(), &challenge);
 }
 
-// Signs in with the browser's passkey answer and returns the path to land on.
-pub fn signInWithPasskey(auth: Auth, arena: std.mem.Allocator, body: []const u8, next: ?[]const u8) ![]const u8 {
+// Signs in with the browser's `navigator.credentials.get` answer (JSON) and returns
+// the path to land on.
+pub fn signInWithPasskey(auth: Auth, arena: std.mem.Allocator, response: []const u8, next: ?[]const u8) ![]const u8 {
     const challenge = try auth.takeChallenge();
-    const assertion = WebAuthn.parseAssertion(arena, body) catch return error.PasskeyRejected;
+    const assertion = WebAuthn.parseAssertion(arena, response) catch return error.PasskeyRejected;
     const key = try auth.vtable.getPasskey(auth.userdata, arena, assertion.credential_id) orelse return error.UnknownPasskey;
     const sign_count = WebAuthn.verifyAssertion(arena, try auth.relyingParty(), challenge, assertion, key.algorithm, key.public_key, key.sign_count) catch |err| {
         log.warn("passkey {s} refused: {t}", .{ key.id, err });
         return error.PasskeyRejected;
     };
-
-    _, const cfg = auth.resolve(arena, key.owner.provider) catch return error.NotAllowed;
-    if (!cfg.allows(key.owner.id)) {
-        log.warn("passkey owner {s} account {s} is no longer allowed", .{ key.owner.provider, key.owner.id });
-        return error.NotAllowed;
-    }
+    try auth.checkAuthorized(arena, key.owner);
     try auth.vtable.usePasskey(auth.userdata, key.id, sign_count);
     try auth.startSession(arena, key.owner);
     return auth.safeNext(next);
 }
 
-// Only paths under `home`, so sign-in can't be turned into an open redirect.
+// Only paths on this site, so sign-in can't be turned into an open redirect.
+// `//host` and `/\\host` both leave the site in browsers, and control characters
+// could split headers.
 pub fn safeNext(auth: Auth, next: ?[]const u8) []const u8 {
     const path = next orelse return auth.home;
-    if (!std.mem.startsWith(u8, path, auth.home)) return auth.home;
-    const rest = path[auth.home.len..];
-    if (rest.len > 0 and rest[0] != '/' and rest[0] != '?') return auth.home;
-    if (std.mem.startsWith(u8, path, "//") or std.mem.indexOfAny(u8, path, "\\\r\n") != null) return auth.home;
+    if (path.len == 0 or path[0] != '/' or std.mem.startsWith(u8, path, "//")) return auth.home;
+    for (path) |c| if (c == '\\' or std.ascii.isControl(c)) return auth.home;
     return path;
+}
+
+fn checkAuthorized(auth: Auth, arena: std.mem.Allocator, owner: Account) !void {
+    if (try auth.vtable.authorize(auth.userdata, arena, owner)) return;
+    log.warn("refused {s} account {s} ({s})", .{ owner.provider, owner.id, owner.name });
+    return error.NotAllowed;
 }
 
 fn resolve(auth: Auth, arena: std.mem.Allocator, provider_id: []const u8) !struct { OAuth.Provider, OAuth.Config } {
@@ -222,7 +231,7 @@ fn callbackUrl(auth: Auth, arena: std.mem.Allocator, p: OAuth.Provider) ![]const
 }
 
 fn relyingParty(auth: Auth) !WebAuthn.RelyingParty {
-    return WebAuthn.RelyingParty.fromOrigin(auth.name, auth.origin);
+    return WebAuthn.RelyingParty.fromOrigin(auth.site_name, auth.origin);
 }
 
 // A fresh token on every sign-in, so a token planted before it can't ride along.
@@ -231,7 +240,7 @@ fn startSession(auth: Auth, arena: std.mem.Allocator, owner: Account) !void {
     var bytes: [32]u8 = undefined;
     auth.io.random(&bytes);
     const token = std.fmt.bytesToHex(bytes, .lower);
-    try auth.vtable.putSession(auth.userdata, &hashToken(&token), owner, session_cookie.max_age_s);
+    try auth.vtable.putSession(auth.userdata, &hashToken(&token), owner, auth.session_max_age_s);
     auth.setCookie(session_cookie, try arena.dupe(u8, &token));
 }
 
@@ -287,7 +296,12 @@ fn getCookie(auth: Auth, comptime spec: CookieSpec) ?[]const u8 {
 }
 
 fn setCookie(auth: Auth, comptime spec: CookieSpec, value: []const u8) void {
-    auth.vtable.setCookie(auth.userdata, .{ .name = auth.cookieName(spec), .value = value, .max_age_s = spec.max_age_s, .secure = auth.secure() });
+    auth.vtable.setCookie(auth.userdata, .{
+        .name = auth.cookieName(spec),
+        .value = value,
+        .max_age_s = spec.max_age_s orelse auth.session_max_age_s,
+        .secure = auth.secure(),
+    });
 }
 
 // Single use: cleared whether or not it was there.
@@ -310,6 +324,7 @@ const TestHost = struct {
         .setCookie = writeCookie,
         .config = config,
         .fetch = fetch,
+        .authorize = authorize,
         .putSession = putSession,
         .getSession = getSession,
         .deleteSession = deleteSession,
@@ -326,7 +341,7 @@ const TestHost = struct {
             .userdata = host,
             .vtable = &vtable,
             .origin = "https://example.com",
-            .name = "Example",
+            .site_name = "Example",
             .home = "/admin",
             .providers = &.{OAuth.providers.github},
         };
@@ -349,8 +364,12 @@ const TestHost = struct {
         }
     }
 
-    fn config(ud: ?*anyopaque, _: std.mem.Allocator, _: []const u8) ?OAuth.Config {
-        return .{ .client_id = "id", .client_secret = "secret", .allowed = from(ud).allowed };
+    fn config(_: ?*anyopaque, _: std.mem.Allocator, _: []const u8) ?OAuth.Config {
+        return .{ .client_id = "id", .client_secret = "secret" };
+    }
+
+    fn authorize(ud: ?*anyopaque, _: std.mem.Allocator, owner: Account) anyerror!bool {
+        return std.mem.eql(u8, owner.id, from(ud).allowed);
     }
 
     fn fetch(_: ?*anyopaque, _: std.mem.Allocator, request: OAuth.Request) anyerror![]const u8 {
@@ -395,14 +414,27 @@ test "OAuth sign-in, then sign-out" {
     _ = try auth.startOAuth(arena, "github", "/admin/finance");
     const state = host.cookies.get("__Host-auth_state").?[0..32];
     try std.testing.expectEqualStrings("/admin/finance", try auth.finishOAuth(arena, "github", .{ .state = state, .code = "c", .@"error" = null }));
-    try std.testing.expectEqualStrings("octo", auth.account(arena).?.login);
+    try std.testing.expectEqualStrings("octo", auth.account(arena).?.name);
     try std.testing.expect(host.cookies.get("__Host-auth_state") == null);
 
-    host.allowed = "7";
-    try std.testing.expect(auth.account(arena) == null);
-    host.allowed = "42";
-
     auth.signOut();
+    try std.testing.expect(auth.account(arena) == null);
+    try std.testing.expectEqual(0, host.sessions.count());
+}
+
+test "authorize refuses a sign-in" {
+    const log_level = std.testing.log_level;
+    std.testing.log_level = .err;
+    defer std.testing.log_level = log_level;
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var host: TestHost = .{ .arena = arena, .allowed = "7" };
+    const auth = host.auth();
+
+    _ = try auth.startOAuth(arena, "github", null);
+    const state = host.cookies.get("__Host-auth_state").?[0..32];
+    try std.testing.expectError(error.NotAllowed, auth.finishOAuth(arena, "github", .{ .state = state, .code = "c", .@"error" = null }));
     try std.testing.expect(auth.account(arena) == null);
     try std.testing.expectEqual(0, host.sessions.count());
 }
@@ -416,11 +448,13 @@ test safeNext {
     var host: TestHost = .{ .arena = std.testing.allocator };
     const auth = host.auth();
     try std.testing.expectEqualStrings("/admin", auth.safeNext(null));
+    try std.testing.expectEqualStrings("/admin", auth.safeNext(""));
     try std.testing.expectEqualStrings("/admin/posts", auth.safeNext("/admin/posts"));
-    try std.testing.expectEqualStrings("/admin?x=1", auth.safeNext("/admin?x=1"));
+    try std.testing.expectEqualStrings("/blog?x=1", auth.safeNext("/blog?x=1"));
     try std.testing.expectEqualStrings("/admin", auth.safeNext("//evil.example"));
+    try std.testing.expectEqualStrings("/admin", auth.safeNext("/\\evil.example"));
     try std.testing.expectEqualStrings("/admin", auth.safeNext("https://evil.example"));
-    try std.testing.expectEqualStrings("/admin", auth.safeNext("/adminx"));
+    try std.testing.expectEqualStrings("/admin", auth.safeNext("admin"));
     try std.testing.expectEqualStrings("/admin", auth.safeNext("/admin/\r\nSet-Cookie:x"));
 }
 

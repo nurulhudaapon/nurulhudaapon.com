@@ -1,6 +1,6 @@
-pub fn Page(ctx: zx.PageContext) !zx.Component {
+pub fn Page(ctx: zx.PageContext, _: void, owner: ?Auth.Account) !zx.Component {
     if (ctx.request.method == .POST) {
-        return handlePost(ctx);
+        return handlePost(ctx, owner);
     }
 
     const q = ctx.request.queries;
@@ -79,7 +79,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     );
 }
 
-fn handlePost(ctx: zx.PageContext) !zx.Component {
+fn handlePost(ctx: zx.PageContext, signed_in: ?Auth.Account) !zx.Component {
     const fd = ctx.request.formData();
     const action = fd.get("action") orelse "";
     const redirect_uri = fd.get("redirect_uri") orelse "";
@@ -113,8 +113,8 @@ fn handlePost(ctx: zx.PageContext) !zx.Component {
         return ui.redirect(ctx, "/admin/mcp?err=no_pkce");
     }
 
-    const owner = adapter.account(ctx) orelse return ui.redirect(ctx, "/admin/mcp?err=no_access");
-    const user = try ctx.fmt("{s}:{s}", .{ owner.provider, owner.login });
+    const owner = signed_in orelse return ui.redirect(ctx, "/admin/mcp?err=no_access");
+    const user = try ctx.fmt("{s}:{s}", .{ owner.provider, owner.name });
 
     const code = try store.randomToken(ctx.arena);
     store.insertCode(.{
@@ -176,4 +176,4 @@ const zx = @import("zx");
 const ui = @import("../ui.zx");
 const store = @import("../../../routes/mcp/store.zig");
 const booking = @import("../../schedule/booking.zig");
-const adapter = @import("../../../auth/adapter.zig");
+const Auth = @import("auth");

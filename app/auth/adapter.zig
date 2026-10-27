@@ -1,6 +1,7 @@
 // The zx host for `Auth`: cookies on the zx request and response, sessions and
 // passkeys in D1, provider calls through `zx.fetch`, and provider credentials from
-// `credentials` (`oauth_<id>_client_id`, `oauth_<id>_client_secret`, `oauth_<id>_allowed`).
+// `credentials` (`oauth_<id>_client_id`, `oauth_<id>_client_secret`). Only the
+// account ids in `oauth_<id>_allowed` (comma-separated) may sign in.
 
 const home = "/admin";
 
@@ -14,15 +15,10 @@ pub fn of(ctx: anytype) !Auth {
         .userdata = host,
         .vtable = &vtable,
         .origin = site.origin(ctx.request),
-        .name = "nurulhudaapon.com",
+        .site_name = "nurulhudaapon.com",
         .home = home,
         .providers = &.{Auth.OAuth.providers.github},
     };
-}
-
-pub fn account(ctx: anytype) ?Auth.Account {
-    const auth = of(ctx) catch return null;
-    return auth.account(ctx.arena);
 }
 
 // Sign-in runs on the canonical origin: cookies are per host and providers allow one callback.
@@ -55,6 +51,7 @@ const vtable: Auth.VTable = .{
     .setCookie = setCookie,
     .config = config,
     .fetch = fetch,
+    .authorize = authorize,
     .putSession = putSession,
     .getSession = getSession,
     .deleteSession = deleteSession,
@@ -75,31 +72,39 @@ fn cookie(ud: ?*anyopaque, name: []const u8) ?[]const u8 {
 
 fn setCookie(ud: ?*anyopaque, c: Auth.Cookie) void {
     hostOf(ud).response.cookies.set(c.name, c.value, .{
-        .path = "/",
+        .path = c.path,
         .secure = c.secure,
-        .http_only = true,
-        .same_site = .lax,
+        .http_only = c.http_only,
+        .same_site = switch (c.same_site) {
+            inline else => |s| @field(zx.server.Response.CookieOptions.SameSite, @tagName(s)),
+        },
         .max_age = @intCast(c.max_age_s),
     });
 }
 
-// Read on every signed-in request (the allow-list is checked each time), so in one query.
 fn config(_: ?*anyopaque, arena: std.mem.Allocator, provider: []const u8) ?Auth.OAuth.Config {
     const prefix = arena.print("oauth_{s}_", .{provider}) catch return null;
     const rows = zx.db.rows(arena, struct { cat: []const u8, val: []const u8 },
         \\SELECT cat, val FROM credentials
-        \\WHERE cat IN (?1 || 'client_id', ?1 || 'client_secret', ?1 || 'allowed')
+        \\WHERE cat IN (?1 || 'client_id', ?1 || 'client_secret')
     , .{prefix}) catch return null;
 
-    var cfg: Auth.OAuth.Config = .{ .client_id = "", .client_secret = "", .allowed = "" };
+    var cfg: Auth.OAuth.Config = .{ .client_id = "", .client_secret = "" };
     for (rows) |r| {
         const field = std.meta.stringToEnum(std.meta.FieldEnum(Auth.OAuth.Config), r.cat[prefix.len..]) orelse continue;
         switch (field) {
             inline else => |f| @field(cfg, @tagName(f)) = r.val,
         }
     }
-    if (cfg.client_id.len == 0 or cfg.client_secret.len == 0 or cfg.allowed.len == 0) return null;
+    if (cfg.client_id.len == 0 or cfg.client_secret.len == 0) return null;
     return cfg;
+}
+
+fn authorize(_: ?*anyopaque, arena: std.mem.Allocator, owner: Auth.Account) anyerror!bool {
+    const allowed = credentials.get(arena, try arena.print("oauth_{s}_allowed", .{owner.provider})) orelse return false;
+    var ids = std.mem.tokenizeAny(u8, allowed, ", \t\r\n");
+    while (ids.next()) |id| if (std.mem.eql(u8, id, owner.id)) return true;
+    return false;
 }
 
 fn fetch(_: ?*anyopaque, arena: std.mem.Allocator, request: Auth.OAuth.Request) anyerror![]const u8 {
@@ -126,12 +131,12 @@ fn putSession(_: ?*anyopaque, token_hash: []const u8, owner: Auth.Account, max_a
     _ = try zx.db.run(
         \\INSERT INTO auth_sessions (token_hash, provider, account_id, login, created_at, expires_at)
         \\VALUES (?1, ?2, ?3, ?4, unixepoch(), unixepoch() + ?5)
-    , .{ token_hash, owner.provider, owner.id, owner.login, max_age_s });
+    , .{ token_hash, owner.provider, owner.id, owner.name, max_age_s });
 }
 
 fn getSession(_: ?*anyopaque, arena: std.mem.Allocator, token_hash: []const u8) anyerror!?Auth.Account {
     return zx.db.row(arena, Auth.Account,
-        \\SELECT provider, account_id AS id, login FROM auth_sessions
+        \\SELECT provider, account_id AS id, login AS name FROM auth_sessions
         \\WHERE token_hash = ?1 AND expires_at > unixepoch()
     , .{token_hash});
 }
@@ -161,7 +166,7 @@ const PasskeyRow = struct {
     fn passkey(row: PasskeyRow, arena: std.mem.Allocator) !Auth.Passkey {
         return .{
             .id = row.id,
-            .owner = .{ .provider = row.provider, .id = row.account_id, .login = row.login },
+            .owner = .{ .provider = row.provider, .id = row.account_id, .name = row.login },
             .name = row.name,
             .algorithm = std.enums.fromInt(Auth.WebAuthn.Algorithm, row.algorithm) orelse return error.UnsupportedAlgorithm,
             .public_key = try Auth.WebAuthn.decode(arena, row.public_key),
@@ -182,7 +187,7 @@ fn putPasskey(_: ?*anyopaque, p: Auth.Passkey) anyerror!void {
         p.id,
         p.owner.provider,
         p.owner.id,
-        p.owner.login,
+        p.owner.name,
         p.name,
         @intFromEnum(p.algorithm),
         try Auth.WebAuthn.encode(fba.allocator(), p.public_key),
@@ -214,4 +219,5 @@ fn deletePasskey(_: ?*anyopaque, id: []const u8, owner: Auth.Account) anyerror!v
 const std = @import("std");
 const zx = @import("zx");
 const Auth = @import("auth");
+const credentials = @import("../db/credentials.zig");
 const site = @import("../site.zig");

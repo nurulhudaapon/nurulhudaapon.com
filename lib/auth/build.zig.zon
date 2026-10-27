@@ -8,5 +8,6 @@
         "build.zig.zon",
         "Auth.zig",
         "Auth",
+        "README.md",
     },
 }

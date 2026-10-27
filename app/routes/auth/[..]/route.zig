@@ -76,7 +76,10 @@ fn handle(ctx: zx.RouteContext) !void {
         .@"passkey/register/options" => opts(ctx, auth.passkeyCreationOptions(ctx.arena) catch |err|
             return jsonRedirect(ctx, try failure(ctx, settings_path, err))),
         .@"passkey/register" => {
-            auth.addPasskey(ctx.arena, ctx.request.text() orelse "") catch |err|
+            const body = ctx.request.text() orelse "";
+            const label = std.json.parseFromSliceLeaky(struct { name: []const u8 = "" }, ctx.arena, body, .{ .ignore_unknown_fields = true }) catch
+                return jsonRedirect(ctx, try failure(ctx, settings_path, error.PasskeyRejected));
+            auth.addPasskey(ctx.arena, body, label.name) catch |err|
                 return jsonRedirect(ctx, try failure(ctx, settings_path, err));
             jsonRedirect(ctx, settings_path ++ "?ok=passkey_added");
         },
