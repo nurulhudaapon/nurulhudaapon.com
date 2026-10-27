@@ -25,14 +25,6 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         state = .draft;
     }
 
-    const preview = posts.renderPreview(ctx.arena, markdown) catch |err| blk: {
-        zx.log.warn("admin: preview of {s} failed: {any}", .{ slug, err });
-        break :blk posts.Preview{
-            .title = "",
-            .html = "<p>Couldn't render this markdown. Check the frontmatter block.</p>",
-            .read_minutes = 0,
-        };
-    };
     const flash = ui.flashFrom(ctx.request.queries, &.{
         .{ "saved", "Draft saved on this site. GitHub is unchanged." },
         .{ "discarded", "Draft discarded. Showing the version from GitHub." },
@@ -52,9 +44,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 draft={source.draft}
                 markdown={markdown}
                 state={state}
-                preview_title={if (preview.title.len > 0) preview.title else source.title}
-                preview_html={preview.html}
-                preview_minutes={preview.read_minutes}
+                preview_url={try ctx.fmt("/assets/_/preview.wasm?v={s}", .{&previewVersion()})}
             />
         </div>
     );
@@ -62,15 +52,25 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
 const State = enum { original, draft, unsaved };
 
+// A new random version per server process (each build or deploy) busts the
+// browser's cache of the preview wasm.
+var preview_version: ?[16]u8 = null;
+
+fn previewVersion() [16]u8 {
+    if (preview_version) |v| return v;
+    var bytes: [8]u8 = undefined;
+    zx.io().random(&bytes);
+    preview_version = std.fmt.bytesToHex(bytes, .lower);
+    return preview_version.?;
+}
+
 const PreviewState = struct {
     open: bool = false,
+    url: []const u8 = "",
+    markdown: []const u8 = "",
     title: []const u8 = "",
     html: []const u8 = "",
-    read_minutes: u32 = 0,
-};
-
-const PreviewInput = struct {
-    markdown: []const u8 = "",
+    minutes: u32 = 0,
 };
 
 pub fn PostEditor(ctx: *zx.ComponentCtx(struct {
@@ -81,17 +81,13 @@ pub fn PostEditor(ctx: *zx.ComponentCtx(struct {
     draft: bool,
     markdown: []const u8,
     state: State,
-    preview_title: []const u8,
-    preview_html: []const u8,
-    preview_minutes: u32,
+    preview_url: []const u8,
 })) zx.Component {
     const preview = ctx.state(PreviewState, .{
-        .open = false,
-        .title = ctx.props.preview_title,
-        .html = ctx.props.preview_html,
-        .read_minutes = ctx.props.preview_minutes,
+        .url = ctx.props.preview_url,
+        .markdown = ctx.props.markdown,
+        .title = ctx.props.title,
     });
-    const render_action = ctx.action(renderPreviewAction, .{});
     const alloc = ctx.allocator;
     const p = preview.get();
     const editor_class = if (p.open) "adm-editor adm-editor-split" else "adm-editor adm-editor-focus";
@@ -136,8 +132,7 @@ pub fn PostEditor(ctx: *zx.ComponentCtx(struct {
                             name="markdown"
                             spellcheck="true"
                             aria-label="Markdown source"
-                            data-post-source
-                            oninput={ctx.bind(queuePreview)}
+                            oninput={ctx.bind(updatePreview)}
                         >{ctx.props.markdown}</textarea>
                     </section>
 
@@ -145,21 +140,15 @@ pub fn PostEditor(ctx: *zx.ComponentCtx(struct {
                         <section class="adm-card adm-pane">
                             <div class="adm-pane-head">
                                 <span>Preview</span>
-                                <span>{p.read_minutes} min read</span>
+                                <span>{if (p.minutes > 0) alloc.print("{d} min read", .{p.minutes}) catch "" else ""}</span>
                             </div>
                             <article class="adm-preview">
                                 <h1 class="post-title">{p.title}</h1>
-                                <div class="post-content">
-                                    <div @escaping={.none}>{p.html}</div>
-                                </div>
+                                <div class="post-content" @escaping={.none}>{p.html}</div>
                             </article>
                         </section>
                     )}
                 </div>
-            </form>
-
-            <form class="adm-hidden" data-preview-form action={render_action} aria-hidden="true">
-                <textarea name="markdown" data-preview-markdown tabindex="-1">{ctx.props.markdown}</textarea>
             </form>
         </div>
     );
@@ -169,54 +158,88 @@ fn togglePreview(e: *zx.client.Event.Stateful) void {
     const preview = e.state(PreviewState);
     var next = preview.get();
     next.open = !next.open;
-    preview.set(next);
-    if (next.open) schedulePreviewSubmit();
+    if (next.open) loadPreviewWasm(next.url);
+    renderPreview(preview, next, next.markdown);
 }
 
-fn queuePreview(e: *zx.client.Event.Stateful) void {
+fn updatePreview(e: *zx.client.Event.Stateful) void {
     const preview = e.state(PreviewState);
-    if (!preview.get().open) return;
-    schedulePreviewSubmit();
+    renderPreview(preview, preview.get(), e.value() orelse return);
 }
 
-var preview_pending: u32 = 0;
+// Each render owns an arena; the previous one is freed once state points at the new one.
+var preview_arena: ?std.heap.ArenaAllocator = null;
 
-fn schedulePreviewSubmit() void {
-    preview_pending += 1;
-    _ = zx.client.setTimeout(flushPreviewSubmit, 350);
-}
-
-fn flushPreviewSubmit() void {
-    if (preview_pending > 0) preview_pending -= 1;
-    if (preview_pending != 0) return;
-    _ = zx.client.eval(void,
-        \\(() => {
-        \\  const source = document.querySelector("[data-post-source]");
-        \\  const mirror = document.querySelector("[data-preview-markdown]");
-        \\  const form = document.querySelector("[data-preview-form]");
-        \\  if (!source || !mirror || !form) return;
-        \\  mirror.value = source.value;
-        \\  if (typeof form.requestSubmit === "function") form.requestSubmit();
-        \\  else form.submit();
-        \\})()
-    ) catch {};
-}
-
-fn renderPreviewAction(a: *zx.server.Action.Stateful) void {
-    const preview = a.state(PreviewState);
-    const input = a.data(PreviewInput);
-    const markdown = std.mem.replaceOwned(u8, a.inner.arena, input.markdown, "\r\n", "\n") catch input.markdown;
-    const rendered = posts.renderPreview(a.inner.arena, markdown) catch posts.Preview{
-        .title = "",
-        .html = "<p>Couldn't render this markdown. Check the frontmatter block.</p>",
-        .read_minutes = 0,
+fn renderPreview(preview: anytype, base: PreviewState, markdown: []const u8) void {
+    var arena: std.heap.ArenaAllocator = .init(zx.allocator);
+    const alloc = arena.allocator();
+    var next = base;
+    next.markdown = alloc.dupe(u8, markdown) catch return arena.deinit();
+    next.title = alloc.dupe(u8, base.title) catch return arena.deinit();
+    next.html = alloc.dupe(u8, base.html) catch return arena.deinit();
+    if (next.open) if (renderWithWasm(alloc, next.markdown)) |rendered| {
+        if (rendered.title.len > 0) next.title = rendered.title;
+        next.html = rendered.html;
+        next.minutes = rendered.minutes;
     };
-    preview.set(.{
-        .open = true,
-        .title = if (rendered.title.len > 0) rendered.title else preview.get().title,
-        .html = rendered.html,
-        .read_minutes = rendered.read_minutes,
-    });
+    preview.set(next);
+    if (preview_arena) |*old| old.deinit();
+    preview_arena = arena;
+}
+
+const Rendered = struct { title: []const u8, html: []const u8, minutes: u32 };
+
+// Null until the wasm has loaded; the loader then fires `input` on the source to render.
+fn renderWithWasm(alloc: std.mem.Allocator, markdown: []const u8) ?Rendered {
+    if (comptime zx.platform.role != .client) return null;
+    const js = zx.client.js;
+    const renderer = js.global.get(js.Object, "__postPreview") catch return null;
+    defer renderer.deinit();
+    const result = renderer.call(js.Object, "render", .{js.string(markdown)}) catch return null;
+    defer result.deinit();
+    return .{
+        .title = result.getAlloc(js.String, alloc, "title") catch "",
+        .html = result.getAlloc(js.String, alloc, "html") catch return null,
+        .minutes = result.get(u32, "minutes") catch 0,
+    };
+}
+
+// Instantiating a wasm module is promise-based, which Zig can't await, so this
+// small loader stays in JS. It also moves strings in and out of the module's memory.
+const preview_loader =
+    \\(url) => {
+    \\  if (window.__postPreviewLoading) return;
+    \\  window.__postPreviewLoading = true;
+    \\  const wasi = { fd_seek: () => 0, fd_write: () => 0, fd_close: () => 0 };
+    \\  WebAssembly.instantiateStreaming(fetch(url), { wasi_snapshot_preview1: wasi }).then(({ instance }) => {
+    \\    const x = instance.exports;
+    \\    x._initialize();
+    \\    const read = (ptr, len) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, ptr, len));
+    \\    window.__postPreview = {
+    \\      render(markdown) {
+    \\        const bytes = new TextEncoder().encode(markdown);
+    \\        x.preview_reset();
+    \\        const ptr = x.preview_alloc(bytes.length);
+    \\        new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
+    \\        if (!x.preview_render(ptr, bytes.length)) {
+    \\          return { title: "", html: "<p>Couldn't render this markdown. Check the frontmatter block.</p>", minutes: 0 };
+    \\        }
+    \\        return {
+    \\          title: read(x.preview_title_ptr(), x.preview_title_len()),
+    \\          html: read(x.preview_html_ptr(), x.preview_html_len()),
+    \\          minutes: x.preview_minutes(),
+    \\        };
+    \\      },
+    \\    };
+    \\    document.querySelector(".adm-source")?.dispatchEvent(new Event("input", { bubbles: true }));
+    \\  }, () => { window.__postPreviewLoading = false; });
+    \\}
+;
+
+fn loadPreviewWasm(url: []const u8) void {
+    const code = zx.allocator.print("({s})(\"{s}\")", .{ preview_loader, url }) catch return;
+    defer zx.allocator.free(code);
+    _ = zx.client.eval(void, code) catch {};
 }
 
 fn stateLabel(state: State) []const u8 {

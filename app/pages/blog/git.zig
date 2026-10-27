@@ -123,7 +123,7 @@ fn readLocalFile(allocator: std.mem.Allocator, root: []const u8, relative_path: 
 fn fetchRemoteFileCached(allocator: std.mem.Allocator, repo: Repository, relative_path: []const u8) ![]u8 {
     const parsed = try parseGitHubUrl(repo.url);
     const ref = repo.ref orelse "HEAD";
-    const cache_key = try std.fmt.allocPrint(allocator, "file:{s}/{s}:{s}:{s}", .{
+    const cache_key = try allocator.print("file:{s}/{s}:{s}:{s}", .{
         parsed.owner,
         parsed.repo,
         ref,
@@ -137,8 +137,7 @@ fn fetchRemoteFileCached(allocator: std.mem.Allocator, repo: Repository, relativ
         return cached;
     }
 
-    const url = try std.fmt.allocPrint(
-        allocator,
+    const url = try allocator.print(
         "https://raw.githubusercontent.com/{s}/{s}/{s}/{s}",
         .{ parsed.owner, parsed.repo, ref, relative_path },
     );
@@ -182,14 +181,12 @@ pub fn fetchTarballCached(allocator: std.mem.Allocator, repo: Repository) ![]u8 
     const ref = try normalizeTarballRef(allocator, repo.ref orelse "HEAD");
     defer if (!std.mem.eql(u8, ref, "HEAD")) allocator.free(ref);
 
-    const cache_key = try std.fmt.allocPrint(
-        allocator,
+    const cache_key = try allocator.print(
         "tarball:{s}/{s}:{s}",
         .{ parsed.owner, parsed.repo, ref },
     );
     defer allocator.free(cache_key);
-    const sha_key = try std.fmt.allocPrint(
-        allocator,
+    const sha_key = try allocator.print(
         "tarball-sha:{s}/{s}:{s}",
         .{ parsed.owner, parsed.repo, ref },
     );
@@ -205,7 +202,7 @@ pub fn fetchTarballCached(allocator: std.mem.Allocator, repo: Repository) ![]u8 
             if (!std.mem.eql(u8, cached_sha, sha)) {
                 zx.log.info("git.fetchTarballCached: tip moved {s} -> {s}, invalidating", .{ cached_sha, sha });
                 blogs_kv.delete(cache_key) catch {};
-                const file_prefix = try std.fmt.allocPrint(allocator, "file:{s}/{s}:", .{ parsed.owner, parsed.repo });
+                const file_prefix = try allocator.print("file:{s}/{s}:", .{ parsed.owner, parsed.repo });
                 defer allocator.free(file_prefix);
                 if (blogs_kv.list(allocator, file_prefix)) |keys| {
                     defer allocator.free(keys);
@@ -246,8 +243,7 @@ pub fn fetchTarballCached(allocator: std.mem.Allocator, repo: Repository) ![]u8 
 }
 
 fn resolveRefSha(allocator: std.mem.Allocator, parsed: GitHubRepo, ref: []const u8) ![]u8 {
-    const url = try std.fmt.allocPrint(
-        allocator,
+    const url = try allocator.print(
         "https://api.github.com/repos/{s}/{s}/commits/{s}",
         .{ parsed.owner, parsed.repo, ref },
     );
@@ -295,8 +291,7 @@ pub fn archiveFromTarball(allocator: std.mem.Allocator, gz: []const u8) !Archive
 fn fetchTarball(allocator: std.mem.Allocator, parsed: GitHubRepo, ref: []const u8) ![]u8 {
     zx.log.debug("git.fetchTarball: owner={s} repo={s} ref={s}", .{ parsed.owner, parsed.repo, ref });
 
-    const tarball_url = try std.fmt.allocPrint(
-        allocator,
+    const tarball_url = try allocator.print(
         "https://codeload.github.com/{s}/{s}/tar.gz/{s}",
         .{ parsed.owner, parsed.repo, ref },
     );
@@ -335,7 +330,7 @@ fn parseGitHubUrl(url: []const u8) !GitHubRepo {
 fn normalizeTarballRef(allocator: std.mem.Allocator, ref: []const u8) ![]const u8 {
     if (std.mem.eql(u8, ref, "HEAD")) return ref;
     if (std.mem.startsWith(u8, ref, "refs/")) return try allocator.dupe(u8, ref);
-    return try std.fmt.allocPrint(allocator, "refs/heads/{s}", .{ref});
+    return try allocator.print("refs/heads/{s}", .{ref});
 }
 
 const FetchOpts = struct {
@@ -361,7 +356,7 @@ fn fetchBytes(allocator: std.mem.Allocator, url: []const u8, opts: FetchOpts) ![
     } else if (std.c.getenv("GITHUB_TOKEN")) |token_c| {
         const token = std.mem.span(token_c);
         if (token.len > 0) {
-            auth_owned = try std.fmt.allocPrint(allocator, "Bearer {s}", .{token});
+            auth_owned = try allocator.print("Bearer {s}", .{token});
             headers_buf[headers_len] = .{ .name = "Authorization", .value = auth_owned.? };
             headers_len += 1;
         }
