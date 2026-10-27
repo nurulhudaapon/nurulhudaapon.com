@@ -145,7 +145,7 @@ fn formInt(fd: anytype, name: []const u8) !i64 {
 }
 
 fn barWidth(arena: zx.Allocator, pct: f64) []const u8 {
-    return std.fmt.allocPrint(arena, "width:{d:.1}%", .{@max(0, @min(pct, 100))}) catch "width:0%";
+    return arena.print("width:{d:.1}%", .{@max(0, @min(pct, 100))}) catch "width:0%";
 }
 
 pub const options: zx.PageOptions = .{

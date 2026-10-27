@@ -1,0 +1,308 @@
+pub fn FormPage(allocator: zx.Allocator, props: struct { account: finance.Account }) zx.Component {
+    const creating = props.account.id == 0;
+    return (
+        <div @allocator={allocator}>
+            <div class="adm-toolbar">
+                <div class="adm-toolbar-main">
+                    <h1 class="adm-page-title">{if (creating) "Add account" else "Edit account"}</h1>
+                    <div class="adm-page-actions">
+                        <div class="adm-finance-nav">
+                            <div class="adm-finance-lead">
+                                <a
+                                    class="adm-btn adm-btn-ghost adm-btn-icon"
+                                    href={if (creating) "/admin/finance/accounts" else dashboard.accountHref(allocator, props.account.id)}
+                                    title="Back"
+                                    aria-label="Back"
+                                >
+                                    {ui.icon(allocator, .arrow_left)}
+                                </a>
+                            </div>
+                            <ui.FinanceNav current={.accounts} />
+                        </div>
+                    </div>
+                </div>
+                <p class="adm-page-desc">Group accounts to see them summed together on the portfolio. Loans and credit cards count against net worth.</p>
+            </div>
+
+            <AccountForm
+                @client
+                account={props.account}
+                account_types={finance.listAccountTypes(allocator) catch &.{}}
+                asset_classes={finance.listAssetClasses(allocator) catch &.{}}
+                currencies={finance.listCurrencies(allocator) catch &.{}}
+                groups={groupNames(allocator)}
+            />
+        </div>
+    );
+}
+
+fn groupNames(arena: zx.Allocator) []const []const u8 {
+    var names: std.ArrayList([]const u8) = .empty;
+    for (finance.listAccountGroups(arena) catch &.{}) |g| names.append(arena, g.name) catch {};
+    return names.items;
+}
+
+pub const blank_account: finance.Account = .{
+    .id = 0,
+    .broker = "manual",
+    .external_id = "",
+    .name = "",
+    .currency = "BDT",
+    .cash = 0,
+    .net_liquidation = 0,
+    .synced_at = null,
+    .institution = "",
+    .account_type = "deposit",
+    .asset_class = "Fixed Income",
+    .notes = null,
+};
+
+pub const Props = struct {
+    account: finance.Account,
+    account_types: []const finance.AccountType,
+    asset_classes: []const finance.AssetClass,
+    currencies: []const []const u8,
+    groups: []const []const u8,
+};
+
+const Tone = enum { none, ok, err };
+
+const new_group_value = "__new";
+
+// `groups` grows when a save creates one. Bumping `form_key` clears the form
+// after an add; edits keep what was typed.
+const FormState = struct {
+    id: i64 = 0,
+    tone: Tone = .none,
+    msg: []const u8 = "",
+    group: []const u8 = "",
+    groups: []const []const u8 = &.{},
+    new_group: bool = false,
+    form_key: u32 = 0,
+};
+
+const AccountInput = struct {
+    name: []const u8,
+    institution: []const u8,
+    account_type: []const u8,
+    asset_class: []const u8,
+    currency: []const u8,
+    balance: f64,
+    notes: []const u8,
+    stale: bool,
+    group: []const u8,
+    new_group: []const u8,
+    opened_on: []const u8,
+};
+
+pub fn AccountForm(ctx: *zx.ComponentCtx(Props)) zx.Component {
+    const account = ctx.props.account;
+    const form = ctx.state(FormState, .{
+        .id = account.id,
+        .group = account.group_name,
+        .groups = ctx.props.groups,
+    });
+    const save_action = ctx.action(save, .{});
+    const pending = save_action.pending;
+    const alloc = ctx.allocator;
+    const state = form.get();
+    const creating = state.id == 0;
+    const synced = !creating and !std.mem.eql(u8, account.broker, "manual");
+    const status_class = switch (state.tone) {
+        .none => "adm-flash-slot",
+        .ok => "adm-flash adm-flash-ok",
+        .err => "adm-flash adm-flash-err",
+    };
+
+    return (
+        <section @allocator={alloc} class="adm-card adm-settings adm-card-gap">
+            <div class="adm-section-head">
+                <span>{if (creating) "New account" else account.name}</span>
+                <span class="adm-hint">{if (synced) "Synced from IBKR: balance and currency update on sync" else "Manual balance (bank, physical, crowdfund, …)"}</span>
+            </div>
+            <form key={state.form_key} action={save_action} class="adm-settings">
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">Identity</p>
+                    </div>
+                    <div class="adm-invest-grid">
+                        <div class="adm-field">
+                            <label class="adm-label">Name</label>
+                            <input class="adm-input" name="name" required disabled={synced} value={account.name} placeholder="e.g. Emergency FD" />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label">Institution</label>
+                            <input class="adm-input" name="institution" disabled={synced} value={account.institution} placeholder="e.g. Islami Bank" />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label">Account type</label>
+                            <select class="adm-select" name="account_type" disabled={synced}>
+                                {for (ctx.props.account_types) |t| (
+                                    <option value={t.id} selected={std.mem.eql(u8, account.account_type, t.id)}>{t.label}</option>
+                                )}
+                            </select>
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label">Opened on</label>
+                            <input class="adm-input" type="date" name="opened_on" value={account.opened_on orelse ""} />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label">Asset class</label>
+                            <select class="adm-select" name="asset_class">
+                                {for (ctx.props.asset_classes) |c| (
+                                    <option value={c.name} selected={std.mem.eql(u8, account.asset_class, c.name)}>{c.name}</option>
+                                )}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">Group</p>
+                        <p class="adm-hint">Grouped accounts show as one summed line on the portfolio, expandable to each account. <a href="/admin/finance/accounts#groups">Manage groups</a></p>
+                    </div>
+                    <div class="adm-invest-grid">
+                        <div class="adm-field">
+                            <label class="adm-label">Group</label>
+                            <select class="adm-select" name="group" onchange={ctx.bind(onGroupChange)}>
+                                <option value="" selected={!state.new_group and state.group.len == 0}>No group</option>
+                                {for (state.groups) |g| (
+                                    <option value={g} selected={!state.new_group and std.mem.eql(u8, state.group, g)}>{g}</option>
+                                )}
+                                <option value={new_group_value} selected={state.new_group}>New group…</option>
+                            </select>
+                        </div>
+                        {if (state.new_group) (
+                            <div class="adm-field">
+                                <label class="adm-label">New group name</label>
+                                <input class="adm-input" name="new_group" required autofocus placeholder="e.g. Family savings" />
+                            </div>
+                        )}
+                    </div>
+                </div>
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">Balance</p>
+                        <p class="adm-hint">Market value in the account currency. For gold use currency XAU and enter grams; set the gold price under Rates.</p>
+                    </div>
+                    <div class="adm-invest-grid">
+                        <div class="adm-field">
+                            <label class="adm-label">Balance / grams</label>
+                            <input class="adm-input" type="number" name="balance" min="0" step="any" required disabled={synced} value={account.net_liquidation} />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label">Currency</label>
+                            <select class="adm-select" name="currency" disabled={synced}>
+                                {for (ctx.props.currencies) |c| (
+                                    <option value={c} selected={std.ascii.eqlIgnoreCase(account.currency, c)}>{if (std.ascii.eqlIgnoreCase(c, "XAU")) "XAU (gold g)" else c}</option>
+                                )}
+                            </select>
+                        </div>
+                        <div class="adm-field" style="grid-column:1 / -1">
+                            <label class="adm-label">Notes</label>
+                            <input class="adm-input" name="notes" value={account.notes orelse ""} />
+                        </div>
+                        <div class="adm-field" style="grid-column:1 / -1">
+                            <label class="adm-check">
+                                <input type="checkbox" name="stale" value="on" checked={account.stale != 0} />
+                                <span>Stale: keep listed, exclude from net worth and allocation</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="adm-settings-foot">
+                    <p class={status_class} role="status" aria-live="polite">{state.msg}</p>
+                    <a class="adm-btn adm-btn-ghost" href={if (creating) "/admin/finance/accounts" else dashboard.accountHref(alloc, state.id)}>{if (creating) "Cancel" else "Back"}</a>
+                    <button class="adm-btn adm-btn-primary" type="submit" disabled={pending}>
+                        {if (pending) "Saving…" else if (creating) "Add account" else "Save changes"}
+                    </button>
+                </div>
+            </form>
+        </section>
+    );
+}
+
+fn onGroupChange(e: *zx.client.Event.Stateful) void {
+    const form = e.state(FormState);
+    var next = form.get();
+    next.new_group = std.mem.eql(u8, e.value() orelse "", new_group_value);
+    form.set(next);
+}
+
+fn save(a: *zx.server.Action.Stateful) void {
+    const form = a.state(FormState);
+    const input = a.data(AccountInput);
+    const arena = a.inner.arena;
+    const prev = form.get();
+
+    var next = prev;
+    next.tone = .err;
+
+    const group = if (std.mem.eql(u8, input.group, new_group_value))
+        std.mem.trim(u8, input.new_group, " \t\r\n")
+    else
+        input.group;
+    if (std.mem.eql(u8, input.group, new_group_value) and group.len == 0) {
+        next.msg = "Name the new group, or pick an existing one.";
+        return form.set(next);
+    }
+
+    const id = finance.saveAccount(arena, .{
+        .id = prev.id,
+        .name = input.name,
+        .institution = input.institution,
+        .account_type = input.account_type,
+        .asset_class = input.asset_class,
+        .currency = input.currency,
+        .balance = input.balance,
+        .notes = input.notes,
+        .stale = input.stale,
+        .group_name = group,
+        .opened_on = input.opened_on,
+    }) catch |err| {
+        next.msg = switch (err) {
+            error.InvalidName => "Name, account type, asset class, and a supported currency are required.",
+            error.AccountMissing => "This account no longer exists.",
+            else => blk: {
+                zx.log.err("admin: save account failed: {any}", .{err});
+                break :blk "Something went wrong. Check the server logs.";
+            },
+        };
+        return form.set(next);
+    };
+    dashboard.financeChanged();
+
+    next.tone = .ok;
+    next.new_group = false;
+    next.groups = withGroup(arena, prev.groups, group);
+    if (prev.id == 0) {
+        next.msg = "Account added.";
+        next.group = "";
+        next.form_key +%= 1;
+    } else {
+        next.id = id;
+        next.msg = "Changes saved.";
+        next.group = group;
+    }
+    form.set(next);
+}
+
+fn withGroup(arena: zx.Allocator, groups: []const []const u8, group: []const u8) []const []const u8 {
+    if (group.len == 0) return groups;
+    for (groups) |g| if (std.mem.eql(u8, g, group)) return groups;
+    const out = arena.alloc([]const u8, groups.len + 1) catch return groups;
+    @memcpy(out[0..groups.len], groups);
+    out[groups.len] = group;
+    std.mem.sort([]const u8, out, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.ascii.lessThanIgnoreCase(a, b);
+        }
+    }.lessThan);
+    return out;
+}
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../../ui.zx");
+const finance = @import("../../../finance/db.zig");
+const dashboard = @import("../dashboard.zx");

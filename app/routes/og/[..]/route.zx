@@ -69,7 +69,7 @@ fn getOgImageData(allocator: std.mem.Allocator, path: []const u8) !OgTemplatePro
         if (posts.getPostBySlug(allocator, slug)) |post| {
             const title = try truncate(allocator, stripTrailingEmoji(post.title), 56);
             const title_size = blogTitleSize(title);
-            const meta = try std.fmt.allocPrint(allocator, "{s}  ·  {s}  ·  {d} min read", .{
+            const meta = try allocator.print("{s}  ·  {s}  ·  {d} min read", .{
                 post.author.name,
                 post.publishedAt,
                 post.readTimeInMinutes,
@@ -169,7 +169,7 @@ fn truncate(allocator: std.mem.Allocator, text: []const u8, max: usize) ![]const
     while (end > 0 and text[end - 1] != ' ') : (end -= 1) {}
     if (end < max / 2) end = cut;
     if (end > 0 and text[end - 1] == ' ') end -= 1;
-    return try std.fmt.allocPrint(allocator, "{s}…", .{text[0..end]});
+    return try allocator.print("{s}…", .{text[0..end]});
 }
 
 const site_tagline = "Building high quality software for companies and crafting Ziex, a full-stack web framework for Zig.";
@@ -218,7 +218,7 @@ fn staticParams(ctx: *zx.StaticContext) !void {
 
     const blog_posts = posts.getPosts(ctx.arena) catch &.{};
     for (blog_posts) |post| {
-        try ctx.params.add(.{ .@"*" = try std.fmt.allocPrint(ctx.arena, "blog/{s}.png", .{post.slug}) });
+        try ctx.params.add(.{ .@"*" = try ctx.arena.print("blog/{s}.png", .{post.slug}) });
     }
 }
 

@@ -155,7 +155,7 @@ fn fetchBajusGold(arena: std.mem.Allocator) bool {
     if (usd_per_g <= 0) return false;
 
     const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
-    const as_of = std.fmt.allocPrint(arena, "bajus-{d:.0}", .{list_bdt}) catch "bajus";
+    const as_of = arena.print("bajus-{d:.0}", .{list_bdt}) catch "bajus";
     upsert("XAU", 1.0 / usd_per_g, as_of, now) catch return false;
     return true;
 }

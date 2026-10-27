@@ -1,4 +1,5 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
+    finance.recordHistory() catch |err| zx.log.warn("admin: finance history snapshot failed: {any}", .{err});
     const ibkr_form = credentials.loadIbkrForm(ctx.arena);
     const needs_ibkr = !ibkr_form.token_set or ibkr_form.query_id.len == 0;
     const flash = ui.flashFrom(ctx.request.queries, &.{
@@ -13,7 +14,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     return (
         <div @allocator={ctx.arena}>
-            <Toolbar @client needs_ibkr={needs_ibkr} flash={flash} />
+            <Toolbar @client page={.portfolio} needs_ibkr={needs_ibkr} flash={flash} />
 
             <div
                 @async={.stream}
@@ -22,20 +23,10 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 <Kpis loading={false} @caching="15s:finance_kpis" />
             </div>
 
-            <div
-                @async={.stream}
-                @fallback={(<AllocationPanel loading={true} />)}
-            >
-                <AllocationPanel loading={false} @caching="15s:finance_allocation" />
-            </div>
+            <AllocationCard @client allocations={finance.listAllocationActuals(ctx.arena) catch &.{}} />
 
             <div class="adm-split">
-                <div
-                    @async={.stream}
-                    @fallback={(<AccountsPanel loading={true} />)}
-                >
-                    <AccountsPanel loading={false} @caching="15s:finance_accounts" />
-                </div>
+                <AccountsPanel />
 
                 <div
                     @async={.stream}
@@ -57,10 +48,11 @@ const zx = @import("zx");
 
 const ui = @import("../ui.zx");
 const credentials = @import("../../../db/credentials.zig");
+const finance = @import("../../finance/db.zig");
 
 const dashboard = @import("dashboard.zx");
 pub const Toolbar = dashboard.Toolbar;
 const Kpis = dashboard.Kpis;
-const AllocationPanel = dashboard.AllocationPanel;
+pub const AllocationCard = dashboard.AllocationCard;
 const AccountsPanel = dashboard.AccountsPanel;
 const HoldingsPanel = dashboard.HoldingsPanel;

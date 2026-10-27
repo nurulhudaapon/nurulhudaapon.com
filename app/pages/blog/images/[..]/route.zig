@@ -11,7 +11,7 @@ const local_prefix = "/blog/images/";
 
 fn getImageData(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     const relative = stripLocalPrefix(path) orelse return error.InvalidPath;
-    const file_path = try std.fmt.allocPrint(allocator, "images/{s}", .{relative});
+    const file_path = try allocator.print("images/{s}", .{relative});
     defer allocator.free(file_path);
 
     zx.log.debug("blog.images: path={s} file={s}", .{ path, file_path });

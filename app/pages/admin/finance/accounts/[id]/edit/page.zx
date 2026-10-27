@@ -1,0 +1,18 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    const raw_id = ctx.request.params.get("id") orelse return error.MissingParameter;
+    const id = std.fmt.parseInt(i64, raw_id, 10) catch return error.AccountMissing;
+    const account = try finance.getAccount(ctx.arena, id) orelse return error.AccountMissing;
+
+    return (<form_page.FormPage @allocator={ctx.arena} account={account} />);
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .rendering = .request,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const finance = @import("../../../../../finance/db.zig");
+const form_page = @import("../../form.zx");
+pub const AccountForm = form_page.AccountForm;

@@ -200,7 +200,7 @@ fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const
         .id = try allocator.dupe(u8, slug),
         .title = try allocator.dupe(u8, title),
         .brief = brief,
-        .url = try std.fmt.allocPrint(allocator, "/blog/{s}", .{slug}),
+        .url = try allocator.print("/blog/{s}", .{slug}),
         .slug = try allocator.dupe(u8, slug),
         .publishedAt = try formatPublishedDate(allocator, published_raw),
         .readTimeInMinutes = estimateReadTime(body),
@@ -318,14 +318,14 @@ fn makeBrief(allocator: std.mem.Allocator, body: []const u8) ![]const u8 {
 
     const max_len: usize = 160;
     if (out.items.len <= max_len) {
-        return try std.fmt.allocPrint(allocator, "{s}...", .{out.items});
+        return try allocator.print("{s}...", .{out.items});
     }
 
     var cut = max_len;
     while (cut > 0 and !std.ascii.isWhitespace(out.items[cut])) : (cut -= 1) {}
     if (cut == 0) cut = max_len;
     while (cut > 0 and std.ascii.isWhitespace(out.items[cut - 1])) : (cut -= 1) {}
-    return try std.fmt.allocPrint(allocator, "{s}...", .{out.items[0..cut]});
+    return try allocator.print("{s}...", .{out.items[0..cut]});
 }
 
 fn shouldSkipBriefLine(line: []const u8) bool {
@@ -503,7 +503,7 @@ fn formatPublishedDate(allocator: std.mem.Allocator, raw: []const u8) ![]const u
         const month = std.fmt.parseInt(u8, raw[5..7], 10) catch return try allocator.dupe(u8, raw);
         const day = std.fmt.parseInt(u8, raw[8..10], 10) catch return try allocator.dupe(u8, raw);
         const month_name = monthName(month) orelse return try allocator.dupe(u8, raw);
-        return try std.fmt.allocPrint(allocator, "{s} {d}, {s}", .{ month_name, day, year });
+        return try allocator.print("{s} {d}, {s}", .{ month_name, day, year });
     }
 
     var parts = std.mem.tokenizeAny(u8, raw, " ");
@@ -512,7 +512,7 @@ fn formatPublishedDate(allocator: std.mem.Allocator, raw: []const u8) ![]const u
     const day_s = parts.next() orelse return try allocator.dupe(u8, raw);
     const year_s = parts.next() orelse return try allocator.dupe(u8, raw);
     const day = std.fmt.parseInt(u32, day_s, 10) catch return try allocator.dupe(u8, raw);
-    return try std.fmt.allocPrint(allocator, "{s} {d}, {s}", .{ month_name, day, year_s });
+    return try allocator.print("{s} {d}, {s}", .{ month_name, day, year_s });
 }
 
 fn monthName(index: u8) ?[]const u8 {

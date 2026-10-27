@@ -1,0 +1,293 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    const raw_id = ctx.request.params.get("id") orelse return error.MissingParameter;
+    if (std.mem.eql(u8, raw_id, "new")) return (<form_page.FormPage @allocator={ctx.arena} account={form_page.blank_account} />);
+
+    const id = std.fmt.parseInt(i64, raw_id, 10) catch return error.AccountMissing;
+    const account = try finance.getAccount(ctx.arena, id) orelse return error.AccountMissing;
+    const history = try finance.listBalanceHistory(ctx.arena, id, history_limit);
+    const changes = recordedOnly(ctx.arena, history);
+    const holdings = try finance.listAccountHoldings(ctx.arena, id);
+    const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    const manual = std.mem.eql(u8, account.broker, "manual");
+    const liability = finance.isLiability(account);
+
+    return (
+        <div @allocator={ctx.arena}>
+            <div class="adm-toolbar">
+                <div class="adm-toolbar-main">
+                    <h1 class="adm-page-title">{account.name}</h1>
+                    <div class="adm-page-actions">
+                        <div class="adm-finance-nav">
+                            <div class="adm-finance-lead">
+                                <a class="adm-btn adm-btn-ghost adm-btn-icon" href="/admin/finance/accounts" title="Back to accounts" aria-label="Back to accounts">
+                                    {ui.icon(ctx.arena, .arrow_left)}
+                                </a>
+                            </div>
+                            <ui.FinanceNav current={.accounts} />
+                        </div>
+                    </div>
+                </div>
+                <p class="adm-page-desc">{describe(ctx.arena, account)}</p>
+            </div>
+
+            <section class="adm-card adm-card-gap">
+                <div class="adm-section-head">
+                    <span>Overview</span>
+                    <a class="adm-btn adm-btn-ghost" href={editHref(ctx.arena, id)}>Edit</a>
+                </div>
+                <div class="adm-kpis adm-card-pad" style="margin:0;min-height:0">
+                    <BalanceCard
+                        @client
+                        id={id}
+                        balance={account.net_liquidation}
+                        currency={account.currency}
+                        amount={finance.formatMoney(ctx.arena, account.net_liquidation, account.currency)}
+                        updated={if (account.synced_at) |at| format.ago(ctx.arena, at) else "never"}
+                        needs_update={finance.needsBalanceUpdate(account, now)}
+                        manual={manual}
+                        liability={liability}
+                    />
+                    <div class="adm-kpi">
+                        <p class="adm-label">{if (liability) "Owed in USD" else "Value in USD"}</p>
+                        <p class="adm-kpi-val">{finance.formatMoney(ctx.arena, @abs(account.value_usd), "USD")}</p>
+                        <p class="adm-hint">{weightLabel(ctx.arena, account)}</p>
+                    </div>
+                    <div class="adm-kpi">
+                        <p class="adm-label">Classification</p>
+                        <p class="adm-kpi-val">{account.asset_class}</p>
+                        <p class="adm-hint">{if (account.group_name.len > 0) account.group_name else "No group"}</p>
+                    </div>
+                </div>
+                {if (account.notes) |notes| (
+                    <p class="adm-card-pad adm-hint" style="padding-top:0">{notes}</p>
+                )}
+            </section>
+
+            <section class="adm-card adm-card-gap">
+                <div class="adm-section-head">
+                    <span>Balance history</span>
+                    <span class="adm-hint">{if (account.opened_on) |d| ctx.fmt("Since opening on {s}", .{d}) catch d else "Since first recorded"}</span>
+                </div>
+                <div class="adm-card-pad">
+                    <dashboard.TrendChart
+                        points={trendPoints(ctx.arena, history)}
+                        currency={account.currency}
+                        step={true}
+                        empty="Set an opening date, or update the balance over time, to build history."
+                    />
+                </div>
+                {if (changes.len > 0) (
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Balance</th>
+                                    <th>Change</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {for (changes, 0..) |h, i| (
+                                    <tr>
+                                        <td>{h.date}</td>
+                                        <td>{finance.formatMoney(ctx.arena, h.balance, account.currency)}</td>
+                                        <td>{changeLabel(ctx.arena, changes, i, account.currency)}</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </section>
+
+            {if (holdings.len > 0) (
+                <section class="adm-card adm-card-gap">
+                    <div class="adm-section-head">
+                        <span>Holdings</span>
+                        <span class="adm-hint">From IBKR Flex</span>
+                    </div>
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th class="adm-hide-sm">Quantity</th>
+                                    <th class="adm-hide-sm">Price</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {for (holdings) |h| (
+                                    <tr>
+                                        <td>
+                                            <span class="adm-table-title">{h.symbol}</span>
+                                            <span class="adm-table-sub">{h.description}</span>
+                                        </td>
+                                        <td class="adm-hide-sm">{finance.formatQty(ctx.arena, h.quantity)}</td>
+                                        <td class="adm-hide-sm">{finance.formatMoney(ctx.arena, h.market_price, h.currency)}</td>
+                                        <td>{finance.formatMoney(ctx.arena, h.market_value_base, "USD")}</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            )}
+        </div>
+    );
+}
+
+const history_limit = 365;
+
+fn describe(arena: zx.Allocator, a: finance.Account) []const u8 {
+    return arena.print("{s} · {s}{s}{s}{s}{s}", .{
+        a.type_label,
+        if (a.institution.len > 0) a.institution else a.broker,
+        if (a.opened_on != null) " · opened " else "",
+        a.opened_on orelse "",
+        if (std.mem.eql(u8, a.broker, "ibkr")) " · synced from IBKR" else "",
+        if (finance.isAccountStale(a)) " · stale (excluded from totals)" else "",
+    }) catch a.name;
+}
+
+fn weightLabel(arena: zx.Allocator, a: finance.Account) []const u8 {
+    if (finance.isAccountStale(a)) return "Excluded from totals";
+    if (finance.isLiability(a)) return "Counts against net worth";
+    return arena.print("{s} of assets", .{finance.formatPct(arena, a.weight_pct)}) catch "";
+}
+
+fn editHref(arena: zx.Allocator, id: i64) []const u8 {
+    return arena.print("/admin/finance/accounts/{d}/edit", .{id}) catch "/admin/finance/accounts";
+}
+
+fn trendPoints(arena: zx.Allocator, history: []const finance.BalancePoint) []const dashboard.TrendPoint {
+    const out = arena.alloc(dashboard.TrendPoint, history.len) catch return &.{};
+    for (history, 0..) |h, i| out[history.len - 1 - i] = .{ .t = h.t, .date = h.date, .value = h.balance };
+    return out;
+}
+
+fn recordedOnly(arena: zx.Allocator, history: []const finance.BalancePoint) []const finance.BalancePoint {
+    var out: std.ArrayList(finance.BalancePoint) = .empty;
+    for (history) |h| if (h.recorded) out.append(arena, h) catch {};
+    return out.items;
+}
+
+fn changeLabel(arena: zx.Allocator, history: []const finance.BalancePoint, i: usize, currency: []const u8) []const u8 {
+    if (i + 1 >= history.len) return "-";
+    const delta = history[i].balance - history[i + 1].balance;
+    if (@abs(delta) < 0.005) return "-";
+    return arena.print("{s}{s}", .{ if (delta > 0) "+" else "", finance.formatMoney(arena, delta, currency) }) catch "";
+}
+
+const BalanceProps = struct {
+    id: i64,
+    balance: f64,
+    currency: []const u8,
+    amount: []const u8,
+    updated: []const u8,
+    needs_update: bool,
+    manual: bool,
+    liability: bool,
+};
+
+const BalanceState = struct {
+    id: i64 = 0,
+    currency: []const u8 = "",
+    amount: []const u8 = "",
+    updated: []const u8 = "",
+    needs_update: bool = false,
+    err: []const u8 = "",
+    form_key: u32 = 0,
+};
+
+pub fn BalanceCard(ctx: *zx.ComponentCtx(BalanceProps)) zx.Component {
+    const p = ctx.props;
+    const card = ctx.state(BalanceState, .{
+        .id = p.id,
+        .currency = p.currency,
+        .amount = p.amount,
+        .updated = p.updated,
+        .needs_update = p.needs_update,
+    });
+    const update_action = ctx.action(updateBalance, .{});
+    const pending = update_action.pending;
+    const alloc = ctx.allocator;
+    const state = card.get();
+
+    return (
+        <div @allocator={alloc} class="adm-kpi">
+            <p class="adm-label">{if (p.liability) "Owed" else "Balance"}</p>
+            <p class="adm-kpi-val">{state.amount}</p>
+            <p class="adm-hint">
+                Updated {state.updated}
+                {if (state.needs_update) (
+                    <span class="adm-pill adm-pill-warn">Needs update</span>
+                )}
+            </p>
+            {if (p.manual) (
+                <form key={state.form_key} action={update_action} class="adm-inline-fields adm-balance-form">
+                    <input
+                        class="adm-input"
+                        type="number"
+                        name="balance"
+                        min="0"
+                        step="any"
+                        required
+                        aria-label="New balance"
+                        placeholder="New balance"
+                        disabled={pending}
+                    />
+                    <button class="adm-btn adm-btn-ghost" type="submit" disabled={pending}>
+                        {if (pending) "Saving…" else "Update"}
+                    </button>
+                </form>
+            )}
+            {if (state.err.len > 0) (
+                <p class="adm-hint adm-text-err" role="status">{state.err}</p>
+            )}
+        </div>
+    );
+}
+
+const BalanceInput = struct { balance: f64 };
+
+fn updateBalance(a: *zx.server.Action.Stateful) void {
+    const card = a.state(BalanceState);
+    const input = a.data(BalanceInput);
+    const arena = a.inner.arena;
+    var next = card.get();
+
+    finance.updateBalance(arena, next.id, input.balance) catch |err| {
+        next.err = switch (err) {
+            error.InvalidAmount => "Enter a balance of zero or more.",
+            error.AccountMissing => "Only manual accounts can be updated here.",
+            else => blk: {
+                zx.log.err("admin: update balance failed: {any}", .{err});
+                break :blk "Something went wrong. Check the server logs.";
+            },
+        };
+        return card.set(next);
+    };
+    dashboard.financeChanged();
+
+    next.amount = finance.formatMoney(arena, input.balance, next.currency);
+    next.updated = "just now";
+    next.needs_update = false;
+    next.err = "";
+    next.form_key +%= 1;
+    card.set(next);
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .rendering = .request,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../../../ui.zx");
+const format = @import("../../../format.zig");
+const finance = @import("../../../../finance/db.zig");
+const dashboard = @import("../../dashboard.zx");
+const form_page = @import("../form.zx");
+pub const AccountForm = form_page.AccountForm;

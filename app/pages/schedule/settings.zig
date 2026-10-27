@@ -30,7 +30,7 @@ pub fn load(arena: std.mem.Allocator) Rules {
 pub fn save(arena: std.mem.Allocator, rules: Rules) !void {
     try validate(rules);
     inline for (int_fields) |field| {
-        try put("schedule_" ++ field, try std.fmt.allocPrint(arena, "{d}", .{@field(rules, field)}));
+        try put("schedule_" ++ field, try arena.print("{d}", .{@field(rules, field)}));
     }
 
     var days: std.ArrayList(u8) = .empty;
@@ -79,7 +79,7 @@ pub fn parseTimeOfDay(text: []const u8) ?i64 {
 
 pub fn formatTimeOfDay(arena: std.mem.Allocator, minutes: i64) []const u8 {
     const m: u64 = @intCast(minutes);
-    return std.fmt.allocPrint(arena, "{d:0>2}:{d:0>2}", .{ m / 60, m % 60 }) catch "";
+    return arena.print("{d:0>2}:{d:0>2}", .{ m / 60, m % 60 }) catch "";
 }
 
 /// Where `/meet` redirects when a booking has no link of its own.

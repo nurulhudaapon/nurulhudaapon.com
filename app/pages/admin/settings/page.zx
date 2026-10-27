@@ -177,7 +177,7 @@ fn save(ctx: zx.PageContext) ![]const u8 {
     if (ttl_raw.len > 0) {
         const days = std.fmt.parseInt(u32, ttl_raw, 10) catch return error.InvalidTtl;
         if (days < 1 or days > credentials.mcp_token_ttl_days_max) return error.InvalidTtl;
-        try credentials.put("mcp_token_ttl_days", try std.fmt.allocPrint(ctx.arena, "{d}", .{days}));
+        try credentials.put("mcp_token_ttl_days", try ctx.arena.print("{d}", .{days}));
     }
 
     credentials.applyRuntime(ctx.arena);

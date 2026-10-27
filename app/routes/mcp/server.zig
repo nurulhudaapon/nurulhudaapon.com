@@ -206,7 +206,7 @@ fn listScheduleAvailability(allocator: std.mem.Allocator, _: ?std.json.Value) an
 
 fn listGithubRepos(allocator: std.mem.Allocator, _: ?std.json.Value) anyerror!mcp.ToolResult {
     const repos = github.fetchPinned(allocator) catch |err| {
-        return mcp.ToolResult.err(allocator, try std.fmt.allocPrint(allocator, "GitHub unavailable: {s}", .{@errorName(err)}));
+        return mcp.ToolResult.err(allocator, try allocator.print("GitHub unavailable: {s}", .{@errorName(err)}));
     };
     return mcp.ToolResult.fromValue(allocator, .{ .repos = repos });
 }
@@ -217,12 +217,13 @@ fn financeSummary(allocator: std.mem.Allocator, _: ?std.json.Value) anyerror!mcp
 }
 
 fn listFinanceAccounts(allocator: std.mem.Allocator, _: ?std.json.Value) anyerror!mcp.ToolResult {
-    const rows = try finance.listAccountRows(allocator);
+    const accounts = try finance.listAccounts(allocator);
     const Out = struct {
         id: i64,
         name: []const u8,
         broker: []const u8,
         institution: []const u8,
+        group: []const u8,
         account_type: []const u8,
         asset_class: []const u8,
         currency: []const u8,
@@ -232,27 +233,30 @@ fn listFinanceAccounts(allocator: std.mem.Allocator, _: ?std.json.Value) anyerro
         cash_usd: f64,
         weight_pct: f64,
         stale: bool,
+        liability: bool,
         synced_at: ?[]const u8,
         notes: ?[]const u8,
     };
-    const out = try allocator.alloc(Out, rows.len);
-    for (rows, out) |row, *o| {
+    const out = try allocator.alloc(Out, accounts.len);
+    for (accounts, out) |a, *o| {
         o.* = .{
-            .id = row.account.id,
-            .name = row.account.name,
-            .broker = row.account.broker,
-            .institution = row.account.institution,
-            .account_type = row.account.account_type,
-            .asset_class = row.account.asset_class,
-            .currency = row.account.currency,
-            .cash = row.account.cash,
-            .net_liquidation = row.account.net_liquidation,
-            .value_usd = row.value_usd,
-            .cash_usd = row.cash_usd,
-            .weight_pct = row.weight_pct,
-            .stale = row.account.stale != 0,
-            .synced_at = row.account.synced_at,
-            .notes = row.account.notes,
+            .id = a.id,
+            .name = a.name,
+            .broker = a.broker,
+            .institution = a.institution,
+            .group = a.group_name,
+            .account_type = a.account_type,
+            .asset_class = a.asset_class,
+            .currency = a.currency,
+            .cash = a.cash,
+            .net_liquidation = a.net_liquidation,
+            .value_usd = a.value_usd,
+            .cash_usd = a.cash_usd,
+            .weight_pct = a.weight_pct,
+            .stale = a.stale != 0,
+            .liability = a.liability != 0,
+            .synced_at = a.synced_at,
+            .notes = a.notes,
         };
     }
     return mcp.ToolResult.fromValue(allocator, .{ .accounts = out });

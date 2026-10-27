@@ -56,7 +56,7 @@ pub fn book(arena: std.mem.Allocator, start: i64, req: Request) Outcome {
 
     var random: [8]u8 = undefined;
     zx.io().random(&random);
-    b.id = std.fmt.allocPrint(arena, "{d}-{x}", .{ now, random }) catch return .failed;
+    b.id = arena.print("{d}-{x}", .{ now, random }) catch return .failed;
 
     switch (claim(arena, b)) {
         .claimed => {},
@@ -119,9 +119,9 @@ fn claim(arena: std.mem.Allocator, b: Booking) Claim {
 }
 
 fn createEvent(arena: std.mem.Allocator, creds: caldav.Credentials, b: Booking, now: i64, origin_url: []const u8) !void {
-    const page_url = try std.fmt.allocPrint(arena, "{s}/schedule/{s}", .{ origin_url, b.id });
+    const page_url = try arena.print("{s}/schedule/{s}", .{ origin_url, b.id });
     const meet_url = if (creds.meeting_url != null)
-        try std.fmt.allocPrint(arena, "{s}/meet?id={s}", .{ origin_url, b.id })
+        try arena.print("{s}/meet?id={s}", .{ origin_url, b.id })
     else
         null;
 
@@ -133,7 +133,7 @@ fn createEvent(arena: std.mem.Allocator, creds: caldav.Credentials, b: Booking, 
     try w.print("\nBooked by {s} ({s}) via nurulhudaapon.com/schedule", .{ b.name, b.email });
 
     const ics = try ical.buildEvent(arena, .{
-        .uid = try std.fmt.allocPrint(arena, "{s}@nurulhudaapon.com", .{b.id}),
+        .uid = try arena.print("{s}@nurulhudaapon.com", .{b.id}),
         .start = b.slot.start,
         .end = b.slot.end,
         .now = now,
@@ -150,13 +150,13 @@ fn createEvent(arena: std.mem.Allocator, creds: caldav.Credentials, b: Booking, 
 }
 
 pub fn title(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(arena, "{s} <> Nurul", .{names.firstName(arena, name)});
+    return arena.print("{s} <> Nurul", .{names.firstName(arena, name)});
 }
 
 /// iCloud HTML-escapes `<>` in stored titles (shown as `&lt;&gt;`) and strips
 /// tag-like text from descriptions, so calendar text avoids angle brackets.
 fn calendarTitle(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(arena, "{s} \u{2039}\u{203A} Nurul", .{names.firstName(arena, name)});
+    return arena.print("{s} \u{2039}\u{203A} Nurul", .{names.firstName(arena, name)});
 }
 
 fn logInviteStatus(arena: std.mem.Allocator, creds: caldav.Credentials, id: []const u8) void {
@@ -176,7 +176,7 @@ fn logInviteStatus(arena: std.mem.Allocator, creds: caldav.Credentials, id: []co
 pub fn origin(request: zx.server.Request) []const u8 {
     if (builtin.optimize != .debug) return site_url;
     const host = request.headers.get("host") orelse return site_url;
-    return std.fmt.allocPrint(request.arena, "http://{s}", .{host}) catch site_url;
+    return request.arena.print("http://{s}", .{host}) catch site_url;
 }
 
 pub fn nowUnix() i64 {
@@ -232,7 +232,7 @@ pub fn get(arena: std.mem.Allocator, id: []const u8) !?Record {
     const query = record_columns ++ " WHERE b.id = ?1";
     const record = try zx.db.row(arena, Record, query, .{id}) orelse return null;
     if (record.cancelled_at != null or record.ends_at < nowUnix() - std.time.s_per_day) return record;
-    syncThrottled(arena, &.{id}, try std.fmt.allocPrint(arena, "synced:{s}", .{id}));
+    syncThrottled(arena, &.{id}, try arena.print("synced:{s}", .{id}));
     return zx.db.row(arena, Record, query, .{id});
 }
 

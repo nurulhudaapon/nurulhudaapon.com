@@ -14,7 +14,7 @@ pub fn ipHash(arena: std.mem.Allocator, ip: ?[]const u8) []const u8 {
     hasher.update("nurulhudaapon.com/");
     hasher.update(addr);
     const digest = hasher.finalResult();
-    return std.fmt.allocPrint(arena, "{x}", .{digest[0..16].*}) catch "";
+    return arena.print("{x}", .{digest[0..16].*}) catch "";
 }
 
 // Minted on render and carried in component state, so a submit without a fresh

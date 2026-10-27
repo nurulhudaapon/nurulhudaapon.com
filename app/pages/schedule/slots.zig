@@ -108,7 +108,7 @@ pub fn availableDays(allocator: std.mem.Allocator, rules: Rules, now: i64, busy:
         }
 
         try days.append(allocator, .{
-            .date = try std.fmt.allocPrint(allocator, "{d:0>4}-{d:0>2}-{d:0>2}", .{ local.year, local.month, local.day }),
+            .date = try allocator.print("{d:0>4}-{d:0>2}-{d:0>2}", .{ local.year, local.month, local.day }),
             .weekday = local.weekdayName(),
             .month = local.monthName(),
             .day_of_month = local.day,
@@ -135,26 +135,26 @@ pub fn isBookable(rules: Rules, now: i64, start: i64) bool {
 
 pub fn formatTime(allocator: std.mem.Allocator, unix: i64, utc_offset_s: i64) ![]const u8 {
     const m = LocalDate.at(unix, utc_offset_s).minute_of_day;
-    return std.fmt.allocPrint(allocator, "{d:0>2}:{d:0>2}", .{ m / 60, m % 60 });
+    return allocator.print("{d:0>2}:{d:0>2}", .{ m / 60, m % 60 });
 }
 
 pub fn formatTime12(allocator: std.mem.Allocator, unix: i64, utc_offset_s: i64) ![]const u8 {
     const m = LocalDate.at(unix, utc_offset_s).minute_of_day;
     const h = m / 60;
     const h12 = if (h % 12 == 0) 12 else h % 12;
-    return std.fmt.allocPrint(allocator, "{d}:{d:0>2} {s}", .{ h12, m % 60, if (h < 12) "AM" else "PM" });
+    return allocator.print("{d}:{d:0>2} {s}", .{ h12, m % 60, if (h < 12) "AM" else "PM" });
 }
 
 pub fn formatOffset(allocator: std.mem.Allocator, utc_offset_s: i64) ![]const u8 {
     const sign: u8 = if (utc_offset_s < 0) '-' else '+';
     const minutes: u64 = @abs(utc_offset_s) / 60;
-    if (minutes % 60 == 0) return std.fmt.allocPrint(allocator, "GMT{c}{d}", .{ sign, minutes / 60 });
-    return std.fmt.allocPrint(allocator, "GMT{c}{d}:{d:0>2}", .{ sign, minutes / 60, minutes % 60 });
+    if (minutes % 60 == 0) return allocator.print("GMT{c}{d}", .{ sign, minutes / 60 });
+    return allocator.print("GMT{c}{d}:{d:0>2}", .{ sign, minutes / 60, minutes % 60 });
 }
 
 pub fn formatDate(allocator: std.mem.Allocator, unix: i64, utc_offset_s: i64) ![]const u8 {
     const d = LocalDate.at(unix, utc_offset_s);
-    return std.fmt.allocPrint(allocator, "{s}, {s} {d}", .{ d.weekdayName(), d.monthName(), d.day });
+    return allocator.print("{s}, {s} {d}", .{ d.weekdayName(), d.monthName(), d.day });
 }
 
 const tue_oct20_2am_dhaka: i64 = 1792440000;

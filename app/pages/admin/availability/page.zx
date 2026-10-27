@@ -144,7 +144,7 @@ fn slotStarts(arena: zx.Allocator, rules: slots.Rules) []const []const u8 {
 }
 
 fn dayField(arena: zx.Allocator, day: slots.Weekday) []const u8 {
-    return std.fmt.allocPrint(arena, "day_{s}", .{@tagName(day)}) catch "";
+    return arena.print("day_{s}", .{@tagName(day)}) catch "";
 }
 
 pub const options: zx.PageOptions = .{

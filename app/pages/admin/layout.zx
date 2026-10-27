@@ -1,6 +1,5 @@
 pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
     const path = ctx.request.pathname;
-    const badges = sidebarBadges(ctx.arena);
     const user = ctx.request.headers.get("cf-access-authenticated-user-email") orelse "local";
 
     return (
@@ -12,25 +11,25 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                     <span class="adm-account-name">Nurul Huda (Apon)</span>
                 </a>
                 <nav class="adm-nav" aria-label="Admin">
-                    <NavItem href="/admin" label="Overview" kind={.home} active={std.mem.eql(u8, path, "/admin")} badge={0} />
+                    <NavItem href="/admin" label="Overview" kind={.home} active={std.mem.eql(u8, path, "/admin")} />
 
                     <p class="adm-nav-section">Inbox</p>
-                    <NavItem href="/admin/questions" label="Questions" kind={.question} active={isUnder(path, "/admin/questions")} badge={badges.unanswered} />
+                    <NavItem href="/admin/questions" label="Questions" kind={.question} active={isUnder(path, "/admin/questions")} badge={.unanswered} />
 
                     <p class="adm-nav-section">Schedule</p>
-                    <NavItem href="/admin/bookings" label="Bookings" kind={.calendar} active={isUnder(path, "/admin/bookings")} badge={badges.upcoming} />
-                    <NavItem href="/admin/availability" label="Availability" kind={.clock} active={isUnder(path, "/admin/availability")} badge={0} />
+                    <NavItem href="/admin/bookings" label="Bookings" kind={.calendar} active={isUnder(path, "/admin/bookings")} badge={.upcoming} />
+                    <NavItem href="/admin/availability" label="Availability" kind={.clock} active={isUnder(path, "/admin/availability")} />
 
                     <p class="adm-nav-section">Finance</p>
-                    <NavItem href="/admin/finance" label="Portfolio" kind={.chart} active={std.mem.eql(u8, path, "/admin/finance")} badge={0} />
-                    <NavItem href="/admin/finance/accounts" label="Accounts" kind={.wallet} active={isUnder(path, "/admin/finance/accounts")} badge={0} />
-                    <NavItem href="/admin/finance/allocation" label="Allocation" kind={.pie} active={isUnder(path, "/admin/finance/allocation")} badge={0} />
+                    <NavItem href="/admin/finance" label="Portfolio" kind={.chart} active={std.mem.eql(u8, path, "/admin/finance")} />
+                    <NavItem href="/admin/finance/accounts" label="Accounts" kind={.wallet} active={isUnder(path, "/admin/finance/accounts")} />
+                    <NavItem href="/admin/finance/allocation" label="Allocation" kind={.pie} active={isUnder(path, "/admin/finance/allocation")} />
 
                     <p class="adm-nav-section">Content</p>
-                    <NavItem href="/admin/posts" label="Posts" kind={.file} active={isUnder(path, "/admin/posts")} badge={0} />
+                    <NavItem href="/admin/posts" label="Posts" kind={.file} active={isUnder(path, "/admin/posts")} />
                 </nav>
                 <div class="adm-sidebar-foot">
-                    <NavItem href="/admin/settings" label="Settings" kind={.settings} active={isUnder(path, "/admin/settings")} badge={0} />
+                    <NavItem href="/admin/settings" label="Settings" kind={.settings} active={isUnder(path, "/admin/settings")} />
                     <a class="adm-nav-icon" href="/" target="_blank" rel="noopener" title="View site" aria-label="View site">
                         {ui.icon(ctx.arena, .external)}
                     </a>
@@ -64,32 +63,77 @@ fn NavItem(allocator: zx.Allocator, props: struct {
     label: []const u8,
     kind: ui.Icon,
     active: bool,
-    badge: i64,
+    badge: ?BadgeKind = null,
 }) zx.Component {
     return (
         <a @{allocator} class={if (props.active) "adm-nav-item adm-nav-item-active" else "adm-nav-item"} href={props.href}>
             {ui.icon(allocator, props.kind)}
             <span>{props.label}</span>
-            {if (props.badge > 0) (
-                <span class="adm-nav-badge">{props.badge}</span>
+            {if (props.badge) |kind| (
+                <NavBadge @client kind={kind} />
             )}
         </a>
     );
 }
 
+const BadgeKind = enum { unanswered, upcoming };
+
+pub fn NavBadge(ctx: *zx.ComponentCtx(struct { kind: BadgeKind })) zx.Component {
+    const count = ctx.state(i64, 0);
+    if (comptime zx.platform.role == .client) badge_feed.watch(ctx.props.kind, count);
+
+    const n = count.get();
+    return (
+        <span @allocator={ctx.allocator} class="adm-nav-badge" hidden={n <= 0}>{n}</span>
+    );
+}
+
+const badge_feed = struct {
+    const Watcher = struct { kind: BadgeKind, count: *zx.State(i64) };
+
+    var watchers: [4]Watcher = undefined;
+    var len: usize = 0;
+    var requested = false;
+
+    fn watch(kind: BadgeKind, count: *zx.State(i64)) void {
+        for (watchers[0..len]) |w| if (w.count == count) return;
+        if (len == watchers.len) return;
+        watchers[len] = .{ .kind = kind, .count = count };
+        len += 1;
+
+        if (requested) return;
+        requested = true;
+        _ = zx.fetch(.wasm(&onLoad), zx.allocator, "/admin/badges", .{}) catch {
+            requested = false;
+        };
+    }
+
+    fn onLoad(response: ?*zx.Fetch.Response, err: ?zx.Fetch.FetchError) void {
+        if (err != null) return;
+        const res = response orelse return;
+        defer res.deinit();
+        if (!res.ok()) return;
+
+        const source = zx.allocator.dupeSentinel(u8, res.text() catch return, 0) catch return;
+        defer zx.allocator.free(source);
+        var diagnostics: std.zon.parse.Diagnostics = undefined;
+        const counts = std.zon.parse.fromSliceNoAlloc(badges.Counts, .{
+            .gpa = zx.allocator,
+            .arena = zx.allocator,
+            .source = source,
+            .diagnostics = &diagnostics,
+        }) catch return;
+
+        for (watchers[0..len]) |w| w.count.set(switch (w.kind) {
+            .unanswered => counts.unanswered,
+            .upcoming => counts.upcoming,
+        });
+    }
+};
+
 fn isUnder(path: []const u8, prefix: []const u8) bool {
     if (!std.mem.startsWith(u8, path, prefix)) return false;
     return path.len == prefix.len or path[prefix.len] == '/';
-}
-
-const SidebarBadges = struct { unanswered: i64 = 0, upcoming: i64 = 0 };
-fn sidebarBadges(arena: zx.Allocator) SidebarBadges {
-    const row = zx.db.row(arena, SidebarBadges,
-        \\SELECT
-        \\  COALESCE((SELECT SUM(answer IS NULL) FROM questions WHERE deleted = 0), 0) AS unanswered,
-        \\  COALESCE((SELECT SUM(cancelled_at IS NULL AND ends_at >= ?1) FROM bookings), 0) AS upcoming
-    , .{booking.nowUnix()}) catch return .{};
-    return row orelse .{};
 }
 
 fn crumb(path: []const u8) []const u8 {
@@ -110,4 +154,4 @@ fn crumb(path: []const u8) []const u8 {
 const std = @import("std");
 const zx = @import("zx");
 const ui = @import("ui.zx");
-const booking = @import("../schedule/booking.zig");
+const badges = @import("badges/route.zig");

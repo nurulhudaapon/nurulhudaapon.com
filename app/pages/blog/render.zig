@@ -53,7 +53,7 @@ fn highlightCodeBlock(doc: *Document, node: *Node) !void {
     const lang = std.mem.sliceTo(doc.getCodeBlockData(node.data.code_block).info, ' ');
     const code = if (node.first_child) |c| doc.nodeText(c) else "";
     const body = try highlight.html(allocator, lang, code) orelse return;
-    const html = try std.fmt.allocPrint(allocator, "<pre><code class=\"language-{s} hl\">{s}\n</code></pre>", .{ lang, body });
+    const html = try allocator.print("<pre><code class=\"language-{s} hl\">{s}\n</code></pre>", .{ lang, body });
     const block = try doc.createNode(.html_block, .{ .literal = html }, SourceSpan.empty);
     node.insertAfter(block);
     node.detach();
@@ -221,8 +221,7 @@ fn makeText(doc: *Document, text: []const u8) !*Node {
 
 fn youtubeEmbedHtml(doc: *Document, url: []const u8) !?[]const u8 {
     const id = youtubeVideoId(url) orelse return null;
-    return try std.fmt.allocPrint(
-        doc.arena.allocator(),
+    return try doc.arena.allocator().print(
         \\<div class="video-embed"><iframe src="https://www.youtube.com/embed/{s}" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe></div>
     ,
         .{id},
@@ -231,8 +230,7 @@ fn youtubeEmbedHtml(doc: *Document, url: []const u8) !?[]const u8 {
 
 fn youtubeEmbedHtmlInline(doc: *Document, url: []const u8) !?[]const u8 {
     const id = youtubeVideoId(url) orelse return null;
-    return try std.fmt.allocPrint(
-        doc.arena.allocator(),
+    return try doc.arena.allocator().print(
         \\<iframe class="video-embed" src="https://www.youtube.com/embed/{s}" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe>
     ,
         .{id},

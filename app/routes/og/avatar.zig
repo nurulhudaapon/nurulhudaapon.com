@@ -67,7 +67,7 @@ pub fn dataUri(allocator: std.mem.Allocator) ![]const u8 {
     const Encoder = std.base64.standard.Encoder;
     const b64 = try allocator.alloc(u8, Encoder.calcSize(bytes.len));
     _ = Encoder.encode(b64, bytes);
-    return try std.fmt.allocPrint(allocator, "data:{s};base64,{s}", .{ mime, b64 });
+    return try allocator.print("data:{s};base64,{s}", .{ mime, b64 });
 }
 
 pub fn contentType(bytes: []const u8) zx.server.Response.ContentType {
@@ -92,10 +92,10 @@ fn toGrayscalePng(allocator: std.mem.Allocator, image_bytes: []const u8) ![]u8 {
     defer allocator.free(b64);
     _ = Encoder.encode(b64, image_bytes);
 
-    const href = try std.fmt.allocPrint(allocator, "data:{s};base64,{s}", .{ mime, b64 });
+    const href = try allocator.print("data:{s};base64,{s}", .{ mime, b64 });
     defer allocator.free(href);
 
-    const svg = try std.fmt.allocPrint(allocator,
+    const svg = try allocator.print(
         \\<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512">
         \\<image href="{s}" xlink:href="{s}" width="512" height="512" preserveAspectRatio="xMidYMid slice"/>
         \\</svg>

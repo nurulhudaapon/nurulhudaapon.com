@@ -25,7 +25,7 @@ var auth_header: ?[]const u8 = null;
 
 pub fn setToken(token: []const u8) !void {
     if (auth_header) |old| zx.allocator.free(old);
-    auth_header = try std.fmt.allocPrint(zx.allocator, "Bearer {s}", .{token});
+    auth_header = try zx.allocator.print("Bearer {s}", .{token});
 }
 
 pub fn authorization() ?[]const u8 {
@@ -51,7 +51,7 @@ const pinned = [_][]const u8{
 pub fn fetchPinned(arena: std.mem.Allocator) ![]const Repo {
     var by_name: std.StringHashMapUnmanaged(Repo) = .empty;
     for (owners) |owner| {
-        const url = try std.fmt.allocPrint(arena, "https://api.github.com/users/{s}/repos?per_page=100", .{owner});
+        const url = try arena.print("https://api.github.com/users/{s}/repos?per_page=100", .{owner});
         const headers = [_]zx.Fetch.RequestInit.Header{
             .{ .name = "Accept", .value = "application/vnd.github+json" },
             .{ .name = "User-Agent", .value = "nuhu.dev" },
@@ -87,10 +87,10 @@ pub fn fetchStats(arena: std.mem.Allocator) ![]const Stats {
 
 pub fn compact(allocator: std.mem.Allocator, n: u32) []const u8 {
     const out = if (n < 1000)
-        std.fmt.allocPrint(allocator, "{d}", .{n})
+        allocator.print("{d}", .{n})
     else if (n < 10_000 and (n + 50) / 100 % 10 != 0)
-        std.fmt.allocPrint(allocator, "{d}.{d}k", .{ (n + 50) / 1000, (n + 50) / 100 % 10 })
+        allocator.print("{d}.{d}k", .{ (n + 50) / 1000, (n + 50) / 100 % 10 })
     else
-        std.fmt.allocPrint(allocator, "{d}k", .{(n + 500) / 1000});
+        allocator.print("{d}k", .{(n + 500) / 1000});
     return out catch "";
 }

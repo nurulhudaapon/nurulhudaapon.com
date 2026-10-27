@@ -54,10 +54,10 @@ fn BookingItem(allocator: zx.Allocator, props: struct {
 }) zx.Component {
     const r = props.r;
     const local = slots.LocalDate.of(r.starts_at);
-    const mailto = std.fmt.allocPrint(allocator, "mailto:{s}", .{r.email}) catch "";
+    const mailto = allocator.print("mailto:{s}", .{r.email}) catch "";
     const link = r.meet_url orelse props.default_url;
     const placeholder = if (props.default_url.len > 0) props.default_url else "https://meet.google.com/…";
-    const page_url = std.fmt.allocPrint(allocator, "/schedule/{s}", .{r.id}) catch "";
+    const page_url = allocator.print("/schedule/{s}", .{r.id}) catch "";
 
     return (
         <article @{allocator} class="adm-item">

@@ -43,7 +43,7 @@ fn lastSyncedSecs(arena: std.mem.Allocator) ?i64 {
 }
 
 fn sendRequest(arena: std.mem.Allocator, token: []const u8, query_id: []const u8) ![]const u8 {
-    const url = try std.fmt.allocPrint(arena, "{s}?t={s}&q={s}&v=3", .{ send_url, token, query_id });
+    const url = try arena.print("{s}?t={s}&q={s}&v=3", .{ send_url, token, query_id });
     const body = try fetchText(arena, url);
     const meta = try parseFlexMeta(arena, body);
     if (!std.ascii.eqlIgnoreCase(meta.status orelse "", "Success")) {
@@ -54,7 +54,7 @@ fn sendRequest(arena: std.mem.Allocator, token: []const u8, query_id: []const u8
 }
 
 fn getStatement(arena: std.mem.Allocator, token: []const u8, reference: []const u8) ![]const u8 {
-    const url = try std.fmt.allocPrint(arena, "{s}?t={s}&q={s}&v=3", .{ statement_url, token, reference });
+    const url = try arena.print("{s}?t={s}&q={s}&v=3", .{ statement_url, token, reference });
     var attempt: usize = 0;
     while (attempt < 8) : (attempt += 1) {
         if (attempt > 0) zx.io().sleep(.fromMilliseconds(800), .awake) catch {};
@@ -98,6 +98,10 @@ const AccountAcc = struct {
     equity_cash: ?f64 = null,
     net_liquidation: f64 = 0,
     nlv_from_equity: bool = false,
+    opened_on: ?[]const u8 = null,
+    // Daily NAV from dated equity summary rows; the newest also sets the fields above.
+    history: std.ArrayList(db.DatedBalance) = .empty,
+    equity_date: []const u8 = "",
 
     fn cash(self: AccountAcc) f64 {
         if (self.settled_cash) |v| {
@@ -170,7 +174,7 @@ fn applyReport(arena: std.mem.Allocator, body: []const u8) !Result {
         cash_total += cash;
     }
 
-    const synced_at = try nowIso(arena);
+    const synced_at = try nowSecs(arena);
     const aliases = try db.classAliases(arena);
     var overrides = try db.categoryOverrides(arena);
     try db.clearIbkrHoldings();
@@ -190,12 +194,13 @@ fn applyReport(arena: std.mem.Allocator, body: []const u8) !Result {
             .synced_at = synced_at,
         });
         try account_ids.put(arena, a.external_id, id);
+        try db.importHistory(id, a.opened_on, a.history.items);
         account_count += 1;
     }
 
     for (parsed.holdings.items) |h| {
         const account_id = account_ids.get(h.account_id) orelse continue;
-        const key = try std.fmt.allocPrint(arena, "{s}\x00{s}", .{ h.account_id, h.symbol });
+        const key = try arena.print("{s}\x00{s}", .{ h.account_id, h.symbol });
         try db.insertHolding(.{
             .account_id = account_id,
             .symbol = h.symbol,
@@ -282,13 +287,29 @@ fn ingestAccountInfo(arena: std.mem.Allocator, accounts: *std.StringHashMapUnman
     if (try dupAttr(arena, reader, "currency")) |cur| {
         if (cur.len > 0) entry.*.currency = cur;
     }
+    if (try isoDate(arena, attrRaw(reader, "dateOpened"))) |d| entry.*.opened_on = d;
+}
+
+// Flex dates come as yyyyMMdd or yyyy-MM-dd depending on the query settings.
+fn isoDate(arena: std.mem.Allocator, raw: ?[]const u8) !?[]const u8 {
+    const d = raw orelse return null;
+    if (d.len == 10 and d[4] == '-') return try arena.dupe(u8, d);
+    if (d.len == 8) return try arena.print("{s}-{s}-{s}", .{ d[0..4], d[4..6], d[6..8] });
+    return null;
 }
 
 fn ingestEquity(arena: std.mem.Allocator, accounts: *std.StringHashMapUnmanaged(AccountAcc), reader: *xml.Reader) !void {
     const account_id = try dupAttr(arena, reader, "accountId") orelse return;
     const entry = try ensureAccount(accounts, arena, account_id);
-    if (attrFloat(reader, "total")) |total| {
-        entry.*.net_liquidation = total;
+    const total = attrFloat(reader, "total");
+    if (try isoDate(arena, attrRaw(reader, "reportDate"))) |date| {
+        if (total) |t| try entry.*.history.append(arena, .{ .date = date, .balance = t });
+        if (std.mem.order(u8, date, entry.*.equity_date) == .lt) return;
+        entry.*.equity_date = date;
+        entry.*.equity_cash = null;
+    }
+    if (total) |t| {
+        entry.*.net_liquidation = t;
         entry.*.nlv_from_equity = true;
     }
     if (attrFloat(reader, "cash")) |cash| entry.*.equity_cash = cash;
@@ -458,8 +479,8 @@ fn eqlAny(value: []const u8, options: []const []const u8) bool {
     return false;
 }
 
-fn nowIso(arena: std.mem.Allocator) ![]const u8 {
-    return try std.fmt.allocPrint(arena, "{d}", .{std.Io.Timestamp.now(zx.io(), .real).toSeconds()});
+fn nowSecs(arena: std.mem.Allocator) ![]const u8 {
+    return try arena.print("{d}", .{std.Io.Timestamp.now(zx.io(), .real).toSeconds()});
 }
 
 test "parse flex meta and report cash" {
@@ -506,4 +527,20 @@ test "parse flex meta and report cash" {
         \\</FlexQueryResponse>
     );
     try std.testing.expectEqual(@as(f64, 100), parsed2.accounts.get("U2").?.cash());
+
+    var parsed3 = try parseReport(arena,
+        \\<?xml version="1.0"?>
+        \\<FlexQueryResponse>
+        \\  <FlexStatement accountId="U3">
+        \\    <AccountInformation accountId="U3" currency="USD" dateOpened="20230115" />
+        \\    <EquitySummaryByReportDateInBase accountId="U3" reportDate="20261026" total="1200" cash="50" />
+        \\    <EquitySummaryByReportDateInBase accountId="U3" reportDate="20261020" total="1000" cash="10" />
+        \\  </FlexStatement>
+        \\</FlexQueryResponse>
+    );
+    const acc3 = parsed3.accounts.get("U3").?;
+    try std.testing.expectEqualStrings("2023-01-15", acc3.opened_on.?);
+    try std.testing.expectEqual(@as(usize, 2), acc3.history.items.len);
+    try std.testing.expectEqual(@as(f64, 1200), acc3.net_liquidation);
+    try std.testing.expectEqual(@as(?f64, 50), acc3.equity_cash);
 }

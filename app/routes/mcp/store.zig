@@ -25,7 +25,7 @@ pub const AuthCode = struct {
 pub fn randomToken(arena: std.mem.Allocator) ![]const u8 {
     var bytes: [32]u8 = undefined;
     std.Io.random(zx.io(), &bytes);
-    return try std.fmt.allocPrint(arena, "{x}", .{bytes});
+    return try arena.print("{x}", .{bytes});
 }
 
 pub fn mcpSecret(arena: std.mem.Allocator) ?[]const u8 {
@@ -120,7 +120,7 @@ pub fn issueAccessToken(
 
 pub fn resourceUrl(arena: std.mem.Allocator, request: zx.server.Request) ![]const u8 {
     const base = booking.origin(request);
-    return try std.fmt.allocPrint(arena, "{s}/mcp", .{base});
+    return try arena.print("{s}/mcp", .{base});
 }
 
 pub fn authorizationServerIssuer(arena: std.mem.Allocator, request: zx.server.Request) ![]const u8 {
@@ -130,7 +130,7 @@ pub fn authorizationServerIssuer(arena: std.mem.Allocator, request: zx.server.Re
 
 pub fn protectedResourceMetadataUrl(arena: std.mem.Allocator, request: zx.server.Request) ![]const u8 {
     const base = booking.origin(request);
-    return try std.fmt.allocPrint(arena, "{s}/.well-known/oauth-protected-resource/mcp", .{base});
+    return try arena.print("{s}/.well-known/oauth-protected-resource/mcp", .{base});
 }
 
 pub const RegisteredClient = struct {

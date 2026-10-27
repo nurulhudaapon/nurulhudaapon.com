@@ -60,7 +60,7 @@ pub fn invalidateBusy() void {
 fn report(allocator: std.mem.Allocator, creds: Credentials, range: slots.Interval) ![]const u8 {
     var start_buf: [16]u8 = undefined;
     var end_buf: [16]u8 = undefined;
-    const body = try std.fmt.allocPrint(allocator,
+    const body = try allocator.print(
         \\<?xml version="1.0" encoding="utf-8"?>
         \\<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
         \\  <D:prop><C:calendar-data/></D:prop>
@@ -112,7 +112,7 @@ pub fn getEvents(allocator: std.mem.Allocator, creds: Credentials, resources: []
     @memset(out, null);
     for (resources, out) |r, *data| {
         // A <response> starts with its href, so its data runs to the closing tag.
-        const name = try std.fmt.allocPrint(allocator, "/{s}.ics<", .{r});
+        const name = try allocator.print("/{s}.ics<", .{r});
         const at = std.mem.indexOf(u8, xml, name) orelse continue;
         const end = std.mem.indexOfPos(u8, xml, at, "response>") orelse xml.len;
         if (std.mem.indexOf(u8, xml[at..end], "BEGIN:VCALENDAR") != null) data.* = xml[at..end];
@@ -132,7 +132,7 @@ pub fn deleteEvent(allocator: std.mem.Allocator, creds: Credentials, resource: [
 }
 
 fn eventUrl(allocator: std.mem.Allocator, creds: Credentials, resource: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "{s}/{s}.ics", .{ std.mem.trimEnd(u8, creds.calendar_url, "/"), resource });
+    return allocator.print("{s}/{s}.ics", .{ std.mem.trimEnd(u8, creds.calendar_url, "/"), resource });
 }
 
 pub const Calendar = struct { name: []const u8, url: []const u8 };
@@ -181,7 +181,7 @@ fn propfind(allocator: std.mem.Allocator, creds: Credentials, url: []const u8, d
 fn resolve(allocator: std.mem.Allocator, base: []const u8, href: []const u8) ![]const u8 {
     if (std.mem.indexOf(u8, href, "://") != null) return href;
     const path_at = base.len - urlPath(base).len;
-    return std.fmt.allocPrint(allocator, "{s}{s}", .{ base[0..path_at], href });
+    return allocator.print("{s}{s}", .{ base[0..path_at], href });
 }
 
 fn afterTag(xml: []const u8, name: []const u8) []const u8 {
@@ -262,7 +262,7 @@ fn send(
 }
 
 fn basicAuth(allocator: std.mem.Allocator, creds: Credentials) ![]const u8 {
-    const raw = try std.fmt.allocPrint(allocator, "{s}:{s}", .{ creds.username, creds.password });
+    const raw = try allocator.print("{s}:{s}", .{ creds.username, creds.password });
     const encoder = std.base64.standard.Encoder;
     const out = try allocator.alloc(u8, "Basic ".len + encoder.calcSize(raw.len));
     @memcpy(out[0.."Basic ".len], "Basic ");

@@ -186,7 +186,7 @@ fn dayClass(d: slots.Day, selected: bool) []const u8 {
 
 fn dayCount(alloc: zx.Allocator, d: slots.Day) []const u8 {
     if (d.slots.len == 0) return "Full";
-    return std.fmt.allocPrint(alloc, "{d} open", .{d.slots.len}) catch "";
+    return alloc.print("{d} open", .{d.slots.len}) catch "";
 }
 
 /// Server-rendered times are in Asia/Dhaka, so they hold their space hidden
@@ -206,7 +206,7 @@ fn displayOffset(unix: i64) i64 {
 }
 
 fn tzLabel(alloc: zx.Allocator, unix: i64) []const u8 {
-    return std.fmt.allocPrint(alloc, "{s} ({s})", .{ tzName(alloc), offsetLabel(alloc, unix) }) catch "";
+    return alloc.print("{s} ({s})", .{ tzName(alloc), offsetLabel(alloc, unix) }) catch "";
 }
 
 fn tzName(alloc: zx.Allocator) []const u8 {
@@ -234,7 +234,7 @@ fn timeLabel(alloc: zx.Allocator, unix: i64) []const u8 {
 
 fn whenLabel(alloc: zx.Allocator, unix: i64) []const u8 {
     const date = slots.formatDate(alloc, unix, displayOffset(unix)) catch "";
-    return std.fmt.allocPrint(alloc, "{s} at {s} ({s})", .{ date, timeLabel(alloc, unix), offsetLabel(alloc, unix) }) catch "";
+    return alloc.print("{s} at {s} ({s})", .{ date, timeLabel(alloc, unix), offsetLabel(alloc, unix) }) catch "";
 }
 
 const zx = @import("zx");

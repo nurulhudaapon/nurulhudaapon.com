@@ -175,8 +175,8 @@ fn visitorCookie(request: zx.server.Request) ?[]const u8 {
 
 fn formatAsked(allocator: zx.Allocator, raw: []const u8) []const u8 {
     const ts = std.fmt.parseInt(i64, raw, 10) catch
-        return std.fmt.allocPrint(allocator, "Asked on {s}", .{raw}) catch raw;
-    if (ts < 0) return std.fmt.allocPrint(allocator, "Asked at {d}", .{ts}) catch raw;
+        return allocator.print("Asked on {s}", .{raw}) catch raw;
+    if (ts < 0) return allocator.print("Asked at {d}", .{ts}) catch raw;
 
     const epoch_secs = std.time.epoch.EpochSeconds{ .secs = @intCast(ts) };
     const epoch_day = epoch_secs.getEpochDay();
@@ -184,10 +184,9 @@ fn formatAsked(allocator: zx.Allocator, raw: []const u8) []const u8 {
     const year_day = epoch_day.calculateYearDay();
     const month_day = year_day.calculateMonthDay();
     const month_name = monthName(month_day.month.numeric()) orelse
-        return std.fmt.allocPrint(allocator, "Asked at {d}", .{ts}) catch raw;
+        return allocator.print("Asked at {d}", .{ts}) catch raw;
 
-    return std.fmt.allocPrint(
-        allocator,
+    return allocator.print(
         "Asked at {s} {d}, {d} {d:0>2}:{d:0>2}",
         .{
             month_name,

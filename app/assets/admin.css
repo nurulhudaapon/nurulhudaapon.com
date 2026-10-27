@@ -1480,6 +1480,79 @@ details.adm-disclosure[open] > summary {
     border-top: 1px solid var(--adm-border);
 }
 
+.adm-acct-group + .adm-acct,
+.adm-acct + .adm-acct-group,
+.adm-acct-group + .adm-acct-group {
+    border-top: 1px solid var(--adm-border);
+}
+
+.adm-acct-toggle {
+    width: 100%;
+    align-items: center;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.adm-acct-toggle[aria-busy="true"] {
+    cursor: wait;
+}
+
+.adm-acct-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.adm-acct-main > span {
+    display: block;
+}
+
+.adm-acct-main > .adm-acct-name {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.adm-acct-name .adm-icon {
+    color: var(--adm-muted);
+    transition: transform 0.15s ease;
+}
+
+.adm-acct-toggle:hover .adm-acct-name .adm-icon {
+    color: var(--adm-text);
+}
+
+.adm-acct-group-open .adm-acct-name .adm-icon {
+    transform: rotate(90deg);
+}
+
+.adm-acct-toggle[aria-busy="true"] .adm-acct-name .adm-icon {
+    animation: adm-spin 0.75s linear infinite;
+}
+
+.adm-acct-children {
+    margin: 0 0 0.75rem 0.75rem;
+    padding-left: 0.75rem;
+    border-left: 2px solid var(--adm-border);
+}
+
+.adm-acct-children .adm-acct {
+    padding: 0.5rem 0;
+}
+
+.adm-text-err {
+    color: var(--adm-err);
+}
+
+.adm-settings-foot .adm-flash,
+.adm-settings-foot .adm-flash-slot {
+    margin: 0 auto 0 0;
+    padding-block: 0.375rem;
+}
+
 .adm-acct-vals {
     display: flex;
     flex-direction: column;
@@ -1609,3 +1682,277 @@ details.adm-disclosure[open] > summary {
     }
 }
 
+
+.adm-link-plain {
+    color: inherit;
+    text-decoration: none;
+}
+
+.adm-link-plain:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.adm-table-title.adm-link-plain {
+    display: block;
+}
+
+.adm-pill-warn {
+    margin-left: 0.375rem;
+    background: var(--adm-accent-soft);
+    color: var(--adm-text);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.adm-balance-form {
+    margin-top: 0.625rem;
+}
+
+.adm-balance-form .adm-input {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+/* Trend chart: one series, so the line takes the link blue and text stays in ink. */
+.adm-trend {
+    margin: 0;
+}
+
+/* Both tab panes share one cell, so the card keeps the taller one's height. */
+.adm-tab-panes {
+    display: grid;
+}
+
+.adm-tab-panes > * {
+    grid-area: 1 / 1;
+    min-width: 0;
+}
+
+.adm-tab-panes > [aria-hidden="true"] {
+    visibility: hidden;
+}
+
+.adm-trend-pane {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.adm-alloc-more {
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.125rem;
+    height: 24px;
+    padding: 0 0.375rem 0 0.5rem;
+    border: 1px solid var(--adm-border);
+    border-radius: 999px;
+    background: var(--adm-surface);
+    color: var(--adm-muted);
+    font: inherit;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+
+.adm-alloc-more[aria-expanded="true"] {
+    padding: 0 0.25rem;
+}
+
+.adm-alloc-more:hover {
+    color: var(--adm-text);
+    background: var(--adm-hover);
+}
+
+.adm-alloc-more .adm-icon {
+    transform: rotate(90deg);
+    transition: transform 0.15s ease;
+}
+
+.adm-alloc-more[aria-expanded="true"] .adm-icon {
+    transform: rotate(-90deg);
+}
+
+.adm-card-tabs {
+    display: flex;
+    gap: 1rem;
+}
+
+.adm-card-tab {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--adm-muted);
+    font: inherit;
+    cursor: pointer;
+}
+
+.adm-card-tab:hover,
+.adm-card-tab[aria-selected="true"] {
+    color: var(--adm-text);
+}
+
+.adm-trend-change {
+    margin: 0 0 0.75rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    min-height: 1.5em;
+}
+
+.adm-skel {
+    display: inline-block;
+    max-width: 100%;
+    height: 0.75em;
+    border-radius: 4px;
+    background: var(--adm-active);
+    vertical-align: middle;
+    animation: adm-pulse 1.4s ease-in-out infinite;
+}
+
+.adm-trend-skel-line {
+    fill: none;
+    stroke: var(--adm-active);
+    stroke-width: 2;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+    animation: adm-pulse 1.4s ease-in-out infinite;
+}
+
+.adm-fade,
+.adm-trend-line,
+.adm-trend-area,
+.adm-trend-end,
+.adm-trend-scale > span:not(.adm-skel),
+.adm-trend-axis > span:not(.adm-skel) {
+    animation: adm-fade-in 0.25s ease-out;
+}
+
+@keyframes adm-pulse {
+    50% {
+        opacity: 0.45;
+    }
+}
+
+@keyframes adm-fade-in {
+    from {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .adm-skel,
+    .adm-trend-skel-line,
+    .adm-fade,
+    .adm-trend-line,
+    .adm-trend-area,
+    .adm-trend-end,
+    .adm-trend-scale > span,
+    .adm-trend-axis > span {
+        animation: none;
+    }
+}
+
+.adm-trend-scale,
+.adm-trend-axis {
+    align-items: center;
+    min-height: 18px;
+    line-height: 18px;
+    display: flex;
+    justify-content: space-between;
+    color: var(--adm-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.adm-trend-scale {
+    margin-bottom: 0.25rem;
+}
+
+.adm-trend-axis {
+    margin-top: 0.375rem;
+}
+
+.adm-trend-svg {
+    display: block;
+    width: 100%;
+    height: 160px;
+    overflow: visible;
+}
+
+.adm-trend-base {
+    stroke: var(--adm-border);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+
+.adm-trend-line {
+    fill: none;
+    stroke: var(--adm-link);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.adm-trend-area {
+    fill: var(--adm-link);
+    opacity: 0.1;
+}
+
+.adm-trend-end {
+    fill: var(--adm-link);
+    stroke: var(--adm-surface);
+    stroke-width: 2;
+}
+
+.adm-trend-hit > rect {
+    fill: transparent;
+}
+
+.adm-trend-guide,
+.adm-trend-dot,
+.adm-trend-tip {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.adm-trend-hit:hover .adm-trend-guide,
+.adm-trend-hit:hover .adm-trend-dot,
+.adm-trend-hit:hover .adm-trend-tip {
+    visibility: visible;
+}
+
+.adm-trend-guide {
+    stroke: var(--adm-border-strong);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+
+.adm-trend-dot {
+    fill: var(--adm-link);
+    stroke: var(--adm-surface);
+    stroke-width: 2;
+}
+
+/* The surface-colored stroke is a halo that keeps the label readable over the line. */
+.adm-trend-tip {
+    fill: var(--adm-text);
+    font-size: 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    paint-order: stroke;
+    stroke: var(--adm-surface);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+}
+
+.adm-trend-tip-date {
+    fill: var(--adm-muted);
+    font-weight: 400;
+}
+
+.adm-trend-empty {
+    margin: 0;
+}

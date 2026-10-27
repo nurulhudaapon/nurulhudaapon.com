@@ -9,9 +9,9 @@ pub fn write(ctx: zx.RouteContext) !void {
     const issuer = try store.authorizationServerIssuer(ctx.arena, ctx.request);
     const body = try mcp.oauth.writeAuthorizationServer(ctx.arena, .{
         .issuer = issuer,
-        .authorization_endpoint = try std.fmt.allocPrint(ctx.arena, "{s}/mcp/oauth/authorize", .{base}),
-        .token_endpoint = try std.fmt.allocPrint(ctx.arena, "{s}/mcp/oauth/token", .{base}),
-        .registration_endpoint = try std.fmt.allocPrint(ctx.arena, "{s}/mcp/oauth/register", .{base}),
+        .authorization_endpoint = try ctx.arena.print("{s}/mcp/oauth/authorize", .{base}),
+        .token_endpoint = try ctx.arena.print("{s}/mcp/oauth/token", .{base}),
+        .registration_endpoint = try ctx.arena.print("{s}/mcp/oauth/register", .{base}),
         .scopes_supported = &.{"mcp"},
     });
     ctx.response.headers.add("Cache-Control", "no-store");

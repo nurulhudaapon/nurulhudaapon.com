@@ -107,9 +107,9 @@ fn rateHint(arena: zx.Allocator, r: fx.Rate) []const u8 {
     if (std.mem.eql(u8, r.currency, "USD")) return "Base currency";
     if (fx.isMetal(r.currency)) {
         const bdt = fx.displayRate(arena, r.currency, r.rate);
-        return std.fmt.allocPrint(arena, "৳{d:.0}/g effective · {s}", .{ bdt, r.as_of }) catch r.as_of;
+        return arena.print("৳{d:.0}/g effective · {s}", .{ bdt, r.as_of }) catch r.as_of;
     }
-    if (r.as_of.len > 0) return std.fmt.allocPrint(arena, "Units per 1 USD · {s}", .{r.as_of}) catch "Units per 1 USD";
+    if (r.as_of.len > 0) return arena.print("Units per 1 USD · {s}", .{r.as_of}) catch "Units per 1 USD";
     return "Units per 1 USD";
 }
 
@@ -117,9 +117,9 @@ fn rateValue(arena: zx.Allocator, r: fx.Rate) []const u8 {
     if (std.mem.eql(u8, r.currency, "USD")) return "1";
     if (fx.isMetal(r.currency)) {
         const bdt = fx.displayRate(arena, r.currency, r.rate);
-        return std.fmt.allocPrint(arena, "{d:.0}", .{bdt}) catch "";
+        return arena.print("{d:.0}", .{bdt}) catch "";
     }
-    return std.fmt.allocPrint(arena, "{d}", .{r.rate}) catch "";
+    return arena.print("{d}", .{r.rate}) catch "";
 }
 
 pub const options: zx.PageOptions = .{
