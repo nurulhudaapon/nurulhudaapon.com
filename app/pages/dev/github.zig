@@ -18,7 +18,7 @@ pub const Stats = struct {
     forks: u32,
 };
 
-pub const endpoint = "/api/data/github.zon";
+pub const endpoint = "/api/data/github.json";
 
 /// Set at startup from `GITHUB_TOKEN`; unauthenticated requests are limited to 60/hour per IP.
 var auth_header: ?[]const u8 = null;
