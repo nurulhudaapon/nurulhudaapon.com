@@ -232,7 +232,7 @@ test parseCalendars {
     try std.testing.expectEqualStrings("https://p52-caldav.icloud.com:443/1/", try resolve(arena.allocator(), "https://caldav.icloud.com/", "https://p52-caldav.icloud.com:443/1/"));
 }
 
-const Header = zx.Fetch.RequestInit.Header;
+const Header = zx.http.Header;
 
 fn send(
     allocator: std.mem.Allocator,
@@ -246,19 +246,22 @@ fn send(
         .{ .name = "Authorization", .value = try basicAuth(allocator, creds) },
         .{ .name = "User-Agent", .value = "nurulhudaapon.com" },
     };
-    var response = (try zx.fetch(.blocking, allocator, url, .{
+    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = allocator };
+    defer client.deinit();
+    const response = try client.fetch(.{
+        .url = url,
         .method_name = method,
         .headers = try std.mem.concat(allocator, Header, &.{ &base_headers, extra_headers }),
-        .body = body,
-        .timeout_ms = 15_000,
-    })) orelse return error.NetworkError;
-    defer response.deinit();
-    if (!response.ok()) {
-        if (response.status == 404) return error.NotFound;
-        zx.log.warn("schedule: {s} {s} failed status={d}", .{ method, url, response.status });
+        .payload = body,
+        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(15_000), .clock = .awake } },
+    });
+    defer response.deinit(allocator);
+    if (response.status.class() != .success) {
+        if (response.status == .not_found) return error.NotFound;
+        zx.log.warn("schedule: {s} {s} failed status={d}", .{ method, url, @intFromEnum(response.status) });
         return error.CalDavError;
     }
-    return allocator.dupe(u8, try response.text());
+    return allocator.dupe(u8, response.body);
 }
 
 fn basicAuth(allocator: std.mem.Allocator, creds: Credentials) ![]const u8 {

@@ -11,7 +11,7 @@ pub fn GET(ctx: zx.RouteContext) !void {
         .scopes_supported = &.{"mcp"},
         .resource_documentation = "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
     });
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
     ctx.response.setContentType(.@"application/json");
     ctx.response.text(body);
 }

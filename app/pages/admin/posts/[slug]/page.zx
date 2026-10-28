@@ -25,7 +25,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         state = .draft;
     }
 
-    const flash = ui.flashFrom(ctx.request.queries, &.{
+    const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "saved", "Draft saved on this site. GitHub is unchanged." },
         .{ "discarded", "Draft discarded. Showing the version from GitHub." },
     });
@@ -59,7 +59,7 @@ var preview_version: ?[16]u8 = null;
 fn previewVersion() [16]u8 {
     if (preview_version) |v| return v;
     var bytes: [8]u8 = undefined;
-    zx.io().random(&bytes);
+    zx.Io.default().random(&bytes);
     preview_version = std.fmt.bytesToHex(bytes, .lower);
     return preview_version.?;
 }

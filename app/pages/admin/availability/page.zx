@@ -13,7 +13,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     const rules = settings.load(ctx.arena);
     const default_url = settings.defaultMeetingUrl(ctx.arena) orelse "";
-    const flash = ui.flashFrom(ctx.request.queries, &.{
+    const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "saved", "Availability saved. /schedule shows the new times right away." },
         .{ "invalid", "Those hours don't fit. Check that the day is longer than one meeting and at least one day is open." },
         .{ "bad_url", "The default meeting link must start with https:// or http://." },

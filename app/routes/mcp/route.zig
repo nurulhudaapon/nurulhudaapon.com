@@ -27,9 +27,9 @@ pub fn POST(ctx: zx.RouteContext) !void {
     }
 
     const reply = try mcp_server.handle(ctx.arena, body);
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
     if (reply.len == 0) {
-        ctx.response.setStatus(.@"no_content");
+        ctx.response.setStatus(.no_content);
         return;
     }
     ctx.response.setContentType(.@"application/json");
@@ -43,8 +43,8 @@ fn unauthorized(ctx: zx.RouteContext) !void {
         .scope = "mcp",
     });
     ctx.response.setStatus(.unauthorized);
-    ctx.response.headers.add("WWW-Authenticate", www);
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("WWW-Authenticate", www);
+    ctx.response.headers.append("Cache-Control", "no-store");
     ctx.response.setContentType(.@"application/json");
     ctx.response.text(try mcp.oauth.writeOAuthError(ctx.arena, "invalid_token", "Authentication required"));
 }

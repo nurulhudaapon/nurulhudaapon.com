@@ -53,7 +53,7 @@ pub fn book(arena: std.mem.Allocator, start: i64, req: Request) Outcome {
     if (slots.isBusy(b.slot, busy)) return .taken;
 
     var random: [8]u8 = undefined;
-    zx.io().random(&random);
+    zx.Io.default().random(&random);
     b.id = arena.print("{d}-{x}", .{ now, random }) catch return .failed;
 
     switch (claim(arena, b)) {
@@ -172,7 +172,7 @@ fn logInviteStatus(arena: std.mem.Allocator, creds: caldav.Credentials, id: []co
 }
 
 pub fn nowUnix() i64 {
-    return std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    return std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
 }
 
 fn isPlausibleEmail(email: []const u8) bool {

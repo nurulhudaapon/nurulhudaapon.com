@@ -4,7 +4,7 @@ pub fn GET(ctx: zx.RouteContext) !void {
 
     ctx.response.text(image_data);
     ctx.response.setContentType(contentTypeForPath(image_path));
-    ctx.response.headers.add("Cache-Control", "public, max-age=31536000, immutable");
+    ctx.response.headers.append("Cache-Control", "public, max-age=31536000, immutable");
 }
 
 const local_prefix = "/blog/images/";

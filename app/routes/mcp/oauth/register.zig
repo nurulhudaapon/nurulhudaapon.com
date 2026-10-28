@@ -45,7 +45,7 @@ pub fn handle(ctx: zx.RouteContext) !void {
         .scope = client.scope,
     });
     ctx.response.setStatus(.created);
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
     ctx.response.setContentType(.@"application/json");
     ctx.response.text(response);
 }
@@ -64,7 +64,7 @@ fn parseRedirectUris(arena: std.mem.Allocator, value: ?std.json.Value) !?[]const
 fn fail(ctx: zx.RouteContext, status: std.http.Status, code: []const u8, desc: []const u8) !void {
     const body = try mcp.oauth.writeOAuthError(ctx.arena, code, desc);
     ctx.response.setStatus(status);
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
     ctx.response.setContentType(.@"application/json");
     ctx.response.text(body);
 }

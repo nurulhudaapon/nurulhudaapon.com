@@ -3,7 +3,7 @@ pub fn Page(ctx: zx.PageContext, _: void, owner: ?Auth.Account) !zx.Component {
         return handlePost(ctx, owner);
     }
 
-    const q = ctx.request.queries;
+    const q = ctx.request.query;
     const client_id = q.get("client_id") orelse "";
     const redirect_uri = q.get("redirect_uri") orelse "";
     const scope = q.get("scope") orelse "mcp";
@@ -11,7 +11,7 @@ pub fn Page(ctx: zx.PageContext, _: void, owner: ?Auth.Account) !zx.Component {
     const resource = q.get("resource") orelse "";
     const has_request = client_id.len > 0 and redirect_uri.len > 0;
 
-    const flash = ui.flashFrom(ctx.request.queries, &.{
+    const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "denied", "Access denied. The MCP client was not authorized." },
         .{ "missing", "No pending MCP authorization request. Start from an MCP client." },
         .{ "failed", "Something went wrong issuing the authorization code." },

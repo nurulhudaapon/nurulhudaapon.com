@@ -161,7 +161,7 @@ pub fn AllocationCard(ctx: *zx.ComponentCtx(struct { allocations: []const financ
                         class="adm-card-tab"
                         aria-selected={if (on_trend) "false" else "true"}
                         onclick={ctx.bind(showAllocation)}
-                    >Asset allocation</button>
+                    >Allocation</button>
                     <button
                         type="button"
                         role="tab"
@@ -170,7 +170,7 @@ pub fn AllocationCard(ctx: *zx.ComponentCtx(struct { allocations: []const financ
                         onpointerdown={ctx.bind(openTrend)}
                         onkeydown={ctx.bind(openTrendKey)}
                         onclick={ctx.bind(showTrend)}
-                    >Net worth trend</button>
+                    >Net worth</button>
                 </div>
                 {if (on_trend and state.loading) (
                     <span class="adm-skel" style="width:9rem"></span>
@@ -768,7 +768,7 @@ pub fn financeChanged() void {
 
 fn invalidateFinanceCache() void {
     // Component caches from @caching="15s:finance_*"
-    _ = zx.cache.scoped(.cmp).delPrefix("cmp:finance") catch 0;
+    _ = zx.cache.scoped(.cmp).deletePrefix("cmp:finance") catch 0;
     // Page cache (WASM/edge) is keyed by pathname.
     zx.kv.scoped(.@"page-cache").delete("/admin/finance") catch {};
 }

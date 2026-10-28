@@ -78,7 +78,7 @@ pub fn setFiatRate(arena: std.mem.Allocator, currency: []const u8, units_per_usd
     if (isMetal(currency)) return error.InvalidCurrency;
     if (units_per_usd <= 0) return error.InvalidRate;
     if (std.ascii.eqlIgnoreCase(currency, "USD")) return error.InvalidCurrency;
-    const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
     try upsert(try std.ascii.allocUpperString(arena, currency), units_per_usd, "manual", now);
 }
 
@@ -99,25 +99,28 @@ fn cacheFresh(arena: std.mem.Allocator, gold_only: bool) bool {
     const r = row orelse return false;
     if (!gold_only and r.n < 3) return false;
     if (gold_only and r.n < 1) return false;
-    const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
     return now - r.fetched_at < cache_ttl_secs;
 }
 
 fn fetchFiat(arena: std.mem.Allocator) bool {
-    var response = (zx.fetch(.blocking, arena, rates_url, .{
+    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = arena };
+    defer client.deinit();
+    const response = client.fetch(.{
+        .url = rates_url,
         .headers = &.{.{ .name = "User-Agent", .value = "nurulhudaapon.com" }},
-        .timeout_ms = 12_000,
-    }) catch null) orelse return false;
-    defer response.deinit();
-    if (!response.ok()) return false;
-    const body = response.text() catch return false;
+        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(12_000), .clock = .awake } },
+    }) catch return false;
+    defer response.deinit(arena);
+    if (response.status.class() != .success) return false;
+    const body = response.body;
 
     const parsed = std.json.parseFromSlice([]RateRow, arena, body, .{
         .ignore_unknown_fields = true,
         .allocate = .alloc_always,
     }) catch return false;
 
-    const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
     upsert("USD", 1, "live", now) catch {};
 
     var stored: usize = 0;
@@ -134,13 +137,16 @@ fn fetchFiat(arena: std.mem.Allocator) bool {
 }
 
 fn fetchBajusGold(arena: std.mem.Allocator) bool {
-    var response = (zx.fetch(.blocking, arena, bajus_url, .{
+    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = arena };
+    defer client.deinit();
+    const response = client.fetch(.{
+        .url = bajus_url,
         .headers = &.{.{ .name = "User-Agent", .value = "nurulhudaapon.com" }},
-        .timeout_ms = 15_000,
-    }) catch null) orelse return false;
-    defer response.deinit();
-    if (!response.ok()) return false;
-    const body = response.text() catch return false;
+        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(15_000), .clock = .awake } },
+    }) catch return false;
+    defer response.deinit(arena);
+    if (response.status.class() != .success) return false;
+    const body = response.body;
 
     const list_bdt = parseBajus22kBdtPerGram(body) orelse {
         zx.log.warn("fx: could not parse 22K gold price from bajus.org", .{});
@@ -154,7 +160,7 @@ fn fetchBajusGold(arena: std.mem.Allocator) bool {
     const usd_per_g = effective_bdt / bdt_per_usd;
     if (usd_per_g <= 0) return false;
 
-    const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
     const as_of = arena.print("bajus-{d:.0}", .{list_bdt}) catch "bajus";
     upsert("XAU", 1.0 / usd_per_g, as_of, now) catch return false;
     return true;

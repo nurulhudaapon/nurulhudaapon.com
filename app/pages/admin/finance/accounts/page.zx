@@ -3,8 +3,8 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const asset_classes = try finance.listAssetClasses(ctx.arena);
     const groups = try finance.listAccountGroups(ctx.arena);
     const usd_bdt_rate = finance.usdBdtRate(ctx.arena);
-    const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
-    const flash = ui.flashFrom(ctx.request.queries, &.{
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
+    const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "synced", "IBKR balances and holdings refreshed." },
         .{ "synced_no_cash", "Synced holdings, but Flex had no Cash Report / Equity Summary - add both in Client Portal so cash is included." },
     });

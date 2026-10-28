@@ -52,22 +52,25 @@ pub fn fetchPinned(arena: std.mem.Allocator) ![]const Repo {
     var by_name: std.StringHashMapUnmanaged(Repo) = .empty;
     for (owners) |owner| {
         const url = try arena.print("https://api.github.com/users/{s}/repos?per_page=100", .{owner});
-        const headers = [_]zx.Fetch.RequestInit.Header{
+        const headers = [_]zx.http.Header{
             .{ .name = "Accept", .value = "application/vnd.github+json" },
             .{ .name = "User-Agent", .value = "nuhu.dev" },
             .{ .name = "Authorization", .value = auth_header orelse "" },
         };
-        var response = (try zx.fetch(.blocking, arena, url, .{
+        var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = arena };
+        defer client.deinit();
+        const response = try client.fetch(.{
+            .url = url,
             .headers = if (auth_header != null) &headers else headers[0..2],
-            .timeout_ms = 5_000,
-        })) orelse return error.EmptyResponse;
-        defer response.deinit();
-        if (!response.ok()) {
-            zx.log.warn("github: {s} returned {d}", .{ url, response.status });
+            .timeout = .{ .duration = .{ .raw = .fromMilliseconds(5_000), .clock = .awake } },
+        });
+        defer response.deinit(arena);
+        if (response.status.class() != .success) {
+            zx.log.warn("github: {s} returned {d}", .{ url, @intFromEnum(response.status) });
             return error.GitHubUnavailable;
         }
 
-        const parsed = try response.json([]const Repo);
+        const parsed = try response.json([]const Repo, arena);
         for (parsed.value) |repo| try by_name.put(arena, repo.full_name, repo);
     }
 

@@ -1,9 +1,9 @@
 pub fn Proxy(ctx: *zx.ProxyContext) void {
     if (signedIn(ctx)) |owner| return ctx.state(@as(?Auth.Account, owner));
 
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
     if (ctx.request.method == .GET) {
-        ctx.response.redirect(adapter.loginUrl(ctx.arena, ctx.request, ctx.request.pathname), 302);
+        ctx.response.redirect(adapter.loginUrl(ctx.arena, ctx.request, ctx.request.pathname), .found);
     } else {
         ctx.response.setStatus(.unauthorized);
         ctx.response.text("Sign in required");

@@ -16,21 +16,24 @@ pub fn fetch(allocator: std.mem.Allocator) ![]const u8 {
     }
 
     zx.log.debug("avatar: fetching {s}", .{github_avatar_url});
-    var response = (try zx.fetch(.blocking, allocator, github_avatar_url, .{
+    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = allocator };
+    defer client.deinit();
+    const response = try client.fetch(.{
+        .url = github_avatar_url,
         .headers = &.{
             .{ .name = "User-Agent", .value = "nurulhudaapon.com" },
             .{ .name = "Accept", .value = "image/*" },
         },
-        .timeout_ms = 15_000,
-    })) orelse return error.NetworkError;
-    defer response.deinit();
-    if (!response.ok()) {
-        zx.log.warn("avatar: fetch failed status={d} url={s}", .{ response.status, github_avatar_url });
+        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(15_000), .clock = .awake } },
+    });
+    defer response.deinit(allocator);
+    if (response.status.class() != .success) {
+        zx.log.warn("avatar: fetch failed status={d} url={s}", .{ @intFromEnum(response.status), github_avatar_url });
         return error.NetworkError;
     }
 
-    const body = try response.bytes();
-    zx.log.debug("avatar: fetched bytes={d} status={d}", .{ body.len, response.status });
+    const body = response.body;
+    zx.log.debug("avatar: fetched bytes={d} status={d}", .{ body.len, @intFromEnum(response.status) });
     try avatar_kv.put(cache_key, body, .{});
     return try allocator.dupe(u8, body);
 }

@@ -25,7 +25,7 @@ pub const AuthCode = struct {
 
 pub fn randomToken(arena: std.mem.Allocator) ![]const u8 {
     var bytes: [32]u8 = undefined;
-    std.Io.random(zx.io(), &bytes);
+    std.Io.random(zx.Io.default(), &bytes);
     return try arena.print("{x}", .{bytes});
 }
 

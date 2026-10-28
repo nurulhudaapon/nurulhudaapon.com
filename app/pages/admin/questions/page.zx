@@ -1,5 +1,5 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const filter = std.meta.stringToEnum(db.Filter, ctx.request.queries.get("filter") orelse "") orelse .unanswered;
+    const filter = std.meta.stringToEnum(db.Filter, ctx.request.query.get("filter") orelse "") orelse .unanswered;
     const back = try ctx.fmt("/admin/questions?filter={s}", .{@tagName(filter)});
     if (ctx.request.method == .POST) {
         const flag = handle(ctx) catch |err| blk: {
@@ -11,7 +11,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     const questions = try db.listFiltered(ctx.arena, filter);
     const tabs = try ui.filterTabs(ctx.arena, "/admin/questions", filter, db.counts(ctx.arena));
-    const flash = ui.flashFrom(ctx.request.queries, &.{
+    const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "answered", "Answer saved. The asker will see it next time they visit /ask." },
         .{ "deleted", "Question deleted." },
         .{ "empty", "Write an answer before saving." },

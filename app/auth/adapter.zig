@@ -1,17 +1,17 @@
 // The zx host for `Auth`: cookies on the zx request and response, sessions and
-// passkeys in D1, provider calls through `zx.fetch`, and provider credentials from
+// passkeys in D1, provider calls through `zx.http.Client`, and provider credentials from
 // `credentials` (`oauth_<id>_client_id`, `oauth_<id>_client_secret`). Only the
 // account ids in `oauth_<id>_allowed` (comma-separated) may sign in.
 
 const home = "/admin";
 
-const Host = struct { request: zx.server.Request, response: zx.server.Response };
+const Host = struct { request: zx.server.Request, response: zx.server.Response, io: std.Io };
 
 pub fn of(ctx: anytype) !Auth {
     const host = try ctx.arena.create(Host);
-    host.* = .{ .request = ctx.request, .response = ctx.response };
+    host.* = .{ .request = ctx.request, .response = ctx.response, .io = ctx.io };
     return .{
-        .io = zx.io(),
+        .io = ctx.io,
         .userdata = host,
         .vtable = &vtable,
         .origin = site.origin(ctx.request),
@@ -78,7 +78,7 @@ fn setCookie(ud: ?*anyopaque, c: Auth.Cookie) void {
         .same_site = switch (c.same_site) {
             inline else => |s| @field(zx.server.Response.CookieOptions.SameSite, @tagName(s)),
         },
-        .max_age = @intCast(c.max_age_s),
+        .max_age = .fromSeconds(c.max_age_s),
     });
 }
 
@@ -107,23 +107,26 @@ fn authorize(_: ?*anyopaque, arena: std.mem.Allocator, owner: Auth.Account) anye
     return false;
 }
 
-fn fetch(_: ?*anyopaque, arena: std.mem.Allocator, request: Auth.OAuth.Request) anyerror![]const u8 {
-    var headers: std.ArrayList(zx.Fetch.RequestInit.Header) = .empty;
-    for (request.headers) |h| try headers.append(arena, .{ .name = h.name, .value = h.value });
+fn fetch(ud: ?*anyopaque, arena: std.mem.Allocator, request: Auth.OAuth.Request) anyerror![]const u8 {
+    var headers: std.ArrayList(zx.http.Header) = .empty;
+    try headers.appendSlice(arena, request.headers);
     try headers.append(arena, .{ .name = "User-Agent", .value = "nurulhudaapon.com" });
 
-    var response = (try zx.fetch(.blocking, arena, request.url, .{
+    var client: zx.http.Client = .{ .io = hostOf(ud).io, .allocator = arena };
+    defer client.deinit();
+    const response = try client.fetch(.{
+        .url = request.url,
         .method = request.method,
         .headers = headers.items,
-        .body = request.body,
-        .timeout_ms = 10_000,
-    })) orelse return error.NetworkError;
-    defer response.deinit();
-    if (!response.ok()) {
-        zx.log.warn("auth: {s} returned {d}", .{ request.url, response.status });
+        .payload = request.body,
+        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(10_000), .clock = .awake } },
+    });
+    defer response.deinit(arena);
+    if (response.status.class() != .success) {
+        zx.log.warn("auth: {s} returned {d}", .{ request.url, @intFromEnum(response.status) });
         return error.ProviderError;
     }
-    return arena.dupe(u8, try response.text());
+    return arena.dupe(u8, response.body);
 }
 
 fn putSession(_: ?*anyopaque, token_hash: []const u8, owner: Auth.Account, max_age_s: i64) anyerror!void {
@@ -189,7 +192,7 @@ fn putPasskey(_: ?*anyopaque, p: Auth.Passkey) anyerror!void {
         p.owner.id,
         p.owner.name,
         p.name,
-        @intFromEnum(p.algorithm),
+        @backingInt(p.algorithm),
         try Auth.WebAuthn.encode(fba.allocator(), p.public_key),
         @as(i64, p.sign_count),
         p.created_at,

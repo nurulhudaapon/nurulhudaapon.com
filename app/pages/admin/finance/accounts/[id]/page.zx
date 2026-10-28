@@ -7,7 +7,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const history = try finance.listBalanceHistory(ctx.arena, id, history_limit);
     const changes = recordedOnly(ctx.arena, history);
     const holdings = try finance.listAccountHoldings(ctx.arena, id);
-    const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
     const manual = std.mem.eql(u8, account.broker, "manual");
     const liability = finance.isLiability(account);
 

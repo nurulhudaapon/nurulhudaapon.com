@@ -14,7 +14,7 @@ pub fn write(ctx: zx.RouteContext) !void {
         .registration_endpoint = try ctx.arena.print("{s}/mcp/oauth/register", .{base}),
         .scopes_supported = &.{"mcp"},
     });
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
     ctx.response.setContentType(.@"application/json");
     ctx.response.text(body);
 }

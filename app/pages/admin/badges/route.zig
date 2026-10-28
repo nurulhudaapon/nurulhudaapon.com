@@ -9,7 +9,7 @@ pub fn GET(ctx: zx.RouteContext) !void {
 
     var aw = std.Io.Writer.Allocating.init(ctx.arena);
     try zx.util.zxon.serialize(counts, &aw.writer, .{});
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
     ctx.response.text(aw.written());
 }
 

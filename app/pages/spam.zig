@@ -31,7 +31,7 @@ pub fn validFormProof(visitor_id: []const u8, submitted: u32) bool {
 }
 
 fn nowUnix() i64 {
-    return std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    return std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
 }
 
 fn timeBucket(unix: i64) u64 {

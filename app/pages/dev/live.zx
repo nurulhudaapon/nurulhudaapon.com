@@ -54,18 +54,19 @@ const feed = struct {
 
         if (requested) return;
         requested = true;
-        _ = zx.fetch(.wasm(&onLoad), zx.allocator, github.endpoint, .{}) catch {
-            requested = false;
-        };
+        var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = zx.allocator };
+        defer client.deinit();
+        client.fetchThen(.{ .url = github.endpoint }, {}, onLoad);
     }
 
-    fn onLoad(response: ?*zx.Fetch.Response, err: ?zx.Fetch.FetchError) void {
-        if (err != null) return;
-        const res = response orelse return;
-        defer res.deinit();
-        if (!res.ok()) return;
+    fn onLoad(_: void, result: zx.http.Client.Error!zx.http.Client.Result) void {
+        const res = result catch {
+            requested = false;
+            return;
+        };
+        if (res.status.class() != .success) return;
 
-        const payload = zx.util.zxon.parse(struct { repos: []const github.Stats }, zx.allocator, res.text() catch return, .{}) catch return;
+        const payload = zx.util.zxon.parse(struct { repos: []const github.Stats }, zx.allocator, res.body, .{}) catch return;
 
         for (watchers[0..len]) |w| {
             if (countsFor(payload.repos, w.repo)) |c| w.counts.set(c);

@@ -4,7 +4,7 @@ const migration = @import("db/migration.zig");
 const env = @import("db/env.zig");
 
 pub fn main(init: zx.Init) !void {
-    var app = try zx.App.init(init, zx.io(), zx.allocator, .{}, {});
+    var app = try zx.App.init(init, zx.Io.default(), zx.allocator, .{}, {});
     defer app.deinit();
 
     try migration.run();

@@ -3,7 +3,7 @@ const zx = @import("zx");
 const store = @import("../store.zig");
 
 pub fn handle(ctx: zx.RouteContext) !void {
-    const q = ctx.request.queries;
+    const q = ctx.request.query;
     const response_type = q.get("response_type") orelse "";
     const client_id = q.get("client_id") orelse "";
     const redirect_uri = q.get("redirect_uri") orelse "";
@@ -39,8 +39,8 @@ pub fn handle(ctx: zx.RouteContext) !void {
             try appendQueryEscaped(&aw.writer, val);
         }
     }
-    ctx.response.headers.add("Cache-Control", "no-store");
-    ctx.response.redirect(aw.written(), 302);
+    ctx.response.headers.append("Cache-Control", "no-store");
+    ctx.response.redirect(aw.written(), .found);
 }
 
 fn appendQueryEscaped(w: *std.Io.Writer, value: []const u8) !void {

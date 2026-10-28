@@ -108,18 +108,19 @@ const badge_feed = struct {
 
         if (requested) return;
         requested = true;
-        _ = zx.fetch(.wasm(&onLoad), zx.allocator, "/admin/badges", .{}) catch {
-            requested = false;
-        };
+        var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = zx.allocator };
+        defer client.deinit();
+        client.fetchThen(.{ .url = "/admin/badges" }, {}, onLoad);
     }
 
-    fn onLoad(response: ?*zx.Fetch.Response, err: ?zx.Fetch.FetchError) void {
-        if (err != null) return;
-        const res = response orelse return;
-        defer res.deinit();
-        if (!res.ok()) return;
+    fn onLoad(_: void, result: zx.http.Client.Error!zx.http.Client.Result) void {
+        const res = result catch {
+            requested = false;
+            return;
+        };
+        if (res.status.class() != .success) return;
 
-        const counts = zx.util.zxon.parse(badges.Counts, zx.allocator, res.text() catch return, .{}) catch return;
+        const counts = zx.util.zxon.parse(badges.Counts, zx.allocator, res.body, .{}) catch return;
 
         for (watchers[0..len]) |w| w.count.set(switch (w.kind) {
             .unanswered => counts.unanswered,

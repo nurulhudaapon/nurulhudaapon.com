@@ -334,7 +334,7 @@ const FetchOpts = struct {
 
 fn fetchBytes(allocator: std.mem.Allocator, url: []const u8, opts: FetchOpts) ![]u8 {
     zx.log.debug("git.fetchBytes: GET {s}", .{url});
-    var headers_buf: [3]zx.Fetch.RequestInit.Header = undefined;
+    var headers_buf: [3]zx.http.Header = undefined;
     var headers_len: usize = 0;
 
     headers_buf[headers_len] = .{ .name = "Accept", .value = opts.accept };
@@ -357,21 +357,23 @@ fn fetchBytes(allocator: std.mem.Allocator, url: []const u8, opts: FetchOpts) ![
         }
     }
 
-    var response = (try zx.fetch(.blocking, allocator, url, .{
+    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = allocator };
+    defer client.deinit();
+    const response = try client.fetch(.{
+        .url = url,
         .headers = headers_buf[0..headers_len],
-        .timeout_ms = 120_000,
-    })) orelse return error.NetworkError;
-    defer response.deinit();
+        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(120_000), .clock = .awake } },
+    });
+    defer response.deinit(allocator);
 
-    if (!response.ok()) {
-        zx.log.warn("git.fetchBytes: response status={d} url={s}", .{ response.status, url });
-        if (response.status == 404) return error.RepositoryNotFound;
+    if (response.status.class() != .success) {
+        zx.log.warn("git.fetchBytes: response status={d} url={s}", .{ @intFromEnum(response.status), url });
+        if (response.status == .not_found) return error.RepositoryNotFound;
         return error.NetworkError;
     }
 
-    const body = try response.bytes();
-    zx.log.debug("git.fetchBytes: response status={d} bytes={d}", .{ response.status, body.len });
-    return try allocator.dupe(u8, body);
+    zx.log.debug("git.fetchBytes: response status={d} bytes={d}", .{ @intFromEnum(response.status), response.body.len });
+    return try allocator.dupe(u8, response.body);
 }
 
 fn extractTar(allocator: std.mem.Allocator, reader: *std.Io.Reader) !Archive {

@@ -214,7 +214,7 @@ pub fn FlashBanner(allocator: zx.Allocator, props: struct { flash: ?Flash }) zx.
 
 /// Answer a form POST with a 303 so reloading doesn't resubmit it.
 pub fn redirect(ctx: zx.PageContext, location: []const u8) zx.Component {
-    ctx.response.redirect(location, 303);
+    ctx.response.redirect(location, .see_other);
     return (<span @allocator={ctx.arena}></span>);
 }
 

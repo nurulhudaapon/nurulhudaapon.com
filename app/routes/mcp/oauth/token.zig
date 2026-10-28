@@ -40,7 +40,7 @@ pub fn handle(ctx: zx.RouteContext) !void {
 
     const issued = try store.issueAccessToken(ctx.arena, auth.client_id, auth.scope, auth.resource, auth.approved_by);
     const body = try mcp.oauth.writeTokenResponse(ctx.arena, issued.token, issued.expires_in, auth.scope);
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
     ctx.response.setContentType(.@"application/json");
     ctx.response.text(body);
 }
@@ -48,7 +48,7 @@ pub fn handle(ctx: zx.RouteContext) !void {
 fn oauthErr(ctx: zx.RouteContext, status: std.http.Status, code: []const u8, desc: []const u8) !void {
     const body = try mcp.oauth.writeOAuthError(ctx.arena, code, desc);
     ctx.response.setStatus(status);
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
     ctx.response.setContentType(.@"application/json");
     ctx.response.text(body);
 }

@@ -13,7 +13,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const targets = try finance.listAllocations(ctx.arena);
     const data = try finance.snapshot(ctx.arena);
     const asset_classes = try finance.listAssetClasses(ctx.arena);
-    const flash = ui.flashFrom(ctx.request.queries, &.{
+    const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "saved", "Allocation target saved." },
         .{ "deleted", "Allocation target removed." },
         .{ "invalid", "Name is required and target % must be between 0 and 100." },

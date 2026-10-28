@@ -155,7 +155,7 @@ fn submit(a: *zx.server.Action.Stateful) void {
         return form.set(prev.with(.err, "Something went wrong. Please try again."));
     };
 
-    const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
     const asked = arena.alloc(db.Question, prev.asked.len + 1) catch return form.set(thanks);
     asked[0] = .{
         .id = id,

@@ -3,7 +3,7 @@ const zx = @import("zx");
 const slots = @import("../schedule/slots.zig");
 
 fn now() i64 {
-    return std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+    return std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
 }
 
 /// `raw` is unix seconds as text.

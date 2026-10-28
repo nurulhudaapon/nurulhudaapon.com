@@ -7,7 +7,7 @@ pub fn GET(ctx: zx.RouteContext) !void {
         const bytes = try avatar.fetch(ctx.arena);
         ctx.response.text(bytes);
         ctx.response.setContentType(avatar.contentType(bytes));
-        ctx.response.headers.add("Cache-Control", "public, max-age=86400");
+        ctx.response.headers.append("Cache-Control", "public, max-age=86400");
         return;
     }
 
@@ -36,7 +36,7 @@ pub fn GET(ctx: zx.RouteContext) !void {
 }
 
 fn queryText(ctx: zx.RouteContext, name: []const u8) !?[]const u8 {
-    const raw = ctx.request.queries.get(name) orelse return null;
+    const raw = ctx.request.query.get(name) orelse return null;
     const buf = try ctx.arena.dupe(u8, raw);
     for (buf) |*c| {
         if (c.* == '+') c.* = ' ';

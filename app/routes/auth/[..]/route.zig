@@ -45,12 +45,12 @@ const AuthRoute = enum {
 };
 
 fn handle(ctx: zx.RouteContext) !void {
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
     const route, const provider = AuthRoute.parse(ctx.request.pathname) orelse return ctx.response.setStatus(.not_found);
     if (ctx.request.method != route.method()) return ctx.response.setStatus(.method_not_allowed);
 
     const auth = try adapter.of(ctx);
-    const q = ctx.request.queries;
+    const q = ctx.request.query;
     switch (route) {
         .start => {
             const url = auth.startOAuth(ctx.arena, provider, q.get("next")) catch |err| return redirect(ctx, try failure(ctx, login_path, err));
@@ -112,7 +112,7 @@ fn failure(ctx: zx.RouteContext, page: []const u8, err: anyerror) ![]const u8 {
 
 // 303 so a redirect after a POST is always followed with a GET.
 fn redirect(ctx: zx.RouteContext, url: []const u8) void {
-    ctx.response.redirect(url, 303);
+    ctx.response.redirect(url, .see_other);
 }
 
 fn opts(ctx: zx.RouteContext, json: []const u8) void {

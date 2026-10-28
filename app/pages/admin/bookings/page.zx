@@ -1,5 +1,5 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const filter = std.meta.stringToEnum(booking.Filter, ctx.request.queries.get("filter") orelse "") orelse .upcoming;
+    const filter = std.meta.stringToEnum(booking.Filter, ctx.request.query.get("filter") orelse "") orelse .upcoming;
     const back = try ctx.fmt("/admin/bookings?filter={s}", .{@tagName(filter)});
     if (ctx.request.method == .POST) {
         const flag = handle(ctx) catch |err| switch (err) {
@@ -16,7 +16,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     booking.syncUpcoming(ctx.arena);
     const records = try booking.list(ctx.arena, filter, 200);
     const default_url = settings.defaultMeetingUrl(ctx.arena) orelse "";
-    const flash = ui.flashFrom(ctx.request.queries, &.{
+    const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "link", "Meeting link updated. The /meet link in the invite now redirects there." },
         .{ "link_reset", "Meeting link reset to your default." },
         .{ "cancelled", "Booking cancelled. The calendar event was removed and the slot is open again." },

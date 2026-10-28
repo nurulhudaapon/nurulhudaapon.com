@@ -27,7 +27,7 @@ pub fn sync(arena: std.mem.Allocator) !Result {
 pub fn syncIfStale(arena: std.mem.Allocator) !?Result {
     if (credentials.loadIbkr(arena) == null) return null;
     if (lastSyncedSecs(arena)) |at| {
-        const now = std.Io.Timestamp.now(zx.io(), .real).toSeconds();
+        const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
         if (now - at < sync_cache_secs) return null;
     }
     return try sync(arena);
@@ -57,7 +57,7 @@ fn getStatement(arena: std.mem.Allocator, token: []const u8, reference: []const 
     const url = try arena.print("{s}?t={s}&q={s}&v=3", .{ statement_url, token, reference });
     var attempt: usize = 0;
     while (attempt < 8) : (attempt += 1) {
-        if (attempt > 0) zx.io().sleep(.fromMilliseconds(800), .awake) catch {};
+        if (attempt > 0) zx.Io.default().sleep(.fromMilliseconds(800), .awake) catch {};
         const body = try fetchText(arena, url);
         if (containsElement(body, "FlexQueryResponse") or containsElement(body, "OpenPosition") or containsElement(body, "FlexStatement"))
             return body;
@@ -77,16 +77,19 @@ fn getStatement(arena: std.mem.Allocator, token: []const u8, reference: []const 
 }
 
 fn fetchText(arena: std.mem.Allocator, url: []const u8) ![]const u8 {
-    var response = (try zx.fetch(.blocking, arena, url, .{
+    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = arena };
+    defer client.deinit();
+    const response = try client.fetch(.{
+        .url = url,
         .headers = &.{.{ .name = "User-Agent", .value = "nurulhudaapon.com" }},
-        .timeout_ms = 30_000,
-    })) orelse return error.NetworkError;
-    defer response.deinit();
-    if (!response.ok()) {
-        zx.log.warn("ibkr: GET failed status={d}", .{response.status});
+        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(30_000), .clock = .awake } },
+    });
+    defer response.deinit(arena);
+    if (response.status.class() != .success) {
+        zx.log.warn("ibkr: GET failed status={d}", .{@intFromEnum(response.status)});
         return error.NetworkError;
     }
-    return try arena.dupe(u8, try response.text());
+    return try arena.dupe(u8, response.body);
 }
 
 const AccountAcc = struct {
@@ -480,7 +483,7 @@ fn eqlAny(value: []const u8, options: []const []const u8) bool {
 }
 
 fn nowSecs(arena: std.mem.Allocator) ![]const u8 {
-    return try arena.print("{d}", .{std.Io.Timestamp.now(zx.io(), .real).toSeconds()});
+    return try arena.print("{d}", .{std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds()});
 }
 
 test "parse flex meta and report cash" {

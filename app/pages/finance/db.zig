@@ -943,7 +943,7 @@ fn validAssetClass(arena: std.mem.Allocator, v: []const u8) !bool {
 }
 
 fn nowSecs(arena: std.mem.Allocator) ![]const u8 {
-    return try arena.print("{d}", .{std.Io.Timestamp.now(zx.io(), .real).toSeconds()});
+    return try arena.print("{d}", .{std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds()});
 }
 
 pub fn formatMoney(arena: std.mem.Allocator, amount: f64, currency: []const u8) []const u8 {

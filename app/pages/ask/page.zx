@@ -31,12 +31,12 @@ fn ensureVisitorId(ctx: zx.PageContext) []const u8 {
     if (ctx.request.cookies.get("visitor_id")) |existing| {
         if (existing.len > 0) return existing;
     }
-    const seed: u64 = @intCast(@divTrunc(std.Io.Timestamp.now(zx.io(), .awake).nanoseconds, 1000));
+    const seed: u64 = @intCast(@divTrunc(std.Io.Timestamp.now(ctx.io, .awake).nanoseconds, 1000));
     var prng = std.Random.DefaultPrng.init(seed);
     const id = ctx.fmt("{x}", .{prng.random().int(u64)}) catch "anon";
     ctx.response.cookies.set("visitor_id", id, .{
         .path = "/",
-        .max_age = 60 * 60 * 24 * 365,
+        .max_age = .fromSeconds(60 * 60 * 24 * 365),
         .http_only = true,
         .same_site = .lax,
     });

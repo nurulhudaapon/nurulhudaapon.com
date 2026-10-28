@@ -13,7 +13,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     const rates = try fx.listRates(ctx.arena);
     const fetched = fx.fetchedAt(ctx.arena);
-    const flash = ui.flashFrom(ctx.request.queries, &.{
+    const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "synced", "Rates refreshed (Frankfurter fiat + BAJUS 22K gold)." },
         .{ "saved", "Rate saved." },
         .{ "fetch", "Could not reach an FX source. Try again shortly." },

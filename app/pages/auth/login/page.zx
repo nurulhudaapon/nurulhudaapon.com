@@ -1,8 +1,8 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const next = ctx.request.queries.get("next") orelse "/admin";
+    const next = ctx.request.query.get("next") orelse "/admin";
     const auth = try adapter.of(ctx);
     if (auth.account(ctx.arena) != null) return ui.redirect(ctx, "/admin");
-    ctx.response.headers.add("Cache-Control", "no-store");
+    ctx.response.headers.append("Cache-Control", "no-store");
 
     var available: std.ArrayList(Option) = .empty;
     for (try auth.availableProviders(ctx.arena)) |p| {
@@ -10,7 +10,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     }
     const has_passkeys = adapter.hasPasskeys(ctx.arena);
     const passkey_verify = try adapter.withNext(ctx.arena, ctx.request, "/auth/passkey/login", next);
-    const flash = ui.flashFrom(ctx.request.queries, &.{
+    const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "signed_out", "Signed out." },
         .{ "not_allowed", "That account isn't allowed to sign in here." },
         .{ "expired", "The sign-in took too long or was started elsewhere. Try again." },

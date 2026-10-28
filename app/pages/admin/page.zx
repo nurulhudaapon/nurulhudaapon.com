@@ -150,7 +150,7 @@ fn loadNetWorth(a: *zx.server.Action.Stateful) void {
 fn afterPeek(outcome: zx.ActionHandle.Outcome) void {
     if (outcome != .ok) return;
     peek_pending += 1;
-    _ = zx.client.setTimeout(autoHideBalance, reveal_ms);
+    _ = zx.client.setTimeout(autoHideBalance, .fromMilliseconds(reveal_ms));
 }
 
 fn hideBalance(e: *zx.client.Event.Stateful) void {

@@ -29,12 +29,14 @@ pub fn build(b: *std.Build) !void {
                 .sqlite = .enabled,
                 .cache = .enabled,
             },
+            .server = .{
+                .backend = .std,
+            },
             .client = .{
                 .bindings = .{
                     .build = .enabled,
                     .install_subdir = "bindings",
                 },
-                .wasm = .{ .optimize = .small },
             },
         },
     });
@@ -72,7 +74,7 @@ pub fn build(b: *std.Build) !void {
     preview.entry = .disabled;
     preview.wasi_exec_model = .reactor;
     preview.root_module.export_symbol_names = &.{
-        "preview_reset",     "preview_alloc",    "preview_render", "preview_minutes",
+        "preview_reset",     "preview_alloc",     "preview_render",   "preview_minutes",
         "preview_title_ptr", "preview_title_len", "preview_html_ptr", "preview_html_len",
     };
     b.getInstallStep().dependOn(&b.addInstallFile(preview.getEmittedBin(), "static/assets/_/preview.wasm").step);
