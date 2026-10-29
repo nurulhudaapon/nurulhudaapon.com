@@ -67,6 +67,31 @@ pub const Holding = struct {
     market_value_base: f64,
     conid: ?[]const u8,
     synced_at: ?[]const u8,
+    cost_price: ?f64 = null,
+    cost_basis_base: ?f64 = null,
+    unrealized_pnl_base: ?f64 = null,
+    exchange: []const u8 = "",
+    weight_pct: f64 = 0,
+};
+
+pub const CashBalance = struct {
+    account_id: i64,
+    account_name: []const u8,
+    currency: []const u8,
+    amount: f64,
+    settled: f64,
+    amount_base: f64,
+    weight_pct: f64 = 0,
+
+    pub fn unsettled(self: CashBalance) f64 {
+        const v = self.amount - self.settled;
+        return if (@abs(v) < 0.005) 0 else v;
+    }
+
+    pub fn unsettledBase(self: CashBalance) f64 {
+        if (@abs(self.amount) < 0.005) return 0;
+        return self.unsettled() * self.amount_base / self.amount;
+    }
 };
 
 pub const Allocation = struct {
@@ -111,13 +136,14 @@ pub const Snapshot = struct {
     fx_as_of: ?i64,
 };
 
-const Filter = union(enum) { all, group: []const u8, id: i64 };
+const Filter = union(enum) { all, everything, group: []const u8, id: i64 };
 
 // Weights are against active assets; a single-account lookup also returns
 // empty balances that listings hide.
 fn queryAccounts(arena: std.mem.Allocator, filter: Filter) ![]const Account {
     const id: i64 = if (filter == .id) filter.id else 0;
     const group: []const u8 = if (filter == .group) filter.group else "";
+    const keep_empty: i64 = if (filter == .everything) 1 else 0;
     return try zx.db.rows(arena, Account,
         \\WITH valued AS (
         \\  SELECT
@@ -145,13 +171,18 @@ fn queryAccounts(arena: std.mem.Allocator, filter: Filter) ![]const Account {
         \\FROM valued v CROSS JOIN tot t
         \\WHERE CASE WHEN ?1 != 0 THEN v.id = ?1
         \\  ELSE (?2 = '' OR v.group_name = ?2)
-        \\   AND (ABS(v.value_usd) > 0.005 OR ABS(v.cash_usd) > 0.005 OR v.stale != 0) END
+        \\   AND (?3 != 0 OR ABS(v.value_usd) > 0.005 OR ABS(v.cash_usd) > 0.005 OR v.stale != 0) END
         \\ORDER BY CASE WHEN v.stale != 0 THEN 1 ELSE 0 END, v.value_usd DESC, v.name COLLATE NOCASE
-    , .{ id, group });
+    , .{ id, group, keep_empty });
 }
 
 pub fn listAccounts(arena: std.mem.Allocator) ![]const Account {
     return queryAccounts(arena, .all);
+}
+
+// Includes empty accounts that listings hide.
+pub fn listAllAccounts(arena: std.mem.Allocator) ![]const Account {
+    return queryAccounts(arena, .everything);
 }
 
 pub fn listGroupAccounts(arena: std.mem.Allocator, group_name: []const u8) ![]const Account {
@@ -246,28 +277,63 @@ pub fn listHoldings(arena: std.mem.Allocator) ![]const Holding {
 }
 
 pub fn listHoldingsLimited(arena: std.mem.Allocator, limit: ?usize) ![]const Holding {
-    if (limit) |n| {
-        return try zx.db.rows(arena, Holding,
-            \\SELECT h.id, h.account_id, a.name AS account_name, a.external_id AS account_external_id,
-            \\       h.symbol, h.description, h.asset_class, h.category, h.currency,
-            \\       h.quantity, h.market_price, h.market_value, h.market_value_base, h.conid, h.synced_at
-            \\FROM holdings h
-            \\JOIN accounts a ON a.id = h.account_id
-            \\WHERE h.market_value_base > 0.005 AND COALESCE(a.stale, 0) = 0
-            \\ORDER BY h.market_value_base DESC, h.symbol COLLATE NOCASE
-            \\LIMIT ?1
-        , .{n});
-    }
-    return try zx.db.rows(arena, Holding,
-        \\SELECT h.id, h.account_id, a.name AS account_name, a.external_id AS account_external_id,
-        \\       h.symbol, h.description, h.asset_class, h.category, h.currency,
-        \\       h.quantity, h.market_price, h.market_value, h.market_value_base, h.conid, h.synced_at
-        \\FROM holdings h
-        \\JOIN accounts a ON a.id = h.account_id
+    return try zx.db.rows(arena, Holding, holding_select ++
         \\WHERE h.market_value_base > 0.005 AND COALESCE(a.stale, 0) = 0
         \\ORDER BY h.market_value_base DESC, h.symbol COLLATE NOCASE
+        \\LIMIT ?1
+    , .{if (limit) |n| @as(i64, @intCast(n)) else -1});
+}
+
+// Weights are against active assets, matching account weights.
+const active_total_cte =
+    \\WITH tot AS (
+    \\  SELECT COALESCE(SUM(
+    \\    CASE WHEN UPPER(a.currency) = 'USD' THEN a.net_liquidation
+    \\         ELSE a.net_liquidation / COALESCE(NULLIF(fx.rate, 0), 1) END), 0) AS active_total
+    \\  FROM accounts a
+    \\  LEFT JOIN fx_rates fx ON fx.currency = UPPER(a.currency)
+    \\  LEFT JOIN account_types t ON t.id = a.account_type
+    \\  WHERE COALESCE(a.stale, 0) = 0 AND COALESCE(t.liability, 0) = 0
+    \\)
+    \\
+;
+
+const holding_select = active_total_cte ++
+    \\SELECT h.id, h.account_id, a.name AS account_name, a.external_id AS account_external_id,
+    \\       h.symbol, h.description, h.asset_class, h.category, h.currency,
+    \\       h.quantity, h.market_price, h.market_value, h.market_value_base, h.conid, h.synced_at,
+    \\       h.cost_price, h.cost_basis_base, h.unrealized_pnl_base, h.exchange,
+    \\       CASE WHEN tot.active_total > 0 THEN h.market_value_base * 100.0 / tot.active_total
+    \\            ELSE 0 END AS weight_pct
+    \\FROM holdings h
+    \\JOIN accounts a ON a.id = h.account_id
+    \\CROSS JOIN tot
+    \\
+;
+
+pub fn listCashBalances(arena: std.mem.Allocator) ![]const CashBalance {
+    return try zx.db.rows(arena, CashBalance, cash_select ++
+        \\WHERE COALESCE(a.stale, 0) = 0 AND ABS(c.amount_base) > 0.005
+        \\ORDER BY c.amount_base DESC, c.currency
     , .{});
 }
+
+pub fn listAccountCash(arena: std.mem.Allocator, account_id: i64) ![]const CashBalance {
+    return try zx.db.rows(arena, CashBalance, cash_select ++
+        \\WHERE c.account_id = ?1
+        \\ORDER BY c.amount_base DESC, c.currency
+    , .{account_id});
+}
+
+const cash_select = active_total_cte ++
+    \\SELECT c.account_id, a.name AS account_name, c.currency, c.amount, c.settled, c.amount_base,
+    \\       CASE WHEN tot.active_total > 0 THEN c.amount_base * 100.0 / tot.active_total
+    \\            ELSE 0 END AS weight_pct
+    \\FROM cash_balances c
+    \\JOIN accounts a ON a.id = c.account_id
+    \\CROSS JOIN tot
+    \\
+;
 
 pub fn isLiability(account: Account) bool {
     return account.liability != 0;
@@ -576,12 +642,7 @@ pub fn listBalanceHistory(arena: std.mem.Allocator, account_id: i64, limit: usiz
 }
 
 pub fn listAccountHoldings(arena: std.mem.Allocator, account_id: i64) ![]const Holding {
-    return try zx.db.rows(arena, Holding,
-        \\SELECT h.id, h.account_id, a.name AS account_name, a.external_id AS account_external_id,
-        \\       h.symbol, h.description, h.asset_class, h.category, h.currency,
-        \\       h.quantity, h.market_price, h.market_value, h.market_value_base, h.conid, h.synced_at
-        \\FROM holdings h
-        \\JOIN accounts a ON a.id = h.account_id
+    return try zx.db.rows(arena, Holding, holding_select ++
         \\WHERE h.account_id = ?1 AND h.market_value_base > 0.005
         \\ORDER BY h.market_value_base DESC, h.symbol COLLATE NOCASE
     , .{account_id});
@@ -771,6 +832,29 @@ pub fn clearIbkrHoldings() !void {
         \\DELETE FROM holdings
         \\WHERE account_id IN (SELECT id FROM accounts WHERE broker = 'ibkr')
     , .{});
+    _ = try zx.db.run(
+        \\DELETE FROM cash_balances
+        \\WHERE account_id IN (SELECT id FROM accounts WHERE broker = 'ibkr')
+    , .{});
+}
+
+pub fn insertCashBalance(balance: struct {
+    account_id: i64,
+    currency: []const u8,
+    amount: f64,
+    settled: f64,
+    amount_base: f64,
+    synced_at: []const u8,
+}) !void {
+    _ = try zx.db.run(
+        \\INSERT INTO cash_balances (account_id, currency, amount, settled, amount_base, synced_at)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        \\ON CONFLICT (account_id, currency) DO UPDATE SET
+        \\  amount = excluded.amount,
+        \\  settled = excluded.settled,
+        \\  amount_base = excluded.amount_base,
+        \\  synced_at = excluded.synced_at
+    , .{ balance.account_id, balance.currency, balance.amount, balance.settled, balance.amount_base, balance.synced_at });
 }
 
 pub fn categoryOverrides(arena: std.mem.Allocator) !std.StringHashMapUnmanaged([]const u8) {
@@ -808,12 +892,17 @@ pub fn insertHolding(holding: struct {
     market_value_base: f64,
     conid: ?[]const u8,
     synced_at: []const u8,
+    cost_price: ?f64,
+    cost_basis_base: ?f64,
+    unrealized_pnl_base: ?f64,
+    exchange: []const u8,
 }) !void {
     _ = try zx.db.run(
         \\INSERT INTO holdings
         \\  (account_id, symbol, description, asset_class, category, currency,
-        \\   quantity, market_price, market_value, market_value_base, conid, synced_at)
-        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+        \\   quantity, market_price, market_value, market_value_base, conid, synced_at,
+        \\   cost_price, cost_basis_base, unrealized_pnl_base, exchange)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
     , .{
         holding.account_id,
         holding.symbol,
@@ -827,6 +916,10 @@ pub fn insertHolding(holding: struct {
         holding.market_value_base,
         holding.conid,
         holding.synced_at,
+        holding.cost_price,
+        holding.cost_basis_base,
+        holding.unrealized_pnl_base,
+        holding.exchange,
     });
 }
 

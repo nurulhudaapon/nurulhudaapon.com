@@ -15,6 +15,7 @@ const migrations = [_]Migration{
     .{ .name = "0010_finance_accounts.sql", .sql = @embedFile("migrations/0010_finance_accounts.sql") },
     .{ .name = "0011_auth_sessions.sql", .sql = @embedFile("migrations/0011_auth_sessions.sql") },
     .{ .name = "0012_auth_passkeys.sql", .sql = @embedFile("migrations/0012_auth_passkeys.sql") },
+    .{ .name = "0013_finance_positions.sql", .sql = @embedFile("migrations/0013_finance_positions.sql") },
 };
 
 pub fn run() !void {
@@ -44,8 +45,18 @@ pub fn run() !void {
     }
 }
 
+// Comment lines are dropped before splitting so a `;` inside one can't cut a statement.
 fn execScript(sql: []const u8) !void {
-    var it = std.mem.splitScalar(u8, sql, ';');
+    var code: std.ArrayList(u8) = .empty;
+    defer code.deinit(zx.allocator);
+    var lines = std.mem.splitScalar(u8, sql, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, std.mem.trimStart(u8, line, " \t"), "--")) continue;
+        try code.appendSlice(zx.allocator, line);
+        try code.append(zx.allocator, '\n');
+    }
+
+    var it = std.mem.splitScalar(u8, code.items, ';');
     while (it.next()) |raw| {
         const stmt = std.mem.trim(u8, raw, " \t\r\n");
         if (stmt.len == 0 or isCommentOnly(stmt)) continue;

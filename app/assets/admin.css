@@ -1014,6 +1014,20 @@ details.adm-disclosure[open] > summary {
     justify-content: center;
 }
 
+.adm-btn-busy {
+    cursor: wait;
+}
+
+.adm-btn-done,
+.adm-btn-done:disabled {
+    color: var(--adm-ok);
+    opacity: 1;
+}
+
+.adm-btn-busy .adm-icon {
+    animation: adm-spin 0.75s linear infinite;
+}
+
 .adm-row-menu {
     position: relative;
     display: inline-block;
@@ -1105,6 +1119,40 @@ details.adm-disclosure[open] > summary {
     color: var(--adm-muted);
     font-family: var(--font-mono);
     font-size: 12px;
+}
+
+.adm-table .adm-nowrap {
+    white-space: nowrap;
+}
+
+.adm-gain {
+    color: var(--adm-ok);
+}
+
+.adm-loss {
+    color: var(--adm-err);
+}
+
+.adm-pnl-pct {
+    display: inline-block;
+    margin-left: 0.375rem;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 999px;
+    background: var(--adm-active);
+    color: var(--adm-muted);
+    font-size: 11px;
+    font-weight: 500;
+    vertical-align: 1px;
+}
+
+.adm-gain .adm-pnl-pct {
+    background: var(--adm-ok-soft);
+    color: var(--adm-ok);
+}
+
+.adm-loss .adm-pnl-pct {
+    background: var(--adm-err-soft);
+    color: var(--adm-err);
 }
 
 @media (max-width: 700px) {

@@ -1,4 +1,5 @@
 pub fn Proxy(ctx: *zx.ProxyContext) void {
+    if (@import("builtin").mode == .debug) return;
     if (signedIn(ctx)) |owner| return ctx.state(@as(?Auth.Account, owner));
 
     ctx.response.headers.append("Cache-Control", "no-store");

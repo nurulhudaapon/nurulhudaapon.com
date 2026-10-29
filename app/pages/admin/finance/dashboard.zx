@@ -5,6 +5,8 @@ const ToolbarState = struct {
     msg: []const u8 = "",
     base: []const u8 = "",
     reload_to: []const u8 = "",
+    // Set on success: the button shows a check until the reload lands.
+    done: bool = false,
 };
 
 const skeleton_rows = [_]void{ {}, {}, {} };
@@ -19,9 +21,10 @@ pub fn Toolbar(ctx: *zx.ComponentCtx(struct { page: ui.FinancePage, needs_ibkr: 
     } else .{ .base = base };
     const flash = ctx.state(ToolbarState, initial);
     const sync_action = ctx.action(syncIbkr, .{ .on_settle = afterSync });
-    const pending = sync_action.pending;
     const alloc = ctx.allocator;
     const state = flash.get();
+    const pending = sync_action.pending;
+    const busy = pending or state.done;
 
     return (
         <div @allocator={alloc}>
@@ -36,13 +39,14 @@ pub fn Toolbar(ctx: *zx.ComponentCtx(struct { page: ui.FinancePage, needs_ibkr: 
                             <div class="adm-finance-lead">
                                 <form action={sync_action} class="adm-inline">
                                     <button
-                                        class="adm-btn adm-btn-ghost adm-btn-icon"
+                                        class={syncButtonClass(pending, state.done)}
                                         type="submit"
-                                        disabled={pending}
+                                        disabled={busy}
+                                        aria-busy={if (pending) "true" else "false"}
                                         title="Refresh IBKR balances and holdings"
-                                        aria-label="Refresh IBKR balances and holdings"
+                                        aria-label={if (state.done) "IBKR synced" else "Refresh IBKR balances and holdings"}
                                     >
-                                        {ui.icon(alloc, .refresh)}
+                                        {ui.icon(alloc, if (state.done) .check else .refresh)}
                                     </button>
                                 </form>
                             </div>
@@ -509,6 +513,10 @@ pub fn HoldingsPanel(allocator: zx.Allocator, props: struct { loading: bool }) z
         &.{}
     else
         finance.listHoldingsLimited(allocator, 10) catch &.{};
+    const cash: []const finance.CashBalance = if (props.loading)
+        &.{}
+    else
+        finance.listCashBalances(allocator) catch &.{};
 
     return (
         <div @allocator={allocator}>
@@ -524,6 +532,8 @@ pub fn HoldingsPanel(allocator: zx.Allocator, props: struct { loading: bool }) z
                                 <tr>
                                     <th>Symbol</th>
                                     <th class="adm-hide-sm">Class</th>
+                                    <th class="adm-hide-sm">Unrealized P/L</th>
+                                    <th class="adm-hide-sm">Weight</th>
                                     <th>Value</th>
                                 </tr>
                             </thead>
@@ -535,6 +545,8 @@ pub fn HoldingsPanel(allocator: zx.Allocator, props: struct { loading: bool }) z
                                             <span class="adm-table-sub">…</span>
                                         </td>
                                         <td class="adm-hide-sm">…</td>
+                                        <td class="adm-hide-sm">…</td>
+                                        <td class="adm-hide-sm">…</td>
                                         <td>…</td>
                                     </tr>
                                 )}
@@ -542,13 +554,13 @@ pub fn HoldingsPanel(allocator: zx.Allocator, props: struct { loading: bool }) z
                         </table>
                     </div>
                 </section>
-            ) else if (holdings.len == 0) (
+            ) else if (holdings.len == 0 and cash.len == 0) (
                 <span></span>
             ) else (
                 <section class="adm-card">
                     <div class="adm-section-head">
                         <span>Top holdings</span>
-                        <span class="adm-hint">From IBKR Flex</span>
+                        <span class="adm-hint">{holdingsHint(allocator, holdings, cash)}</span>
                     </div>
                     <div class="adm-table-wrap">
                         <table class="adm-table">
@@ -556,18 +568,34 @@ pub fn HoldingsPanel(allocator: zx.Allocator, props: struct { loading: bool }) z
                                 <tr>
                                     <th>Symbol</th>
                                     <th class="adm-hide-sm">Class</th>
+                                    <th class="adm-hide-sm">Unrealized P/L</th>
+                                    <th class="adm-hide-sm">Weight</th>
                                     <th>Value</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {for (holdings) |h| (
                                     <tr>
-                                        <td>
-                                            <span class="adm-table-title">{h.symbol}</span>
-                                            <a class="adm-table-sub adm-link-plain" href={accountHref(allocator, h.account_id)}>{h.account_name}</a>
+                                        <td class="adm-nowrap">
+                                            <a class="adm-table-title adm-link-plain" href={accountHref(allocator, h.account_id)} title={holdingTitle(allocator, h)}>{h.symbol}</a>
+                                            <span class="adm-table-sub">{holdingSub(allocator, h)}</span>
                                         </td>
                                         <td class="adm-hide-sm">{h.category}</td>
+                                        <PnlCell holding={h} />
+                                        <td class="adm-hide-sm">{finance.formatPct(allocator, h.weight_pct)}</td>
                                         <td>{finance.formatMoney(allocator, h.market_value_base, "USD")}</td>
+                                    </tr>
+                                )}
+                                {for (cash) |c| (
+                                    <tr>
+                                        <td class="adm-nowrap">
+                                            <a class="adm-table-title adm-link-plain" href={accountHref(allocator, c.account_id)} title={c.account_name}>{c.currency}</a>
+                                            <span class="adm-table-sub">Cash</span>
+                                        </td>
+                                        <td class="adm-hide-sm">Cash</td>
+                                        <td class="adm-hide-sm">{onHoldLabel(allocator, c)}</td>
+                                        <td class="adm-hide-sm">{finance.formatPct(allocator, c.weight_pct)}</td>
+                                        <td>{finance.formatMoney(allocator, c.amount_base, "USD")}</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -577,6 +605,75 @@ pub fn HoldingsPanel(allocator: zx.Allocator, props: struct { loading: bool }) z
             )}
         </div>
     );
+}
+
+fn holdingsHint(arena: zx.Allocator, holdings: []const finance.Holding, cash: []const finance.CashBalance) []const u8 {
+    var pnl: f64 = 0;
+    var has_pnl = false;
+    for (holdings) |h| if (h.unrealized_pnl_base) |v| {
+        pnl += v;
+        has_pnl = true;
+    };
+    var unsettled: f64 = 0;
+    for (cash) |c| unsettled += c.unsettledBase();
+    const pnl_part: []const u8 = if (has_pnl)
+        arena.print("P/L {s}{s} · ", .{ if (pnl >= 0) "+" else "", finance.formatMoney(arena, pnl, "USD") }) catch ""
+    else
+        "";
+    const unsettled_part: []const u8 = if (@abs(unsettled) >= 0.005)
+        arena.print("{s} unsettled · ", .{finance.formatMoney(arena, unsettled, "USD")}) catch ""
+    else
+        "";
+    return arena.print("{s}{s}From IBKR Flex", .{ pnl_part, unsettled_part }) catch "From IBKR Flex";
+}
+
+pub fn holdingSub(arena: zx.Allocator, h: finance.Holding) []const u8 {
+    return arena.print("{s} × {s}", .{
+        finance.formatQty(arena, h.quantity),
+        finance.formatMoney(arena, h.market_price, h.currency),
+    }) catch "";
+}
+
+fn holdingTitle(arena: zx.Allocator, h: finance.Holding) []const u8 {
+    return arena.print("{s} · {s}", .{ h.description, h.account_name }) catch h.description;
+}
+
+pub fn PnlCell(allocator: zx.Allocator, props: struct { holding: finance.Holding }) zx.Component {
+    const h = props.holding;
+    const pct = pnlPct(allocator, h);
+    return (
+        <td @allocator={allocator} class={pnlClass(allocator, h.unrealized_pnl_base, "adm-hide-sm adm-nowrap")}>
+            {pnlMoney(allocator, h)}
+            {if (pct.len > 0) (
+                <span class="adm-pnl-pct">{pct}</span>
+            )}
+        </td>
+    );
+}
+
+fn pnlMoney(arena: zx.Allocator, h: finance.Holding) []const u8 {
+    const pnl = h.unrealized_pnl_base orelse return "-";
+    return arena.print("{s}{s}", .{ if (pnl >= 0) "+" else "", finance.formatMoney(arena, pnl, "USD") }) catch "";
+}
+
+fn pnlPct(arena: zx.Allocator, h: finance.Holding) []const u8 {
+    const pnl = h.unrealized_pnl_base orelse return "";
+    const cost = h.cost_basis_base orelse return "";
+    if (@abs(cost) < 0.005) return "";
+    return arena.print("{s}{s}", .{ if (pnl >= 0) "+" else "", finance.formatPct(arena, pnl * 100.0 / @abs(cost)) }) catch "";
+}
+
+fn pnlClass(arena: zx.Allocator, pnl: ?f64, base: []const u8) []const u8 {
+    const v = pnl orelse return base;
+    const tone: []const u8 = if (v >= 0.005) "adm-gain" else if (v <= -0.005) "adm-loss" else return base;
+    if (base.len == 0) return tone;
+    return arena.print("{s} {s}", .{ base, tone }) catch base;
+}
+
+pub fn onHoldLabel(arena: zx.Allocator, c: finance.CashBalance) []const u8 {
+    const hold = c.unsettled();
+    if (hold == 0) return "Settled";
+    return arena.print("{s} unsettled", .{finance.formatMoney(arena, hold, c.currency)}) catch "";
 }
 
 pub fn accountHref(arena: zx.Allocator, id: i64) []const u8 {
@@ -753,12 +850,8 @@ fn syncIbkr(a: *zx.server.Action.Stateful) void {
             .reload_to = a.fmt("{s}?ok=synced_no_cash", .{base}) catch base,
         });
     }
-    flash.set(.{
-        .kind = .ok,
-        .msg = "IBKR balances and holdings refreshed.",
-        .base = base,
-        .reload_to = a.fmt("{s}?ok=synced", .{base}) catch base,
-    });
+    // No banner on success; the button's check says it.
+    flash.set(.{ .base = base, .reload_to = base, .done = true });
 }
 
 pub fn financeChanged() void {
@@ -781,8 +874,20 @@ fn bannerFlash(state: ToolbarState) ?ui.Flash {
     };
 }
 
+fn syncButtonClass(pending: bool, done: bool) []const u8 {
+    if (pending) return "adm-btn adm-btn-ghost adm-btn-icon adm-btn-busy";
+    if (done) return "adm-btn adm-btn-ghost adm-btn-icon adm-btn-done";
+    return "adm-btn adm-btn-ghost adm-btn-icon";
+}
+
+const sync_check_ms: u32 = 700;
+
 fn afterSync(outcome: zx.ActionHandle.Outcome) void {
     if (outcome != .ok) return;
+    _ = zx.client.setTimeout(reloadAfterSync, .fromMilliseconds(sync_check_ms));
+}
+
+fn reloadAfterSync() void {
     _ = zx.client.eval(void,
         \\(() => {
         \\  const el = document.querySelector("[data-finance-reload]");

@@ -7,6 +7,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const history = try finance.listBalanceHistory(ctx.arena, id, history_limit);
     const changes = recordedOnly(ctx.arena, history);
     const holdings = try finance.listAccountHoldings(ctx.arena, id);
+    const cash = try finance.listAccountCash(ctx.arena, id);
     const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
     const manual = std.mem.eql(u8, account.broker, "manual");
     const liability = finance.isLiability(account);
@@ -112,7 +113,10 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                 <tr>
                                     <th>Symbol</th>
                                     <th class="adm-hide-sm">Quantity</th>
+                                    <th class="adm-hide-sm">Avg cost</th>
                                     <th class="adm-hide-sm">Price</th>
+                                    <th class="adm-hide-sm">Unrealized P/L</th>
+                                    <th class="adm-hide-sm">Weight</th>
                                     <th>Value</th>
                                 </tr>
                             </thead>
@@ -121,11 +125,47 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                     <tr>
                                         <td>
                                             <span class="adm-table-title">{h.symbol}</span>
-                                            <span class="adm-table-sub">{h.description}</span>
+                                            <span class="adm-table-sub">{holdingSub(ctx.arena, h)}</span>
                                         </td>
                                         <td class="adm-hide-sm">{finance.formatQty(ctx.arena, h.quantity)}</td>
+                                        <td class="adm-hide-sm">{if (h.cost_price) |p| finance.formatMoney(ctx.arena, p, h.currency) else "-"}</td>
                                         <td class="adm-hide-sm">{finance.formatMoney(ctx.arena, h.market_price, h.currency)}</td>
+                                        <dashboard.PnlCell holding={h} />
+                                        <td class="adm-hide-sm">{finance.formatPct(ctx.arena, h.weight_pct)}</td>
                                         <td>{finance.formatMoney(ctx.arena, h.market_value_base, "USD")}</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            )}
+
+            {if (cash.len > 0) (
+                <section class="adm-card adm-card-gap">
+                    <div class="adm-section-head">
+                        <span>Cash</span>
+                        <span class="adm-hint">Unsettled cash clears when trades settle</span>
+                    </div>
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th>Currency</th>
+                                    <th class="adm-hide-sm">Settled</th>
+                                    <th class="adm-hide-sm">Unsettled</th>
+                                    <th class="adm-hide-sm">Total</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {for (cash) |c| (
+                                    <tr>
+                                        <td><span class="adm-table-title">{c.currency}</span></td>
+                                        <td class="adm-hide-sm">{finance.formatMoney(ctx.arena, c.settled, c.currency)}</td>
+                                        <td class="adm-hide-sm">{if (c.unsettled() == 0) "-" else finance.formatMoney(ctx.arena, c.unsettled(), c.currency)}</td>
+                                        <td class="adm-hide-sm">{finance.formatMoney(ctx.arena, c.amount, c.currency)}</td>
+                                        <td>{finance.formatMoney(ctx.arena, c.amount_base, "USD")}</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -148,6 +188,11 @@ fn describe(arena: zx.Allocator, a: finance.Account) []const u8 {
         if (std.mem.eql(u8, a.broker, "ibkr")) " · synced from IBKR" else "",
         if (finance.isAccountStale(a)) " · stale (excluded from totals)" else "",
     }) catch a.name;
+}
+
+fn holdingSub(arena: zx.Allocator, h: finance.Holding) []const u8 {
+    if (h.exchange.len == 0) return h.description;
+    return arena.print("{s} · {s}", .{ h.description, h.exchange }) catch h.description;
 }
 
 fn weightLabel(arena: zx.Allocator, a: finance.Account) []const u8 {

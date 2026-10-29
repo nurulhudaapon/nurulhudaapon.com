@@ -86,7 +86,7 @@ fn fetchText(arena: std.mem.Allocator, url: []const u8) ![]const u8 {
     });
     defer response.deinit(arena);
     if (response.status.class() != .success) {
-        zx.log.warn("ibkr: GET failed status={d}", .{@intFromEnum(response.status)});
+        zx.log.warn("ibkr: GET failed status={d}", .{@backingInt(response.status)});
         return error.NetworkError;
     }
     return try arena.dupe(u8, response.body);
@@ -129,11 +129,24 @@ const HoldingAcc = struct {
     market_value: f64,
     market_value_base: f64,
     conid: ?[]const u8,
+    cost_price: ?f64,
+    cost_basis_base: ?f64,
+    unrealized_pnl_base: ?f64,
+    exchange: []const u8,
+};
+
+const CashAcc = struct {
+    account_id: []const u8,
+    currency: []const u8,
+    amount: f64,
+    settled: f64,
+    amount_base: f64,
 };
 
 const ParsedReport = struct {
     accounts: std.StringHashMapUnmanaged(AccountAcc),
     holdings: std.ArrayList(HoldingAcc),
+    cash: std.ArrayList(CashAcc) = .empty,
     saw_cash_report: bool = false,
     saw_equity_summary: bool = false,
 };
@@ -217,6 +230,22 @@ fn applyReport(arena: std.mem.Allocator, body: []const u8) !Result {
             .market_value_base = h.market_value_base,
             .conid = h.conid,
             .synced_at = synced_at,
+            .cost_price = h.cost_price,
+            .cost_basis_base = h.cost_basis_base,
+            .unrealized_pnl_base = h.unrealized_pnl_base,
+            .exchange = h.exchange,
+        });
+    }
+
+    for (parsed.cash.items) |c| {
+        const account_id = account_ids.get(c.account_id) orelse continue;
+        try db.insertCashBalance(.{
+            .account_id = account_id,
+            .currency = c.currency,
+            .amount = c.amount,
+            .settled = c.settled,
+            .amount_base = c.amount_base,
+            .synced_at = synced_at,
         });
     }
 
@@ -238,6 +267,7 @@ fn applyReport(arena: std.mem.Allocator, body: []const u8) !Result {
 fn parseReport(arena: std.mem.Allocator, body: []const u8) !ParsedReport {
     var accounts: std.StringHashMapUnmanaged(AccountAcc) = .empty;
     var holdings: std.ArrayList(HoldingAcc) = .empty;
+    var cash: std.ArrayList(CashAcc) = .empty;
     var saw_cash_report = false;
     var saw_equity_summary = false;
 
@@ -264,9 +294,9 @@ fn parseReport(arena: std.mem.Allocator, body: []const u8) !ParsedReport {
                     try ingestEquity(arena, &accounts, reader);
                 } else if (eqlAny(name, &.{ "CashReportCurrency", "CashReport" })) {
                     saw_cash_report = true;
-                    try ingestCashReport(arena, &accounts, reader);
+                    try ingestCashReport(arena, &accounts, &cash, reader);
                 } else if (std.mem.eql(u8, name, "OpenPosition")) {
-                    try ingestPosition(arena, &accounts, &holdings, reader);
+                    try ingestPosition(arena, &accounts, &holdings, &cash, reader);
                 }
             },
             else => {},
@@ -276,6 +306,7 @@ fn parseReport(arena: std.mem.Allocator, body: []const u8) !ParsedReport {
     return .{
         .accounts = accounts,
         .holdings = holdings,
+        .cash = cash,
         .saw_cash_report = saw_cash_report,
         .saw_equity_summary = saw_equity_summary,
     };
@@ -324,7 +355,12 @@ fn ingestEquity(arena: std.mem.Allocator, accounts: *std.StringHashMapUnmanaged(
     }
 }
 
-fn ingestCashReport(arena: std.mem.Allocator, accounts: *std.StringHashMapUnmanaged(AccountAcc), reader: *xml.Reader) !void {
+fn ingestCashReport(
+    arena: std.mem.Allocator,
+    accounts: *std.StringHashMapUnmanaged(AccountAcc),
+    cash: *std.ArrayList(CashAcc),
+    reader: *xml.Reader,
+) !void {
     const account_id = try dupAttr(arena, reader, "accountId") orelse return;
     if (attrRaw(reader, "levelOfDetail")) |lod| {
         if (std.ascii.eqlIgnoreCase(lod, "LOT") or std.ascii.eqlIgnoreCase(lod, "INTERNAL")) return;
@@ -344,16 +380,45 @@ fn ingestCashReport(arena: std.mem.Allocator, accounts: *std.StringHashMapUnmana
         if (@abs(settled) > 0.005) entry.*.settled_cash = settled;
         return;
     }
+    const raw_rate = attrFloat(reader, "fxRateToBase") orelse 1;
+    const rate = if (raw_rate == 0) 1 else raw_rate;
+    const ending = attrFloat(reader, "endingCash") orelse settled;
+    if (@abs(ending) >= 0.005 or @abs(settled) >= 0.005)
+        try putCash(cash, arena, .{
+            .account_id = account_id,
+            .currency = currency,
+            .amount = ending,
+            .settled = settled,
+            .amount_base = ending * rate,
+        });
     if (@abs(settled) < 0.005) return;
 
-    const rate = attrFloat(reader, "fxRateToBase") orelse 1;
-    entry.*.settled_cash_sum += settled * (if (rate == 0) 1 else rate);
+    entry.*.settled_cash_sum += settled * rate;
+}
+
+// The Cash Report wins over forex positions for the same currency.
+fn putCash(cash: *std.ArrayList(CashAcc), arena: std.mem.Allocator, row: CashAcc) !void {
+    for (cash.items) |*c| {
+        if (std.mem.eql(u8, c.account_id, row.account_id) and std.mem.eql(u8, c.currency, row.currency)) {
+            c.* = row;
+            return;
+        }
+    }
+    try cash.append(arena, row);
+}
+
+fn hasCash(cash: []const CashAcc, account_id: []const u8, currency: []const u8) bool {
+    for (cash) |c| {
+        if (std.mem.eql(u8, c.account_id, account_id) and std.mem.eql(u8, c.currency, currency)) return true;
+    }
+    return false;
 }
 
 fn ingestPosition(
     arena: std.mem.Allocator,
     accounts: *std.StringHashMapUnmanaged(AccountAcc),
     holdings: *std.ArrayList(HoldingAcc),
+    cash: *std.ArrayList(CashAcc),
     reader: *xml.Reader,
 ) !void {
     if (attrRaw(reader, "levelOfDetail")) |lod| {
@@ -372,6 +437,15 @@ fn ingestPosition(
     const entry = try ensureAccount(accounts, arena, account_id);
     if (std.ascii.eqlIgnoreCase(asset_class, "CASH") or std.ascii.eqlIgnoreCase(symbol, "CASH")) {
         if (@abs(value_base) > 0.005) entry.*.settled_cash_sum += value_base;
+        const currency = try dupAttr(arena, reader, "currency") orelse symbol;
+        if (@abs(value_base) > 0.005 and !hasCash(cash.items, account_id, currency))
+            try cash.append(arena, .{
+                .account_id = account_id,
+                .currency = currency,
+                .amount = value,
+                .settled = value,
+                .amount_base = value_base,
+            });
         return;
     }
 
@@ -386,6 +460,10 @@ fn ingestPosition(
         .market_value = value,
         .market_value_base = value_base,
         .conid = try dupAttr(arena, reader, "conid"),
+        .cost_price = attrFloat(reader, "costBasisPrice"),
+        .cost_basis_base = if (attrFloat(reader, "costBasisMoney")) |v| v * fx else null,
+        .unrealized_pnl_base = if (attrFloat(reader, "fifoPnlUnrealized")) |v| v * fx else null,
+        .exchange = try dupAttr(arena, reader, "listingExchange") orelse "",
     });
 }
 
@@ -517,6 +595,8 @@ test "parse flex meta and report cash" {
     try std.testing.expectEqual(@as(f64, 195), acc.cash());
     try std.testing.expectEqual(@as(f64, 2000), acc.net_liquidation);
     try std.testing.expectEqualStrings("AAPL", parsed.holdings.items[0].symbol);
+    try std.testing.expectEqual(@as(?f64, null), parsed.holdings.items[0].cost_basis_base);
+    try std.testing.expectEqual(@as(usize, 0), parsed.cash.items.len);
 
     var parsed2 = try parseReport(arena,
         \\<?xml version="1.0"?>
@@ -530,6 +610,29 @@ test "parse flex meta and report cash" {
         \\</FlexQueryResponse>
     );
     try std.testing.expectEqual(@as(f64, 100), parsed2.accounts.get("U2").?.cash());
+
+    const parsed4 = try parseReport(arena,
+        \\<?xml version="1.0"?>
+        \\<FlexQueryResponse>
+        \\  <FlexStatement accountId="U4">
+        \\    <CashReportCurrency accountId="U4" currency="USD" endingCash="500" endingSettledCash="300" fxRateToBase="1" />
+        \\    <CashReportCurrency accountId="U4" currency="EUR" endingCash="100" endingSettledCash="100" fxRateToBase="1.1" />
+        \\    <OpenPosition accountId="U4" assetCategory="CASH" currency="EUR" symbol="EUR.USD" position="100" positionValue="100" fxRateToBase="1.1" levelOfDetail="SUMMARY" />
+        \\    <OpenPosition accountId="U4" assetCategory="STK" currency="EUR" symbol="SAP" listingExchange="IBIS" position="2" markPrice="200" positionValue="400" costBasisPrice="150" costBasisMoney="300" fifoPnlUnrealized="100" fxRateToBase="1.1" levelOfDetail="SUMMARY" />
+        \\  </FlexStatement>
+        \\</FlexQueryResponse>
+    );
+    try std.testing.expectEqual(@as(usize, 2), parsed4.cash.items.len);
+    const usd = parsed4.cash.items[0];
+    try std.testing.expectEqualStrings("USD", usd.currency);
+    try std.testing.expectEqual(@as(f64, 500), usd.amount);
+    try std.testing.expectEqual(@as(f64, 300), usd.settled);
+    try std.testing.expectApproxEqAbs(@as(f64, 110), parsed4.cash.items[1].amount_base, 1e-9);
+    const sap = parsed4.holdings.items[0];
+    try std.testing.expectEqual(@as(?f64, 150), sap.cost_price);
+    try std.testing.expectApproxEqAbs(@as(f64, 330), sap.cost_basis_base.?, 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 110), sap.unrealized_pnl_base.?, 1e-9);
+    try std.testing.expectEqualStrings("IBIS", sap.exchange);
 
     var parsed3 = try parseReport(arena,
         \\<?xml version="1.0"?>

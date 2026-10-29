@@ -5,7 +5,6 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const usd_bdt_rate = finance.usdBdtRate(ctx.arena);
     const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
     const flash = ui.flashFrom(ctx.request.query, &.{
-        .{ "synced", "IBKR balances and holdings refreshed." },
         .{ "synced_no_cash", "Synced holdings, but Flex had no Cash Report / Equity Summary - add both in Client Portal so cash is included." },
     });
 
@@ -17,7 +16,10 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             <section class="adm-card adm-card-gap">
                 <div class="adm-section-head">
                     <span>All accounts</span>
-                    <a class="adm-btn adm-btn-primary" href="/admin/finance/accounts/new">Add account</a>
+                    <div class="adm-page-actions">
+                        <a class="adm-btn adm-btn-ghost" href="/admin/finance/accounts.csv" download="accounts.csv">Export CSV</a>
+                        <a class="adm-btn adm-btn-primary" href="/admin/finance/accounts/new">Add account</a>
+                    </div>
                 </div>
                 {if (accounts.len == 0) (
                     <div class="adm-card-pad"><ui.Empty text="No accounts yet. Add one or sync IBKR." /></div>
