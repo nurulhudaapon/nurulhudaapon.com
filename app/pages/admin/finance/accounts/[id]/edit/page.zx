@@ -13,6 +13,6 @@ pub const options: zx.PageOptions = .{
 
 const std = @import("std");
 const zx = @import("zx");
-const finance = @import("../../../../../finance.zig");
+const finance = @import("../../../../../../finance.zig");
 const form = @import("../../form.zx");
 pub const AccountForm = form.AccountForm;

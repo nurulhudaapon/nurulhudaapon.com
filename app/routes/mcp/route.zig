@@ -1,7 +1,7 @@
 const zx = @import("zx");
 const mcp = @import("mcp");
-const store = @import("store.zig");
-const server = @import("server.zig");
+const store = @import("../../mcp/store.zig");
+const server = @import("../../mcp/server.zig");
 
 pub const GET = unauthorized;
 

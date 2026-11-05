@@ -172,4 +172,4 @@ fn Skeleton(allocator: zx.Allocator) zx.Component {
 
 const std = @import("std");
 const zx = @import("zx");
-const finance = @import("../../finance.zig");
+const finance = @import("../../../finance.zig");

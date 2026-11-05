@@ -1,6 +1,8 @@
 const std = @import("std");
 const zx = @import("zx");
 
+const log = std.log.scoped(.fx);
+
 const rates_url = "https://api.frankfurter.dev/v2/rates?base=usd";
 const bajus_url = "https://www.bajus.org/gold-price";
 const cache_ttl_secs: i64 = 12 * 60 * 60;
@@ -142,7 +144,7 @@ const Client = struct {
     fn fetchGold(c: Client) bool {
         const body = c.get(bajus_url, 15_000) orelse return false;
         const list_bdt = parseBajus22k(body) orelse {
-            zx.log.warn("fx: could not parse 22K gold price from bajus.org", .{});
+            log.warn("could not parse 22K gold price from bajus.org", .{});
             return false;
         };
         if (!c.isFresh(.fiat)) _ = c.fetchFiat();

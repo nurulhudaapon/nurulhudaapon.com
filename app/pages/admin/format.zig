@@ -1,5 +1,5 @@
 const std = @import("std");
-const slots = @import("../schedule/slots.zig");
+const slots = @import("../../schedule.zig").slots;
 
 // `raw` is unix seconds as text.
 pub fn ago(arena: std.mem.Allocator, now: i64, raw: []const u8) []const u8 {

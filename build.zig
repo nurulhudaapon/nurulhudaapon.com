@@ -57,7 +57,8 @@ pub fn build(b: *std.Build) !void {
     ziex_b.addImport("mcp", b.dependency("mcp", .{ .target = target, .optimize = optimize }).module("mcp"));
     const auth_mod = b.dependency("auth", .{ .target = target, .optimize = optimize }).module("auth");
     ziex_b.addImport("auth", auth_mod);
-    ziex_b.addImport("xml", b.dependency("xml", .{ .target = target, .optimize = optimize }).module("xml"));
+    const xml_mod = b.dependency("xml", .{ .target = target, .optimize = optimize }).module("xml");
+    ziex_b.addImport("xml", xml_mod);
 
     const ical_mod = libical.addLibical(b, target, optimize);
     ziex_b.addImport("ical", ical_mod);
@@ -87,15 +88,16 @@ pub fn build(b: *std.Build) !void {
 
     // --- Unit tests ---
     const test_step = b.step("test", "Run unit tests");
-    for ([_][]const u8{ "app/pages/schedule/slots.zig", "app/pages/schedule/ical.zig", "app/pages/schedule/caldav.zig", "app/pages/schedule/name.zig", "app/pages/schedule/week.zig", "app/pages/schedule/feed.zig", "app/pages/finance/number.zig" }) |path| {
-        const t = b.addTest(.{ .root_module = b.createModule(.{
-            .root_source_file = b.path(path),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{.{ .name = "ical", .module = ical_mod }},
-        }) });
-        test_step.dependOn(&b.addRunArtifact(t).step);
-    }
+    const tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("app/tests.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "ical", .module = ical_mod },
+            .{ .name = "xml", .module = xml_mod },
+        },
+    }) });
+    test_step.dependOn(&b.addRunArtifact(tests).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = auth_mod })).step);
 }
 

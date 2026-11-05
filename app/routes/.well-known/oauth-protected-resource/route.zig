@@ -1,6 +1,6 @@
 const zx = @import("zx");
 const mcp = @import("mcp");
-const store = @import("../../mcp/store.zig");
+const store = @import("../../../mcp/store.zig");
 
 pub fn GET(ctx: zx.RouteContext) !void {
     const resource = try store.resourceUrl(ctx.arena, ctx.request);

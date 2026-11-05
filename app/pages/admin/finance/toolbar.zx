@@ -121,6 +121,6 @@ const reload = struct {
 
 const zx = @import("zx");
 const ui = @import("../ui.zx");
-const finance = @import("../../finance.zig");
-const shared = @import("shared.zig");
+const finance = @import("../../../finance.zig");
+const shared = @import("view.zig");
 const Header = @import("header.zx").Header;

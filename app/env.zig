@@ -3,9 +3,9 @@
 // CALDAV_CALENDAR (name). Prod uses /admin/settings instead.
 const std = @import("std");
 const zx = @import("zx");
-const caldav = @import("../pages/schedule/caldav.zig");
-const github = @import("../pages/dev/github.zig");
-const credentials = @import("credentials.zig");
+const caldav = @import("schedule.zig").caldav;
+const github = @import("github.zig");
+const credentials = @import("db/credentials.zig");
 const put = credentials.put;
 
 const icloud = "https://caldav.icloud.com/";

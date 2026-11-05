@@ -30,5 +30,5 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 pub const options: zx.PageOptions = .{ .caching = .tag("1h") };
 
 const zx = @import("zx");
-const posts = @import("posts.zig");
+const posts = @import("../../blog.zig").posts;
 const Navbar = @import("../component.zx").Navbar;

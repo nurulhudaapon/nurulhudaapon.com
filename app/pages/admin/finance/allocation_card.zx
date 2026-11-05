@@ -278,6 +278,6 @@ fn driftLabel(arena: zx.Allocator, a: finance.allocations.Actual) []const u8 {
 const std = @import("std");
 const zx = @import("zx");
 const ui = @import("../ui.zx");
-const finance = @import("../../finance.zig");
-const shared = @import("shared.zig");
+const finance = @import("../../../finance.zig");
+const shared = @import("view.zig");
 const trend = @import("trend.zx");

@@ -17,7 +17,7 @@ pub const options: zx.RouteOptions = .{
     .caching = .tag("1h"),
 };
 
-const github = @import("../../../../pages/dev/github.zig");
+const github = @import("../../../../github.zig");
 
 const zx = @import("zx");
 const std = @import("std");

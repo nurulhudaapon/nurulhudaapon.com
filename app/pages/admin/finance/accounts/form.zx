@@ -287,8 +287,8 @@ fn withGroup(arena: zx.Allocator, groups: []const []const u8, group: []const u8)
 
 const std = @import("std");
 const zx = @import("zx");
-const finance = @import("../../../finance.zig");
-const shared = @import("../shared.zig");
+const finance = @import("../../../../finance.zig");
+const shared = @import("../view.zig");
 const header = @import("../header.zx");
 const Header = header.Header;
 const BackLink = header.BackLink;

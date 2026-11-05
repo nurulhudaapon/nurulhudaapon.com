@@ -1,7 +1,7 @@
 const std = @import("std");
 const zx = @import("zx");
-const credentials = @import("../../db/credentials.zig");
-const site = @import("../../site.zig");
+const credentials = @import("../db/credentials.zig");
+const site = @import("../site.zig");
 
 pub const code_ttl_s: i64 = 10 * 60;
 

@@ -207,7 +207,7 @@ const live = @import("live.zx");
 const icons = components.icons;
 const components = @import("components.zx");
 const site = @import("../../site.zig");
-const github = @import("github.zig");
+const github = @import("../../github.zig");
 const highlight = @import("highlight");
 
 const zx = @import("zx");

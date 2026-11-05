@@ -1,6 +1,6 @@
 const std = @import("std");
 const zx = @import("zx");
-const github = @import("../pages/dev/github.zig");
+const github = @import("../github.zig");
 
 pub fn get(arena: std.mem.Allocator, cat: []const u8) ?[]const u8 {
     const row = zx.db.row(arena, struct { val: []const u8 },

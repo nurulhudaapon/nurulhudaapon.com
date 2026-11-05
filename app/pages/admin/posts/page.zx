@@ -39,4 +39,4 @@ pub const options: zx.PageOptions = .{ .rendering = .request };
 
 const zx = @import("zx");
 const ui = @import("../ui.zx");
-const posts = @import("../../blog/posts.zig");
+const posts = @import("../../../blog.zig").posts;

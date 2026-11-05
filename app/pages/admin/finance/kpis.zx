@@ -59,4 +59,4 @@ pub fn Kpis(ctx: *zx.ComponentCtx(struct { loading: bool })) zx.Component {
 const std = @import("std");
 const zx = @import("zx");
 const format = @import("../format.zig");
-const finance = @import("../../finance.zig");
+const finance = @import("../../../finance.zig");

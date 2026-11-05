@@ -1,9 +1,11 @@
 const std = @import("std");
 const zx = @import("zx");
 const xml = @import("xml");
-const credentials = @import("../../db/credentials.zig");
+const credentials = @import("../db/credentials.zig");
 const classes = @import("classes.zig");
 const history = @import("history.zig");
+
+const log = std.log.scoped(.ibkr);
 
 const send_url = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest";
 const statement_url = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement";
@@ -37,7 +39,7 @@ const Flex = struct {
         const body = try f.get(url);
         const meta = try Meta.parse(f.arena, body);
         if (!std.ascii.eqlIgnoreCase(meta.status orelse "", "Success")) {
-            zx.log.warn("ibkr: SendRequest status={s} error={s}", .{ meta.status orelse "", meta.error_message orelse "" });
+            log.warn("SendRequest status={s} error={s}", .{ meta.status orelse "", meta.error_message orelse "" });
             return error.SendFailed;
         }
         return meta.reference orelse error.SendFailed;
@@ -58,7 +60,7 @@ const Flex = struct {
                     std.mem.indexOf(u8, meta.error_code orelse "", "1018") != null)
                     continue;
                 if (std.ascii.eqlIgnoreCase(status, "Fail") or std.ascii.eqlIgnoreCase(status, "Error")) {
-                    zx.log.warn("ibkr: GetStatement status={s} error={s}", .{ status, meta.error_message orelse "" });
+                    log.warn("GetStatement status={s} error={s}", .{ status, meta.error_message orelse "" });
                     return error.StatementFailed;
                 }
             }
@@ -76,7 +78,7 @@ const Flex = struct {
         });
         defer response.deinit(f.arena);
         if (response.status.class() != .success) {
-            zx.log.warn("ibkr: GET failed status={d}", .{@backingInt(response.status)});
+            log.warn("GET failed status={d}", .{@backingInt(response.status)});
             return error.NetworkError;
         }
         return try f.arena.dupe(u8, response.body);
@@ -207,7 +209,7 @@ const Report = struct {
         while (true) {
             const node = reader.read() catch |err| switch (err) {
                 error.MalformedXml => {
-                    zx.log.warn("ibkr: malformed flex xml at {f}: {s}", .{ reader.errorLocation(), @tagName(reader.errorCode()) });
+                    log.warn("malformed flex xml at {f}: {s}", .{ reader.errorLocation(), @tagName(reader.errorCode()) });
                     return error.EmptyReport;
                 },
                 else => |e| return e,
@@ -433,9 +435,9 @@ const Report = struct {
         }
 
         if (!r.saw_cash_report and !r.saw_equity_summary) {
-            zx.log.warn("ibkr: Flex XML had no CashReport or EquitySummary - enable both in the Flex Query to capture cash", .{});
+            log.warn("Flex XML had no CashReport or EquitySummary - enable both in the Flex Query to capture cash", .{});
         } else if (cash_total < 0.005) {
-            zx.log.info("ibkr: synced with cash≈0 (cash_report={any} equity_summary={any})", .{ r.saw_cash_report, r.saw_equity_summary });
+            log.info("synced with cash≈0 (cash_report={any} equity_summary={any})", .{ r.saw_cash_report, r.saw_equity_summary });
         }
 
         return .{

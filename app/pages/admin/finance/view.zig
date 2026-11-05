@@ -1,6 +1,6 @@
 const std = @import("std");
 const zx = @import("zx");
-const finance = @import("../../finance.zig");
+const finance = @import("../../../finance.zig");
 
 pub fn changed() void {
     finance.history.record() catch |err| zx.log.warn("admin: record finance history failed: {any}", .{err});

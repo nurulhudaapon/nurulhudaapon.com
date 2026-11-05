@@ -1,11 +1,11 @@
 const std = @import("std");
 const zx = @import("zx");
 const format = @import("../format.zig");
-const slots = @import("../../schedule/slots.zig");
-const ical = @import("../../schedule/ical.zig");
-const week = @import("../../schedule/week.zig");
-const settings = @import("../../schedule/settings.zig");
-const calendars = @import("../../schedule/calendars.zig");
+const slots = @import("../../../schedule.zig").slots;
+const ical = @import("../../../schedule.zig").ical;
+const week = @import("../../../schedule.zig").week;
+const settings = @import("../../../schedule.zig").settings;
+const calendars = @import("../../../schedule.zig").calendars;
 
 const Interval = slots.Interval;
 pub const day_s = std.time.s_per_day;

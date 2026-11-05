@@ -160,5 +160,5 @@ pub const options: zx.PageOptions = .{
 const std = @import("std");
 const zx = @import("zx");
 const ui = @import("../ui.zx");
-const store = @import("../../../routes/mcp/store.zig");
+const store = @import("../../../mcp/store.zig");
 const Auth = @import("auth");

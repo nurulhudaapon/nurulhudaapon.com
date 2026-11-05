@@ -1,0 +1,9 @@
+pub const booking = @import("schedule/booking.zig");
+pub const caldav = @import("schedule/caldav.zig");
+pub const calendars = @import("schedule/calendars.zig");
+pub const feed = @import("schedule/feed.zig");
+pub const ical = @import("schedule/ical.zig");
+pub const name = @import("schedule/name.zig");
+pub const settings = @import("schedule/settings.zig");
+pub const slots = @import("schedule/slots.zig");
+pub const week = @import("schedule/week.zig");

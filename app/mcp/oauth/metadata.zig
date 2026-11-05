@@ -2,7 +2,7 @@ const std = @import("std");
 const zx = @import("zx");
 const mcp = @import("mcp");
 const store = @import("../store.zig");
-const site = @import("../../../site.zig");
+const site = @import("../../site.zig");
 
 pub fn write(ctx: zx.RouteContext) !void {
     const base = site.origin(ctx.request);

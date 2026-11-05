@@ -1,7 +1,7 @@
 const std = @import("std");
 const zx = @import("zx");
 const migration = @import("db/migration.zig");
-const env = @import("db/env.zig");
+const env = @import("env.zig");
 
 pub fn main(init: zx.Init) !void {
     // The browser build gets std.process.Init.Minimal, which has no io.

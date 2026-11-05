@@ -186,5 +186,5 @@ fn toggle(e: *zx.server.Event.Stateful) void {
 const std = @import("std");
 const zx = @import("zx");
 const ui = @import("../ui.zx");
-const finance = @import("../../finance.zig");
-const shared = @import("shared.zig");
+const finance = @import("../../../finance.zig");
+const shared = @import("view.zig");

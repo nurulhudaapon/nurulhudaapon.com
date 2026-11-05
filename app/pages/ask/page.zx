@@ -49,8 +49,8 @@ pub const options: zx.PageOptions = .{
 const Navbar = @import("../component.zx").Navbar;
 pub const AskForm = form.AskForm;
 const form = @import("form.zx");
-const db = @import("db.zig");
-const spam = @import("../spam.zig");
+const db = @import("../../ask.zig");
+const spam = @import("../../spam.zig");
 
 const zx = @import("zx");
 const std = @import("std");

@@ -53,5 +53,5 @@ pub const options = zx.RouteOptions{
 
 const zx = @import("zx");
 const std = @import("std");
-const posts = @import("../../posts.zig");
-const git = @import("../../git.zig");
+const posts = @import("../../../../blog.zig").posts;
+const git = @import("../../../../blog.zig").git;

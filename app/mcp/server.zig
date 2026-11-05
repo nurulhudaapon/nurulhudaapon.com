@@ -1,15 +1,15 @@
 const std = @import("std");
 const mcp = @import("mcp");
-const posts = @import("../../pages/blog/posts.zig");
-const slots = @import("../../pages/schedule/slots.zig");
-const settings = @import("../../pages/schedule/settings.zig");
-const caldav = @import("../../pages/schedule/caldav.zig");
-const calendars = @import("../../pages/schedule/calendars.zig");
-const booking = @import("../../pages/schedule/booking.zig");
-const github = @import("../../pages/dev/github.zig");
-const finance = @import("../../pages/finance.zig");
-const fx = @import("../../pages/finance/fx.zig");
-const ask = @import("../../pages/ask/db.zig");
+const posts = @import("../blog.zig").posts;
+const slots = @import("../schedule.zig").slots;
+const settings = @import("../schedule.zig").settings;
+const caldav = @import("../schedule.zig").caldav;
+const calendars = @import("../schedule.zig").calendars;
+const booking = @import("../schedule.zig").booking;
+const github = @import("../github.zig");
+const finance = @import("../finance.zig");
+const fx = @import("../finance/fx.zig");
+const ask = @import("../ask.zig");
 
 pub fn handle(arena: std.mem.Allocator, io: std.Io, body: []const u8) ![]u8 {
     var request: Request = .{ .arena = arena, .io = io };

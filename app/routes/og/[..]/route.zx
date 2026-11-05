@@ -176,8 +176,8 @@ pub const options = zx.RouteOptions{
 
 const Card = @import("template.zx").Card;
 const Props = @import("template.zx").Props;
-const avatar = @import("../avatar.zig");
-const posts = @import("../../../pages/blog/posts.zig");
+const avatar = @import("../../../avatar.zig");
+const posts = @import("../../../blog.zig").posts;
 
 const geist_fonts = @import("geist_fonts");
 const lunasvg = @import("lunasvg");

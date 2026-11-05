@@ -29,4 +29,4 @@ pub const options: zx.RouteOptions = .{ .rendering = .request };
 const std = @import("std");
 const zx = @import("zx");
 const view = @import("../view.zig");
-const calendars = @import("../../../schedule/calendars.zig");
+const calendars = @import("../../../../schedule.zig").calendars;

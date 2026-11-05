@@ -1,6 +1,6 @@
 const std = @import("std");
 const zx = @import("zx");
-const github = @import("../dev/github.zig");
+const github = @import("../github.zig");
 
 pub const Archive = struct {
     files: std.StringArrayHashMapUnmanaged([]u8) = .empty,

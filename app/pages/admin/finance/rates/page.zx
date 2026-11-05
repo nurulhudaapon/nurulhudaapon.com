@@ -125,5 +125,5 @@ const std = @import("std");
 const zx = @import("zx");
 const ui = @import("../../ui.zx");
 const format = @import("../../format.zig");
-const fx = @import("../../../finance/fx.zig");
+const fx = @import("../../../../finance/fx.zig");
 const Header = @import("../header.zx").Header;

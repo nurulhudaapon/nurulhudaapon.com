@@ -202,5 +202,5 @@ const month_names = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Ju
 
 const zx = @import("zx");
 const std = @import("std");
-const db = @import("db.zig");
-const spam = @import("../spam.zig");
+const db = @import("../../ask.zig");
+const spam = @import("../../spam.zig");

@@ -122,4 +122,4 @@ const std = @import("std");
 const zx = @import("zx");
 const ui = @import("../ui.zx");
 const format = @import("../format.zig");
-const db = @import("../../ask/db.zig");
+const db = @import("../../../ask.zig");

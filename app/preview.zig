@@ -41,4 +41,4 @@ export fn preview_minutes() u32 {
 }
 
 const std = @import("std");
-const posts = @import("pages/blog/posts.zig");
+const posts = @import("blog.zig").posts;

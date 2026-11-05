@@ -256,7 +256,7 @@ const viewer = struct {
 
 const zx = @import("zx");
 const std = @import("std");
-const slots = @import("slots.zig");
-const booking = @import("booking.zig");
+const slots = @import("../../schedule.zig").slots;
+const booking = @import("../../schedule.zig").booking;
 const site = @import("../../site.zig");
-const calendars = @import("calendars.zig");
+const calendars = @import("../../schedule.zig").calendars;

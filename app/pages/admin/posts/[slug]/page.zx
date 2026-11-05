@@ -282,4 +282,4 @@ pub const options: zx.PageOptions = .{
 const std = @import("std");
 const zx = @import("zx");
 const ui = @import("../../ui.zx");
-const posts = @import("../../../blog/posts.zig");
+const posts = @import("../../../../blog.zig").posts;

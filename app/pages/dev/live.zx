@@ -91,7 +91,7 @@ const feed = struct {
 };
 
 const icons = @import("components.zx").icons;
-const github = @import("github.zig");
+const github = @import("../../github.zig");
 
 const zx = @import("zx");
 const std = @import("std");

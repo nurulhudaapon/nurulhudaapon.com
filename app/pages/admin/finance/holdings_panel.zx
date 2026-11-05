@@ -164,5 +164,5 @@ fn pnlClass(arena: zx.Allocator, pnl: ?f64) []const u8 {
 }
 
 const zx = @import("zx");
-const finance = @import("../../finance.zig");
-const shared = @import("shared.zig");
+const finance = @import("../../../finance.zig");
+const shared = @import("view.zig");
