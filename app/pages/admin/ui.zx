@@ -1,4 +1,4 @@
-pub const Icon = enum { home, question, calendar, calendar_days, clock, file, external, chevron_right, chevrons, menu, more, user, video, arrow_left, chart, settings, wallet, pie, percent, heart, eye, eye_off, refresh, check };
+pub const Icon = enum { home, question, calendar, calendar_days, clock, file, external, chevron_right, chevrons, menu, more, user, video, arrow_left, chart, settings, wallet, pie, percent, heart, eye, eye_off, refresh, check, trash };
 
 pub const FinancePage = enum { portfolio, accounts, allocation, zakat, rates };
 
@@ -167,6 +167,15 @@ pub fn icon(allocator: zx.Allocator, kind: Icon) zx.Component {
         .check => (
             <svg @{allocator} class="adm-icon adm-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M20 6 9 17l-5-5" />
+            </svg>
+        ),
+        .trash => (
+            <svg @{allocator} class="adm-icon adm-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 6h18" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
             </svg>
         ),
     };

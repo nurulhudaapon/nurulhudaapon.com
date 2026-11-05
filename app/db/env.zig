@@ -71,21 +71,30 @@ fn apply(arena: std.mem.Allocator, vars: Vars) !void {
     try put("caldav_organizer_email", vars.get("CALDAV_ORGANIZER_EMAIL") orelse user);
 
     if (vars.get("CALDAV_CALENDAR_URL")) |url| return put("caldav_calendar_url", url);
-    if (unchanged and try stored(arena, "caldav_calendar_url") != null) return;
+    const current = if (unchanged) try stored(arena, "caldav_calendar_url") else null;
 
-    const calendar = try discover(arena, user, pass, vars.get("CALDAV_CALENDAR")) orelse return;
+    const calendars = try listCalendars(arena, user, pass);
+    if (current) |url| for (calendars) |cal| {
+        if (std.mem.eql(u8, std.mem.trimEnd(u8, caldav.urlPath(cal.url), "/"), std.mem.trimEnd(u8, caldav.urlPath(url), "/"))) return;
+    };
+    if (current) |url| zx.log.warn("env: calendar {s} no longer exists, picking another", .{url});
+
+    const calendar = pick(calendars, user, vars.get("CALDAV_CALENDAR")) orelse return;
     try put("caldav_calendar_url", calendar.url);
     zx.log.info("env: using calendar \"{s}\" for {s} ({s})", .{ calendar.name, user, calendar.url });
 }
 
-fn discover(arena: std.mem.Allocator, user: []const u8, pass: []const u8, wanted: ?[]const u8) !?caldav.Calendar {
-    const calendars = try caldav.discoverCalendars(arena, .{
+fn listCalendars(arena: std.mem.Allocator, user: []const u8, pass: []const u8) ![]const caldav.Calendar {
+    return caldav.discoverCalendars(arena, .{
         .username = user,
         .password = pass,
         .calendar_url = icloud,
         .organizer_email = user,
         .meeting_url = null,
     }, icloud);
+}
+
+fn pick(calendars: []const caldav.Calendar, user: []const u8, wanted: ?[]const u8) ?caldav.Calendar {
     if (calendars.len == 0) {
         zx.log.warn("env: no event calendars found for {s}", .{user});
         return null;

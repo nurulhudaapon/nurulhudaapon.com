@@ -735,6 +735,14 @@ a.adm-glance:hover {
     color: var(--adm-muted);
 }
 
+.adm-btn-ghost.adm-btn-danger {
+    color: var(--adm-err);
+}
+
+.adm-btn-ghost.adm-btn-danger:hover {
+    background: color-mix(in srgb, var(--adm-err) 10%, transparent);
+}
+
 .adm-input,
 .adm-textarea,
 .adm-select {
@@ -2185,6 +2193,57 @@ details.adm-disclosure[open] > summary {
     font-variant-numeric: tabular-nums;
 }
 
+/* Phones: navigation and tools share the first row, totals get their own. */
+@media (max-width: 700px) {
+    .adm-cal-bar-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.4rem 0.5rem;
+    }
+
+    .adm-cal-nav {
+        min-width: 0;
+    }
+
+    .adm-cal-range {
+        min-width: 0;
+        margin-left: 0.25rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .adm-cal-tools {
+        grid-column: 2;
+        grid-row: 1;
+        margin-left: 0;
+    }
+
+    .adm-cal-stats {
+        grid-column: 1 / -1;
+        justify-content: space-between;
+        gap: 0.25rem 1rem;
+        padding: 0.4rem 0.25rem 0;
+        border-top: 1px solid var(--adm-border);
+    }
+
+    .adm-cal-stat .adm-hint + strong + .adm-hint {
+        display: none;
+    }
+
+    .adm-cal-alloc {
+        padding: 0.5rem 0.75rem 0.6rem;
+    }
+
+    .adm-cal-alloc-list {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .adm-cal-alloc-row {
+        grid-template-columns: auto minmax(0, 1fr) 3rem 3.5rem 2.25rem;
+        gap: 0.5rem;
+    }
+}
+
 .adm-cal-card {
     flex: 1;
     min-height: 0;
@@ -2421,6 +2480,10 @@ details.adm-disclosure[open] > summary {
 
 .adm-cal-source:last-child {
     border-bottom: 0;
+}
+
+.adm-cal-source .adm-btn-icon .adm-icon {
+    pointer-events: none;
 }
 
 .adm-cal-source-name {

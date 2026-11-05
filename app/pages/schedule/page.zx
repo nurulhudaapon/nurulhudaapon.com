@@ -29,7 +29,7 @@ fn loadDays(arena: zx.Allocator, rules: slots.Rules) ?[]const slots.Day {
     const now = booking.nowUnix();
     const creds = (caldav.loadCredentials(arena) catch null) orelse return null;
     const busy = caldav.busy(arena, creds, slots.horizon(rules, now), true) catch |err| {
-        zx.log.err("schedule: failed to load busy times: {any}", .{err});
+        zx.log.err("schedule: failed to load busy times from {s}: {any}", .{ creds.calendar_url, err });
         return null;
     };
     return slots.availableDays(arena, rules, now, busy) catch null;

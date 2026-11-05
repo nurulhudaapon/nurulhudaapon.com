@@ -134,6 +134,7 @@ pub fn SourcesCard(ctx: *zx.ComponentCtx(struct { rows: []const Row, icloud_read
     const alloc = ctx.allocator;
     const state = card.get();
     const rows = state.rows;
+    const saving = save_action.pending;
 
     return (
         <div @allocator={alloc}>
@@ -194,36 +195,38 @@ pub fn SourcesCard(ctx: *zx.ComponentCtx(struct { rows: []const Row, icloud_read
                 ) else (
                     <div class="adm-list">
                         {for (rows) |r| (
-                            <form key={r.id} action={save_action} class="adm-cal-source">
+                            <form key={r.id} action={save_action} class="adm-cal-source" onchange={ctx.bind(autosave)}>
                                 <input type="hidden" name="id" value={alloc.print("{d}", .{r.id}) catch ""} />
-                                <input class="adm-input adm-color" type="color" name="color" value={r.color} aria-label="Color" />
+                                <input class="adm-input adm-color" type="color" name="color" value={r.color} aria-label="Color" disabled={saving} />
                                 <div class="adm-cal-source-name">
-                                    <input class="adm-input" name="name" value={r.name} maxlength="100" required aria-label="Name" />
+                                    <input class="adm-input" name="name" value={r.name} maxlength="100" required aria-label="Name" disabled={saving} />
                                     <span class="adm-hint">{if (state.saved_id == r.id) "Saved" else r.meta}</span>
                                 </div>
                                 <label class="adm-check">
-                                    <input type="checkbox" name="visible" value="on" checked={r.visible} />
+                                    <input type="checkbox" name="visible" value="on" checked={r.visible} disabled={saving} />
                                     <span>Show</span>
                                 </label>
                                 <label class="adm-check">
-                                    <input type="checkbox" name="blocks_booking" value="on" checked={r.blocks_booking} />
+                                    <input type="checkbox" name="blocks_booking" value="on" checked={r.blocks_booking} disabled={saving} />
                                     <span>Blocks /schedule</span>
                                 </label>
                                 <label class="adm-check">
-                                    <input type="checkbox" name="in_feed" value="on" checked={r.in_feed} />
+                                    <input type="checkbox" name="in_feed" value="on" checked={r.in_feed} disabled={saving} />
                                     <span>In feed</span>
                                 </label>
-                                <div class="adm-inline-fields">
-                                    <button class="adm-btn" type="submit" disabled={save_action.pending}>Save</button>
-                                    {if (r.removable) (
-                                        <button
-                                            class="adm-btn adm-btn-ghost adm-btn-danger"
-                                            type="button"
-                                            value={alloc.print("{d}", .{r.id}) catch ""}
-                                            onclick={ctx.bind(removeCalendar)}
-                                        >Remove</button>
-                                    )}
-                                </div>
+                                {if (r.removable) (
+                                    <button
+                                        class="adm-btn adm-btn-ghost adm-btn-icon adm-btn-danger"
+                                        type="button"
+                                        title="Remove calendar"
+                                        aria-label="Remove calendar"
+                                        value={alloc.print("{d}", .{r.id}) catch ""}
+                                        disabled={saving}
+                                        onclick={ctx.bind(removeCalendar)}
+                                    >{ui.icon(alloc, .trash)}</button>
+                                ) else (
+                                    <span></span>
+                                )}
                             </form>
                         )}
                     </div>
@@ -303,6 +306,15 @@ fn saveCalendar(a: *zx.server.Action.Stateful) void {
     var next = refreshed(arena, card.get(), .none, "");
     next.saved_id = input.id;
     card.set(next);
+}
+
+fn autosave(e: *zx.client.Event.Stateful) void {
+    const js = zx.client.js;
+    const target = e.getEvent().ref.get(js.Object, "target") catch return;
+    defer target.deinit();
+    const form = target.get(js.Object, "form") catch return;
+    defer form.deinit();
+    form.call(void, "requestSubmit", .{}) catch {};
 }
 
 fn removeCalendar(e: *zx.server.Event.Stateful) void {

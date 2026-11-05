@@ -120,7 +120,7 @@ fn buildView(arena: zx.Allocator, loaded: []const calendars.Loaded, rules: slots
             const e = @min(it.ev.end, ds + day_s);
             if (e <= s) continue;
             first_min = @min(first_min, @divFloor(s - ds, 60));
-            last_min = @max(last_min, @divFloor(e - ds + 59, 60));
+            last_min = @max(last_min, @divFloor(e - ds + 59, 60) + 20);
         }
     }
     const h0 = @divFloor(first_min, 60);
