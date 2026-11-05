@@ -1,5 +1,5 @@
 pub fn GET(ctx: zx.RouteContext) !void {
-    const repos = github.fetchStats(ctx.arena) catch |err| {
+    const repos = github.Client.init(ctx.arena, ctx.io).stats() catch |err| {
         zx.log.warn("github stats: {s}", .{@errorName(err)});
         // Non-200 responses skip the page cache, so the next request retries.
         ctx.response.setStatus(.bad_gateway);

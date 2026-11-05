@@ -1,12 +1,12 @@
-//! Local only: fills `credentials` from `.env`, overridden by the process environment.
-//! CALDAV_USER, CALDAV_PASS and MEET_LINK; optionally CALDAV_CALENDAR_URL (else
-//! discovered), CALDAV_CALENDAR (name to pick) and CALDAV_ORGANIZER_EMAIL.
-//! GITHUB_TOKEN, IBKR_FLEX_TOKEN, IBKR_FLEX_QUERY_ID, MCP_TOKEN. Prefer /admin/settings in prod.
-//! OAUTH_GITHUB_CLIENT_ID, OAUTH_GITHUB_CLIENT_SECRET and OAUTH_GITHUB_ALLOWED (account ids) for admin sign-in.
+// Local only: fills `credentials` from `.env`, overridden by the process
+// environment. Without CALDAV_CALENDAR_URL the calendar is discovered, picked by
+// CALDAV_CALENDAR (name). Prod uses /admin/settings instead.
 const std = @import("std");
 const zx = @import("zx");
 const caldav = @import("../pages/schedule/caldav.zig");
 const github = @import("../pages/dev/github.zig");
+const credentials = @import("credentials.zig");
+const put = credentials.put;
 
 const icloud = "https://caldav.icloud.com/";
 
@@ -21,7 +21,7 @@ pub fn load(init: zx.Init) void {
         zx.log.warn("env: failed to read .env: {any}", .{err});
         return;
     };
-    apply(arena, vars) catch |err| zx.log.err("env: failed to set up credentials: {any}", .{err});
+    apply(arena, init.io, vars) catch |err| zx.log.err("env: failed to set up credentials: {any}", .{err});
 }
 
 const Vars = std.StringHashMapUnmanaged([]const u8);
@@ -50,7 +50,7 @@ fn read(arena: std.mem.Allocator, init: std.process.Init) !Vars {
     return vars;
 }
 
-fn apply(arena: std.mem.Allocator, vars: Vars) !void {
+fn apply(arena: std.mem.Allocator, io: std.Io, vars: Vars) !void {
     if (vars.get("GITHUB_TOKEN")) |token| {
         try put("github_token", token);
         try github.setToken(token);
@@ -73,25 +73,22 @@ fn apply(arena: std.mem.Allocator, vars: Vars) !void {
     if (vars.get("CALDAV_CALENDAR_URL")) |url| return put("caldav_calendar_url", url);
     const current = if (unchanged) try stored(arena, "caldav_calendar_url") else null;
 
-    const calendars = try listCalendars(arena, user, pass);
+    const client: caldav.Client = .{ .arena = arena, .io = io, .creds = .{
+        .username = user,
+        .password = pass,
+        .calendar_url = icloud,
+        .organizer_email = user,
+        .meeting_url = null,
+    } };
+    const calendars = try client.discover(icloud);
     if (current) |url| for (calendars) |cal| {
-        if (std.mem.eql(u8, std.mem.trimEnd(u8, caldav.urlPath(cal.url), "/"), std.mem.trimEnd(u8, caldav.urlPath(url), "/"))) return;
+        if (caldav.sameCalendar(cal.url, url)) return;
     };
     if (current) |url| zx.log.warn("env: calendar {s} no longer exists, picking another", .{url});
 
     const calendar = pick(calendars, user, vars.get("CALDAV_CALENDAR")) orelse return;
     try put("caldav_calendar_url", calendar.url);
     zx.log.info("env: using calendar \"{s}\" for {s} ({s})", .{ calendar.name, user, calendar.url });
-}
-
-fn listCalendars(arena: std.mem.Allocator, user: []const u8, pass: []const u8) ![]const caldav.Calendar {
-    return caldav.discoverCalendars(arena, .{
-        .username = user,
-        .password = pass,
-        .calendar_url = icloud,
-        .organizer_email = user,
-        .meeting_url = null,
-    }, icloud);
 }
 
 fn pick(calendars: []const caldav.Calendar, user: []const u8, wanted: ?[]const u8) ?caldav.Calendar {
@@ -114,9 +111,4 @@ fn pick(calendars: []const caldav.Calendar, user: []const u8, wanted: ?[]const u
 fn stored(arena: std.mem.Allocator, cat: []const u8) !?[]const u8 {
     const row = try zx.db.row(arena, struct { val: []const u8 }, "SELECT val FROM credentials WHERE cat = ?1 LIMIT 1", .{cat});
     return if (row) |r| r.val else null;
-}
-
-fn put(cat: []const u8, val: []const u8) !void {
-    _ = try zx.db.run("DELETE FROM credentials WHERE cat = ?1", .{cat});
-    _ = try zx.db.run("INSERT INTO credentials (cat, val) VALUES (?1, ?2)", .{ cat, val });
 }

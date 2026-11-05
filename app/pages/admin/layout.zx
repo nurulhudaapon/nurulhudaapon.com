@@ -86,7 +86,7 @@ const BadgeKind = enum { unanswered, upcoming };
 
 pub fn NavBadge(ctx: *zx.ComponentCtx(struct { kind: BadgeKind })) zx.Component {
     const count = ctx.state(i64, 0);
-    if (comptime zx.platform.role == .client) badge_feed.watch(ctx.props.kind, count);
+    if (comptime zx.platform.role == .client) feed.watch(ctx.io, ctx.props.kind, count);
 
     const n = count.get();
     return (
@@ -94,14 +94,15 @@ pub fn NavBadge(ctx: *zx.ComponentCtx(struct { kind: BadgeKind })) zx.Component 
     );
 }
 
-const badge_feed = struct {
+// One request serves every badge on the page.
+const feed = struct {
     const Watcher = struct { kind: BadgeKind, count: *zx.State(i64) };
 
     var watchers: [4]Watcher = undefined;
     var len: usize = 0;
     var requested = false;
 
-    fn watch(kind: BadgeKind, count: *zx.State(i64)) void {
+    fn watch(io: std.Io, kind: BadgeKind, count: *zx.State(i64)) void {
         for (watchers[0..len]) |w| if (w.count == count) return;
         if (len == watchers.len) return;
         watchers[len] = .{ .kind = kind, .count = count };
@@ -109,7 +110,7 @@ const badge_feed = struct {
 
         if (requested) return;
         requested = true;
-        var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = zx.allocator };
+        var client: zx.http.Client = .{ .io = io, .allocator = zx.allocator };
         defer client.deinit();
         client.fetchThen(.{ .url = "/admin/badges" }, {}, onLoad);
     }

@@ -1,7 +1,6 @@
-// The zx host for `Auth`: cookies on the zx request and response, sessions and
-// passkeys in D1, provider calls through `zx.http.Client`, and provider credentials from
-// `credentials` (`oauth_<id>_client_id`, `oauth_<id>_client_secret`). Only the
-// account ids in `oauth_<id>_allowed` (comma-separated) may sign in.
+// Provider credentials are the `oauth_<id>_client_id` and `oauth_<id>_client_secret`
+// rows in `credentials`; only account ids listed in `oauth_<id>_allowed`
+// (comma-separated) may sign in.
 
 const home = "/admin";
 
@@ -123,7 +122,7 @@ fn fetch(ud: ?*anyopaque, arena: std.mem.Allocator, request: Auth.OAuth.Request)
     });
     defer response.deinit(arena);
     if (response.status.class() != .success) {
-        zx.log.warn("auth: {s} returned {d}", .{ request.url, @intFromEnum(response.status) });
+        zx.log.warn("auth: {s} returned {d}", .{ request.url, @backingInt(response.status) });
         return error.ProviderError;
     }
     return arena.dupe(u8, response.body);

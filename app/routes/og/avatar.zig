@@ -2,100 +2,94 @@ const std = @import("std");
 const zx = @import("zx");
 const lunasvg = @import("lunasvg");
 
-pub const github_user = "nurulhudaapon";
-pub const github_avatar_url = "https://avatars.githubusercontent.com/" ++ github_user ++ "?s=512";
-pub const cache_key = "github-avatar";
-pub const gray_cache_key = "github-avatar-gray";
+const url = "https://avatars.githubusercontent.com/nurulhudaapon?s=512";
+const color_key = "github-avatar";
+const gray_key = "github-avatar-gray";
 
-pub fn fetch(allocator: std.mem.Allocator) ![]const u8 {
-    const avatar_kv = zx.kv.scoped(.avatar);
+pub fn fetch(arena: std.mem.Allocator, io: std.Io) ![]const u8 {
+    const kv = zx.kv.scoped(.avatar);
+    if (try kv.get(arena, color_key)) |cached| return cached;
 
-    if (try avatar_kv.get(allocator, cache_key)) |cached| {
-        zx.log.debug("avatar: cache hit key={s} bytes={d}", .{ cache_key, cached.len });
-        return cached;
-    }
-
-    zx.log.debug("avatar: fetching {s}", .{github_avatar_url});
-    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = allocator };
+    var client: zx.http.Client = .{ .io = io, .allocator = arena };
     defer client.deinit();
     const response = try client.fetch(.{
-        .url = github_avatar_url,
+        .url = url,
         .headers = &.{
             .{ .name = "User-Agent", .value = "nurulhudaapon.com" },
             .{ .name = "Accept", .value = "image/*" },
         },
         .timeout = .{ .duration = .{ .raw = .fromMilliseconds(15_000), .clock = .awake } },
     });
-    defer response.deinit(allocator);
+    defer response.deinit(arena);
     if (response.status.class() != .success) {
-        zx.log.warn("avatar: fetch failed status={d} url={s}", .{ @intFromEnum(response.status), github_avatar_url });
+        zx.log.warn("avatar: fetch failed status={d}", .{@backingInt(response.status)});
         return error.NetworkError;
     }
 
-    const body = response.body;
-    zx.log.debug("avatar: fetched bytes={d} status={d}", .{ body.len, @intFromEnum(response.status) });
-    try avatar_kv.put(cache_key, body, .{});
-    return try allocator.dupe(u8, body);
+    try kv.put(color_key, response.body, .{});
+    return try arena.dupe(u8, response.body);
 }
 
-pub fn fetchGrayscale(allocator: std.mem.Allocator) ![]const u8 {
-    const avatar_kv = zx.kv.scoped(.avatar);
+// Falls back to the color image when it can't be desaturated.
+pub fn gray(arena: std.mem.Allocator, io: std.Io) ![]const u8 {
+    const kv = zx.kv.scoped(.avatar);
+    if (try kv.get(arena, gray_key)) |cached| return cached;
 
-    if (try avatar_kv.get(allocator, gray_cache_key)) |cached| {
-        zx.log.debug("avatar: gray cache hit bytes={d}", .{cached.len});
-        return cached;
-    }
-
-    const color = try fetch(allocator);
-    const gray = toGrayscalePng(allocator, color) catch |err| {
+    const color = try fetch(arena, io);
+    const out = grayscale(arena, color) catch |err| {
         zx.log.warn("avatar: grayscale failed ({s}), using color", .{@errorName(err)});
         return color;
     };
-    zx.log.debug("avatar: grayscale ok bytes={d}", .{gray.len});
-    try avatar_kv.put(gray_cache_key, gray, .{});
-    return gray;
+    try kv.put(gray_key, out, .{});
+    return out;
 }
 
-pub fn dataUri(allocator: std.mem.Allocator) ![]const u8 {
-    const bytes = try fetchGrayscale(allocator);
-    const mime: []const u8 = if (std.mem.startsWith(u8, bytes, "\x89PNG"))
-        "image/png"
-    else if (bytes.len >= 3 and bytes[0] == 0xff and bytes[1] == 0xd8 and bytes[2] == 0xff)
-        "image/jpeg"
-    else if (std.mem.startsWith(u8, bytes, "RIFF"))
-        "image/webp"
-    else
-        "image/png";
-
-    const Encoder = std.base64.standard.Encoder;
-    const b64 = try allocator.alloc(u8, Encoder.calcSize(bytes.len));
-    _ = Encoder.encode(b64, bytes);
-    return try allocator.print("data:{s};base64,{s}", .{ mime, b64 });
+pub fn dataUri(arena: std.mem.Allocator, io: std.Io) ![]const u8 {
+    const bytes = try gray(arena, io);
+    return encodeDataUri(arena, mime(bytes) orelse .png, bytes);
 }
 
 pub fn contentType(bytes: []const u8) zx.server.Response.ContentType {
-    if (std.mem.startsWith(u8, bytes, "\x89PNG")) return .@"image/png";
-    if (bytes.len >= 3 and bytes[0] == 0xff and bytes[1] == 0xd8 and bytes[2] == 0xff) return .@"image/jpeg";
-    if (std.mem.startsWith(u8, bytes, "RIFF")) return .@"image/webp";
-    return .@"image/png";
+    return switch (mime(bytes) orelse .png) {
+        .png => .@"image/png",
+        .jpeg => .@"image/jpeg",
+        .webp => .@"image/webp",
+    };
 }
 
-fn toGrayscalePng(allocator: std.mem.Allocator, image_bytes: []const u8) ![]u8 {
-    const mime: []const u8 = if (std.mem.startsWith(u8, image_bytes, "\x89PNG"))
-        "image/png"
-    else if (image_bytes.len >= 3 and image_bytes[0] == 0xff and image_bytes[1] == 0xd8 and image_bytes[2] == 0xff)
-        "image/jpeg"
-    else if (std.mem.startsWith(u8, image_bytes, "RIFF"))
-        "image/webp"
-    else
-        return error.UnsupportedImage;
+const Mime = enum {
+    png,
+    jpeg,
+    webp,
 
+    fn name(m: Mime) []const u8 {
+        return switch (m) {
+            .png => "image/png",
+            .jpeg => "image/jpeg",
+            .webp => "image/webp",
+        };
+    }
+};
+
+fn mime(bytes: []const u8) ?Mime {
+    if (std.mem.startsWith(u8, bytes, "\x89PNG")) return .png;
+    if (std.mem.startsWith(u8, bytes, "\xff\xd8\xff")) return .jpeg;
+    if (std.mem.startsWith(u8, bytes, "RIFF")) return .webp;
+    return null;
+}
+
+fn encodeDataUri(allocator: std.mem.Allocator, m: Mime, bytes: []const u8) ![]u8 {
     const Encoder = std.base64.standard.Encoder;
-    const b64 = try allocator.alloc(u8, Encoder.calcSize(image_bytes.len));
-    defer allocator.free(b64);
-    _ = Encoder.encode(b64, image_bytes);
+    const prefix = try allocator.print("data:{s};base64,", .{m.name()});
+    defer allocator.free(prefix);
+    const out = try allocator.alloc(u8, prefix.len + Encoder.calcSize(bytes.len));
+    @memcpy(out[0..prefix.len], prefix);
+    _ = Encoder.encode(out[prefix.len..], bytes);
+    return out;
+}
 
-    const href = try allocator.print("data:{s};base64,{s}", .{ mime, b64 });
+fn grayscale(allocator: std.mem.Allocator, bytes: []const u8) ![]u8 {
+    const href = try encodeDataUri(allocator, mime(bytes) orelse return error.UnsupportedImage, bytes);
     defer allocator.free(href);
 
     const svg = try allocator.print(
@@ -108,33 +102,24 @@ fn toGrayscalePng(allocator: std.mem.Allocator, image_bytes: []const u8) ![]u8 {
     const doc = try lunasvg.Document.loadFromData(svg);
     defer doc.deinit();
 
-    var bitmap = try doc.renderToBitmap(.{
-        .width = 512,
-        .height = 512,
-        .background_color = 0x00000000,
-    });
+    var bitmap = try doc.renderToBitmap(.{ .width = 512, .height = 512, .background_color = 0x00000000 });
     defer bitmap.deinit();
 
     bitmap.convertToRGBA();
-    desaturateRgba(bitmap.data(), @intCast(bitmap.width()), @intCast(bitmap.height()), @intCast(bitmap.stride()));
-
-    return try bitmap.writeToPngAlloc(allocator);
-}
-
-fn desaturateRgba(pixels: []u8, width: usize, height: usize, stride: usize) void {
-    var y: usize = 0;
-    while (y < height) : (y += 1) {
+    const width: usize = @intCast(bitmap.width());
+    const height: usize = @intCast(bitmap.height());
+    const stride: usize = @intCast(bitmap.stride());
+    const pixels = bitmap.data();
+    for (0..height) |y| {
         const row = pixels[y * stride ..][0 .. width * 4];
-        var x: usize = 0;
-        while (x < width) : (x += 1) {
-            const i = x * 4;
-            const r: u32 = row[i];
-            const g: u32 = row[i + 1];
-            const b: u32 = row[i + 2];
-            const gray: u8 = @intCast((r * 77 + g * 150 + b * 29) >> 8);
-            row[i] = gray;
-            row[i + 1] = gray;
-            row[i + 2] = gray;
+        for (0..width) |x| {
+            const px = row[x * 4 ..][0..3];
+            const r: u32 = px[0];
+            const g: u32 = px[1];
+            const b: u32 = px[2];
+            @memset(px, @intCast((r * 77 + g * 150 + b * 29) >> 8));
         }
     }
+
+    return try bitmap.writeToPngAlloc(allocator);
 }

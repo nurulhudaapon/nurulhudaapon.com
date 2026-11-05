@@ -11,8 +11,8 @@ pub fn Page(ctx: zx.PageContext, _: void, owner: ?Auth.Account) !zx.Component {
         return ui.redirect(ctx, try ctx.fmt("/admin/settings?{s}", .{flag}));
     }
 
-    const caldav = credentials.loadCaldavForm(ctx.arena);
-    const ibkr = credentials.loadIbkrForm(ctx.arena);
+    const caldav = credentials.CaldavForm.load(ctx.arena);
+    const ibkr = credentials.IbkrForm.load(ctx.arena);
     const github_set = credentials.githubTokenSet(ctx.arena);
     const mcp_set = credentials.mcpTokenSet(ctx.arena);
     const mcp_ttl_days = try ctx.fmt("{d}", .{credentials.mcpTokenTtlDays(ctx.arena)});
@@ -198,54 +198,44 @@ fn save(ctx: zx.PageContext) ![]const u8 {
     const fd = ctx.request.formData();
     var cleared = false;
 
-    if (fd.get("clear_ibkr_token") != null) {
-        try credentials.remove("ibkr_flex_token");
-        cleared = true;
-    } else {
-        try credentials.putUnlessEmpty("ibkr_flex_token", fd.get("ibkr_flex_token") orelse "");
-    }
-
-    const query_id = std.mem.trim(u8, fd.get("ibkr_flex_query_id") orelse "", " \t\r\n");
-    try credentials.put("ibkr_flex_query_id", query_id);
+    if (try saveSecret(fd, "ibkr_flex_token", "clear_ibkr_token")) cleared = true;
+    try credentials.put("ibkr_flex_query_id", field(fd, "ibkr_flex_query_id"));
 
     try credentials.putUnlessEmpty("caldav_username", fd.get("caldav_username") orelse "");
-    if (fd.get("clear_caldav_password") != null) {
-        try credentials.remove("caldav_password");
-        cleared = true;
-    } else {
-        try credentials.putUnlessEmpty("caldav_password", fd.get("caldav_password") orelse "");
-    }
+    if (try saveSecret(fd, "caldav_password", "clear_caldav_password")) cleared = true;
     try credentials.putUnlessEmpty("caldav_calendar_url", fd.get("caldav_calendar_url") orelse "");
     try credentials.putUnlessEmpty("caldav_organizer_email", fd.get("caldav_organizer_email") orelse "");
 
-    const meeting = std.mem.trim(u8, fd.get("caldav_meeting_url") orelse "", " \t\r\n");
+    const meeting = field(fd, "caldav_meeting_url");
     if (meeting.len > 0 and !settings.isHttpUrl(meeting)) return error.InvalidUrl;
     try credentials.put("caldav_meeting_url", meeting);
 
-    if (fd.get("clear_github_token") != null) {
-        try credentials.remove("github_token");
-        cleared = true;
-    } else {
-        try credentials.putUnlessEmpty("github_token", fd.get("github_token") orelse "");
-    }
+    if (try saveSecret(fd, "github_token", "clear_github_token")) cleared = true;
+    if (try saveSecret(fd, "mcp_token", "clear_mcp_token")) cleared = true;
 
-    if (fd.get("clear_mcp_token") != null) {
-        try credentials.remove("mcp_token");
-        cleared = true;
-    } else {
-        try credentials.putUnlessEmpty("mcp_token", fd.get("mcp_token") orelse "");
-    }
-
-    const ttl_raw = std.mem.trim(u8, fd.get("mcp_token_ttl_days") orelse "", " \t\r\n");
-    if (ttl_raw.len > 0) {
-        const days = std.fmt.parseInt(u32, ttl_raw, 10) catch return error.InvalidTtl;
+    const ttl = field(fd, "mcp_token_ttl_days");
+    if (ttl.len > 0) {
+        const days = std.fmt.parseInt(u32, ttl, 10) catch return error.InvalidTtl;
         if (days < 1 or days > credentials.mcp_token_ttl_days_max) return error.InvalidTtl;
         try credentials.put("mcp_token_ttl_days", try ctx.arena.print("{d}", .{days}));
     }
 
-    credentials.applyRuntime(ctx.arena);
-
+    credentials.apply(ctx.arena);
     return if (cleared) "ok=cleared" else "ok=saved";
+}
+
+// A blank secret keeps the saved one. Returns whether it was cleared.
+fn saveSecret(fd: anytype, key: []const u8, clear: []const u8) !bool {
+    if (fd.get(clear) != null) {
+        try credentials.remove(key);
+        return true;
+    }
+    try credentials.putUnlessEmpty(key, fd.get(key) orelse "");
+    return false;
+}
+
+fn field(fd: anytype, name: []const u8) []const u8 {
+    return std.mem.trim(u8, fd.get(name) orelse "", " \t\r\n");
 }
 
 pub const options: zx.PageOptions = .{

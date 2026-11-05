@@ -10,18 +10,14 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         return ui.redirect(ctx, try ctx.fmt("/admin/finance/zakat?{s}", .{flag}));
     }
 
-    const data = try finance.snapshot(ctx.arena);
-    const entries = try finance.listZakat(ctx.arena);
-    const currencies = try finance.listCurrencies(ctx.arena);
-    const gold_g = finance.goldGrams(ctx.arena);
-    const due = finance.zakatDueUsd(data.net_worth);
+    const data = try finance.portfolio.snapshot(ctx.arena);
+    const entries = try finance.zakat.list(ctx.arena);
+    const currencies = try finance.fx.currencies(ctx.arena);
+    const gold_g = finance.zakat.goldGrams(ctx.arena);
+    const due = finance.zakat.due(data.net_worth);
     const edit_id = std.fmt.parseInt(i64, ctx.request.query.get("edit") orelse "", 10) catch 0;
-    const editing = if (edit_id > 0) try finance.getZakat(ctx.arena, edit_id) else null;
-    const this_year: i64 = blk: {
-        const secs = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
-        // Approximate UTC year; fine for personal logging.
-        break :blk @divTrunc(secs, 365 * 24 * 60 * 60) + 1970;
-    };
+    const editing = if (edit_id > 0) try finance.zakat.get(ctx.arena, edit_id) else null;
+    const this_year = yearOf(std.Io.Timestamp.now(ctx.io, .real).toSeconds());
     const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "saved", "Zakat entry saved." },
         .{ "deleted", "Zakat entry removed." },
@@ -31,37 +27,26 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     return (
         <div @allocator={ctx.arena}>
-            <div class="adm-toolbar">
-                <div class="adm-toolbar-main">
-                    <h1 class="adm-page-title">Zakat</h1>
-                    <div class="adm-page-actions">
-                        <div class="adm-finance-nav">
-                            <div class="adm-finance-lead"></div>
-                            <ui.FinanceNav current={.zakat} />
-                        </div>
-                    </div>
-                </div>
-                <p class="adm-page-desc">Record zakat paid by year. Estimate is 2.5% of net worth.</p>
-            </div>
+            <Header title="Zakat" current={.zakat}>Record zakat paid by year. Estimate is 2.5% of net worth.</Header>
             <ui.FlashBanner flash={flash} />
 
             <div class="adm-kpis">
                 <div class="adm-kpi">
                     <p class="adm-label">Net worth</p>
-                    <p class="adm-kpi-val">{finance.formatMoney(ctx.arena, data.net_worth, "USD")}</p>
-                    <p class="adm-hint">{finance.formatMoney(ctx.arena, data.net_worth_bdt, "BDT")}</p>
+                    <p class="adm-kpi-val">{finance.format.money(ctx.arena, data.net_worth, "USD")}</p>
+                    <p class="adm-hint">{finance.format.money(ctx.arena, data.net_worth_bdt, "BDT")}</p>
                 </div>
                 <div class="adm-kpi">
                     <p class="adm-label">Est. zakat (2.5%)</p>
-                    <p class="adm-kpi-val">{finance.formatMoney(ctx.arena, due, "USD")}</p>
-                    <p class="adm-hint">{finance.formatMoney(ctx.arena, due * data.usd_bdt_rate, "BDT")}</p>
+                    <p class="adm-kpi-val">{finance.format.money(ctx.arena, due, "USD")}</p>
+                    <p class="adm-hint">{finance.format.money(ctx.arena, due * data.usd_bdt_rate, "BDT")}</p>
                 </div>
                 <div class="adm-kpi">
                     <p class="adm-label">Gold held</p>
-                    <p class="adm-kpi-val">{finance.formatMoney(ctx.arena, gold_g, "XAU")}</p>
+                    <p class="adm-kpi-val">{finance.format.money(ctx.arena, gold_g, "XAU")}</p>
                     <p class="adm-hint">
-                        Gold nisab {finance.formatMoney(ctx.arena, finance.gold_nisab_grams, "XAU")}
-                        · {if (gold_g >= finance.gold_nisab_grams) "at/above gold nisab" else "below gold nisab (wealth may still qualify)"}
+                        Gold nisab {finance.format.money(ctx.arena, finance.zakat.gold_nisab_grams, "XAU")}
+                        · {if (gold_g >= finance.zakat.gold_nisab_grams) "at/above gold nisab" else "below gold nisab (wealth may still qualify)"}
                     </p>
                 </div>
             </div>
@@ -130,7 +115,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                 {for (entries) |e| (
                                     <tr>
                                         <td><span class="adm-table-title">{e.year}</span></td>
-                                        <td>{finance.formatMoney(ctx.arena, e.amount, e.currency)}</td>
+                                        <td>{finance.format.money(ctx.arena, e.amount, e.currency)}</td>
                                         <td class="adm-hide-sm">{e.paid_on orelse "-"}</td>
                                         <td class="adm-hide-sm">{e.notes orelse "-"}</td>
                                         <td>
@@ -157,15 +142,15 @@ fn handle(ctx: zx.PageContext) ![]const u8 {
     const fd = ctx.request.formData();
     const action = fd.get("action") orelse return error.InvalidName;
     if (std.mem.eql(u8, action, "delete")) {
-        try finance.deleteZakat(try formInt(fd, "id"));
+        try finance.zakat.delete(try shared.formInt(fd, "id"));
         return "ok=deleted";
     }
     if (std.mem.eql(u8, action, "save")) {
-        const year = try formInt(fd, "year");
+        const year = try shared.formInt(fd, "year");
         const amount = std.fmt.parseFloat(f64, fd.get("amount") orelse "") catch return error.InvalidAmount;
-        try finance.saveZakat(
+        try finance.zakat.save(
             ctx.arena,
-            try formInt(fd, "id"),
+            try shared.formInt(fd, "id"),
             year,
             amount,
             fd.get("currency") orelse "USD",
@@ -177,11 +162,12 @@ fn handle(ctx: zx.PageContext) ![]const u8 {
     return error.InvalidName;
 }
 
-fn formInt(fd: anytype, name: []const u8) !i64 {
-    return std.fmt.parseInt(i64, fd.get(name) orelse "0", 10) catch error.InvalidName;
+fn yearOf(unix: i64) i64 {
+    const secs: std.time.epoch.EpochSeconds = .{ .secs = @intCast(@max(unix, 0)) };
+    return secs.getEpochDay().calculateYearDay().year;
 }
 
-fn editingCurrency(editing: ?finance.ZakatEntry, c: []const u8) bool {
+fn editingCurrency(editing: ?finance.zakat.Entry, c: []const u8) bool {
     const e = editing orelse return std.ascii.eqlIgnoreCase(c, "USD");
     return std.ascii.eqlIgnoreCase(e.currency, c);
 }
@@ -194,4 +180,6 @@ pub const options: zx.PageOptions = .{
 const std = @import("std");
 const zx = @import("zx");
 const ui = @import("../../ui.zx");
-const finance = @import("../../../finance/db.zig");
+const finance = @import("../../../finance.zig");
+const shared = @import("../shared.zig");
+const Header = @import("../header.zx").Header;

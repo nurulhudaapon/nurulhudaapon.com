@@ -6,9 +6,8 @@ const site = @import("../../../site.zig");
 
 pub fn write(ctx: zx.RouteContext) !void {
     const base = site.origin(ctx.request);
-    const issuer = try store.authorizationServerIssuer(ctx.arena, ctx.request);
     const body = try mcp.oauth.writeAuthorizationServer(ctx.arena, .{
-        .issuer = issuer,
+        .issuer = store.issuer(ctx.request),
         .authorization_endpoint = try ctx.arena.print("{s}/mcp/oauth/authorize", .{base}),
         .token_endpoint = try ctx.arena.print("{s}/mcp/oauth/token", .{base}),
         .registration_endpoint = try ctx.arena.print("{s}/mcp/oauth/register", .{base}),

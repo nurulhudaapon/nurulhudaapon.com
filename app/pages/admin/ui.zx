@@ -181,8 +181,8 @@ pub fn icon(allocator: zx.Allocator, kind: Icon) zx.Component {
     };
 }
 
-/// Shared subnav for finance pages. Pair with `.adm-finance-lead` on the left so
-/// tabs stay aligned whether a refresh control is present or not.
+// Pair with `.adm-finance-lead` on the left so the tabs stay aligned whether or
+// not a refresh control is present.
 pub fn FinanceNav(allocator: zx.Allocator, props: struct { current: FinancePage }) zx.Component {
     const Item = struct { page: FinancePage, href: []const u8, label: []const u8 };
     const items = [_]Item{
@@ -240,7 +240,7 @@ pub fn FlashBanner(allocator: zx.Allocator, props: struct { flash: ?Flash }) zx.
     );
 }
 
-/// Answer a form POST with a 303 so reloading doesn't resubmit it.
+// A 303 so reloading the page doesn't resubmit the form.
 pub fn redirect(ctx: zx.PageContext, location: []const u8) zx.Component {
     ctx.response.redirect(location, .see_other);
     return (<span @allocator={ctx.arena}></span>);
@@ -248,7 +248,7 @@ pub fn redirect(ctx: zx.PageContext, location: []const u8) zx.Component {
 
 pub const Tab = struct { label: []const u8, href: []const u8, count: i64, active: bool };
 
-/// One tab per `active` enum field; counts come from the same-named fields of `counts`.
+// One tab per field of `active`'s enum; counts come from the same-named fields of `counts`.
 pub fn filterTabs(arena: zx.Allocator, comptime base: []const u8, active: anytype, counts: anytype) ![]const Tab {
     const names = comptime std.meta.fieldNames(@TypeOf(active));
     const tabs = try arena.alloc(Tab, names.len);

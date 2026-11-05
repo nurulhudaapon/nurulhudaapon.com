@@ -1,5 +1,4 @@
 const std = @import("std");
-const zx = @import("zx");
 
 const proof_salt = "nurulhudaapon.com/ask-proof/";
 // Proofs rotate hourly and the current and previous window are accepted.
@@ -19,30 +18,26 @@ pub fn ipHash(arena: std.mem.Allocator, ip: ?[]const u8) []const u8 {
 
 // Minted on render and carried in component state, so a submit without a fresh
 // page render can't produce it.
-pub fn formProof(visitor_id: []const u8) u32 {
-    return proofNumber(visitor_id, timeBucket(nowUnix()));
+pub fn proof(visitor_id: []const u8, now: i64) u32 {
+    return proofAt(visitor_id, bucket(now));
 }
 
-pub fn validFormProof(visitor_id: []const u8, submitted: u32) bool {
+pub fn validProof(visitor_id: []const u8, submitted: u32, now: i64) bool {
     if (visitor_id.len == 0) return false;
-    const bucket = timeBucket(nowUnix());
-    return proofNumber(visitor_id, bucket) == submitted or
-        (bucket > 0 and proofNumber(visitor_id, bucket - 1) == submitted);
+    const b = bucket(now);
+    return proofAt(visitor_id, b) == submitted or
+        (b > 0 and proofAt(visitor_id, b - 1) == submitted);
 }
 
-fn nowUnix() i64 {
-    return std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
-}
-
-fn timeBucket(unix: i64) u64 {
+fn bucket(unix: i64) u64 {
     return @intCast(@divFloor(unix, proof_window_s));
 }
 
-fn proofNumber(visitor_id: []const u8, bucket: u64) u32 {
+fn proofAt(visitor_id: []const u8, b: u64) u32 {
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
     hasher.update(proof_salt);
     hasher.update(visitor_id);
-    hasher.update(std.mem.asBytes(&bucket));
+    hasher.update(std.mem.asBytes(&b));
     const digest = hasher.finalResult();
     return std.mem.readInt(u32, digest[0..4], .big);
 }

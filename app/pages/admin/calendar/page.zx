@@ -1,17 +1,17 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const now = booking.nowUnix();
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
     const anchor = if (ctx.request.query.get("week")) |w| week.parseDate(w) orelse now else now;
 
     // First visit after connecting iCloud: pull in every calendar of the account.
     var sync_failed = false;
-    if (!calendars.hasIcloudCalendars(ctx.arena) and (caldav.loadCredentials(ctx.arena) catch null) != null) {
-        calendars.syncIcloud(ctx.arena) catch |err| {
+    if (!calendars.hasIcloud(ctx.arena) and (caldav.credentials(ctx.arena) catch null) != null) {
+        calendars.syncIcloud(ctx.arena, ctx.io) catch |err| {
             zx.log.warn("admin: iCloud calendar sync failed: {any}", .{err});
             sync_failed = true;
         };
     }
 
-    var initial = try view.load(ctx.arena, week.weekStart(anchor, calendars.loadPrefs(ctx.arena).week_start), null, false);
+    var initial = try view.load(ctx.arena, now, week.start(anchor, calendars.Prefs.load(ctx.arena).week_start), false);
     if (sync_failed) initial.err = "Couldn't list your iCloud calendars. Check the CalDAV credentials in Settings.";
 
     return (
@@ -29,7 +29,7 @@ pub fn WeekView(ctx: *zx.ComponentCtx(struct { initial: WeekState })) zx.Compone
     const syncing = state.sync != .idle;
     if (comptime zx.platform.role == .client) {
         syncUrl(state.href);
-        background.run(cal, state);
+        background.run(ctx.io, cal, state);
     }
     const flash: ?ui.Flash = if (state.err.len > 0) .{ .kind = .err, .text = state.err } else null;
 
@@ -205,6 +205,13 @@ fn isActivation(e: *zx.client.Event.Stateful) bool {
     return std.mem.eql(u8, key, "Enter") or std.mem.eql(u8, key, " ");
 }
 
+fn refresh(e: *zx.client.Event.Stateful) void {
+    const cal = e.state(WeekState);
+    var next = cal.get();
+    next.sync = .forced;
+    cal.set(next);
+}
+
 // Loads the rows when `openAlloc` just opened the panel, otherwise closes it.
 fn toggleAlloc(e: *zx.server.Event.Stateful) void {
     const cal = e.state(WeekState);
@@ -215,45 +222,46 @@ fn toggleAlloc(e: *zx.server.Event.Stateful) void {
         return cal.set(next);
     }
     next.alloc_loading = false;
-    next.alloc = view.allocation(e.inner.arena, next.start) catch |err| blk: {
+    next.alloc = view.allocation(e.inner.arena, timestamp(e), next.start) catch |err| blk: {
         zx.log.err("admin: loading time allocation failed: {any}", .{err});
         break :blk &.{};
     };
     cal.set(next);
 }
 
-fn refresh(e: *zx.client.Event.Stateful) void {
-    const cal = e.state(WeekState);
-    var next = cal.get();
-    next.sync = .forced;
-    cal.set(next);
-}
-
-// `e.state()` hands out slots in call order, so take the handle once.
 fn goPrev(e: *zx.server.Event.Stateful) void {
-    const cal = e.state(WeekState);
-    show(e, cal, cal.get().start - 7 * view.day_s);
+    step(e, -1);
 }
 
 fn goNext(e: *zx.server.Event.Stateful) void {
-    const cal = e.state(WeekState);
-    show(e, cal, cal.get().start + 7 * view.day_s);
+    step(e, 1);
 }
 
 fn goToday(e: *zx.server.Event.Stateful) void {
-    const first = calendars.loadPrefs(e.inner.arena).week_start;
-    show(e, e.state(WeekState), week.weekStart(booking.nowUnix(), first));
+    const now = timestamp(e);
+    const first = calendars.Prefs.load(e.inner.arena).week_start;
+    show(e, e.state(WeekState), week.start(now, first), now);
 }
 
-fn show(e: *zx.server.Event.Stateful, cal: anytype, start: i64) void {
-    var cur = cal.get();
-    const next = view.load(e.inner.arena, start, null, cur.alloc_open) catch |err| {
+fn step(e: *zx.server.Event.Stateful, weeks: i64) void {
+    const cal = e.state(WeekState);
+    show(e, cal, cal.get().start + weeks * 7 * view.day_s, timestamp(e));
+}
+
+// Takes the handle from the caller: `e.state()` hands out slots in call order.
+fn show(e: *zx.server.Event.Stateful, cal: zx.StateHandle(WeekState), start: i64, now: i64) void {
+    const next = view.load(e.inner.arena, now, start, cal.get().alloc_open) catch |err| {
         zx.log.err("admin: loading calendar week failed: {any}", .{err});
+        var cur = cal.get();
         cur.loading = false;
         cur.err = "Couldn't load that week. Try again.";
         return cal.set(cur);
     };
     cal.set(next);
+}
+
+fn timestamp(e: *zx.server.Event.Stateful) i64 {
+    return std.Io.Timestamp.now(e.inner.io, .real).toSeconds();
 }
 
 // Replacing rather than pushing keeps Back leaving the calendar.
@@ -272,26 +280,67 @@ fn syncUrl(href: []const u8) void {
     history.call(void, "replaceState", .{ null, js.string(""), js.string(href) }) catch {};
 }
 
-// Refetches a week shown from cache. A plain fetch rather than a server event:
-// an event's response replaces the whole state, so a slow one would jump back
-// from a week navigated to meanwhile. The result only applies to its own week.
+// Calendars sync on the worker queue. A stale or refreshed week asks for a sync
+// once (`sync=1`/`force=1`), then polls until every copy is newer than that
+// request. Plain fetches rather than server events: an event's response
+// replaces the whole state, so a slow one would jump back from a week navigated
+// to meanwhile. A result only applies to its own week.
 const background = struct {
+    var io: std.Io = undefined;
     var target: ?*zx.State(WeekState) = null;
     var pending: ?i64 = null;
+    var polls: u8 = 0;
+    var url_buf: [128]u8 = undefined;
+    var url_len: usize = 0;
 
-    fn run(cal: *zx.State(WeekState), state: WeekState) void {
+    const poll_ms = 2500;
+    const max_polls = 24;
+
+    fn run(component_io: std.Io, cal: *zx.State(WeekState), state: WeekState) void {
+        io = component_io;
         target = cal;
-        if (state.sync == .idle or pending == state.start) return;
+        if (pending == state.start) return;
+        switch (state.sync) {
+            .idle => {},
+            .stale, .forced => {
+                polls = 0;
+                if (!setUrl(state, "{s}", .{if (state.sync == .forced) "&force=1" else "&sync=1"})) return;
+                fetch();
+            },
+            .waiting => wait(state),
+        }
+    }
+
+    fn wait(state: WeekState) void {
+        if (!setUrl(state, "&since={d}", .{state.since})) return;
+        _ = zx.client.setTimeout(poll, .fromMilliseconds(poll_ms));
+    }
+
+    fn setUrl(state: WeekState, comptime extra: []const u8, args: anytype) bool {
+        const alloc_flag = if (state.alloc_open) "&alloc=1" else "";
+        const url = std.fmt.bufPrint(&url_buf, "/admin/calendar/week?start={d}" ++ extra ++ "{s}", .{state.start} ++ args ++ .{alloc_flag}) catch return false;
+        url_len = url.len;
         pending = state.start;
-        var buf: [80]u8 = undefined;
-        const url = std.fmt.bufPrint(&buf, "/admin/calendar/week?start={d}{s}{s}", .{
-            state.start,
-            if (state.sync == .forced) "&force=1" else "",
-            if (state.alloc_open) "&alloc=1" else "",
-        }) catch return;
-        var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = zx.allocator };
+        return true;
+    }
+
+    fn poll() void {
+        const cal = target orelse return;
+        polls += 1;
+        if (polls > max_polls) {
+            var cur = cal.get();
+            pending = null;
+            cur.sync = .idle;
+            cur.err = "Your calendars are taking a while to sync. Showing what's saved.";
+            return cal.set(cur);
+        }
+        fetch();
+    }
+
+    fn fetch() void {
+        var client: zx.http.Client = .{ .io = io, .allocator = zx.allocator };
         defer client.deinit();
-        client.fetchThen(.{ .url = url }, {}, onLoad);
+        client.fetchThen(.{ .url = url_buf[0..url_len] }, {}, onLoad);
     }
 
     fn onLoad(_: void, result: zx.http.Client.Error!zx.http.Client.Result) void {
@@ -316,6 +365,8 @@ const background = struct {
             next.alloc_loading = cur.alloc_loading;
             next.alloc = cur.alloc;
         }
+        // Scheduled here too: an unchanged state may not re-render.
+        if (next.sync == .waiting) wait(next);
         cal.set(next);
     }
 
@@ -338,6 +389,5 @@ const view = @import("view.zig");
 const slots = @import("../../schedule/slots.zig");
 const week = @import("../../schedule/week.zig");
 const caldav = @import("../../schedule/caldav.zig");
-const booking = @import("../../schedule/booking.zig");
 const calendars = @import("../../schedule/calendars.zig");
 const WeekState = view.WeekState;

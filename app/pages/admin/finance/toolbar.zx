@@ -1,0 +1,126 @@
+pub const messages = .{
+    .synced_no_cash = "Synced holdings, but Flex had no Cash Report / Equity Summary - add both in Client Portal so cash is included.",
+    .not_configured = "Add IBKR Flex credentials under Settings first.",
+    .ibkr = "IBKR rejected the Flex request. Check token and query ID.",
+    .pending = "IBKR is still generating the report. Sync again in a few seconds.",
+    .empty = "Flex report had no accounts. Confirm the query covers your sub-accounts.",
+    .failed = "Something went wrong. Check the server logs.",
+};
+
+const State = struct {
+    flash: ?ui.Flash = null,
+    base: []const u8 = "",
+    reload_to: []const u8 = "",
+    // The button shows a check until the reload lands.
+    done: bool = false,
+};
+
+const Props = struct { page: ui.FinancePage, needs_ibkr: bool = false, flash: ?ui.Flash };
+
+pub fn Toolbar(ctx: *zx.ComponentCtx(Props)) zx.Component {
+    const accounts = ctx.props.page == .accounts;
+    const toolbar = ctx.state(State, .{
+        .flash = ctx.props.flash,
+        .base = if (accounts) "/admin/finance/accounts" else "/admin/finance",
+    });
+    if (comptime zx.platform.role == .client) reload.target = toolbar;
+    const sync = ctx.action(syncIbkr, .{ .on_settle = reload.schedule });
+    const alloc = ctx.allocator;
+    const state = toolbar.get();
+
+    return (
+        <div @allocator={alloc}>
+            <Header
+                title={if (accounts) "Accounts" else "Portfolio"}
+                current={ctx.props.page}
+                lead={(
+                    <form action={sync} class="adm-inline">
+                        <button
+                            class={buttonClass(sync.pending, state.done)}
+                            type="submit"
+                            disabled={sync.pending or state.done}
+                            aria-busy={if (sync.pending) "true" else "false"}
+                            title="Refresh IBKR balances and holdings"
+                            aria-label={if (state.done) "IBKR synced" else "Refresh IBKR balances and holdings"}
+                        >
+                            {ui.icon(alloc, if (state.done) .check else .refresh)}
+                        </button>
+                    </form>
+                )}
+            >
+                {if (accounts) "Balances in native currency. Stale accounts stay out of totals." else "Net worth in USD from the last saved snapshot."}
+            </Header>
+            <ui.FlashBanner flash={state.flash} />
+
+            {if (ctx.props.needs_ibkr) (
+                <div class="adm-card adm-card-pad adm-card-gap">
+                    <p class="adm-hint">
+                        Connect read-only IBKR Flex in <a href="/admin/settings">Settings</a> to pull brokerage accounts. Bank, deposits, and physical assets are added under <a href="/admin/finance/accounts">Accounts</a>.
+                    </p>
+                </div>
+            )}
+        </div>
+    );
+}
+
+fn buttonClass(pending: bool, done: bool) []const u8 {
+    if (pending) return "adm-btn adm-btn-ghost adm-btn-icon adm-btn-busy";
+    if (done) return "adm-btn adm-btn-ghost adm-btn-icon adm-btn-done";
+    return "adm-btn adm-btn-ghost adm-btn-icon";
+}
+
+fn syncIbkr(a: *zx.server.Action.Stateful) void {
+    const toolbar = a.state(State);
+    const base = toolbar.get().base;
+    const arena = a.inner.arena;
+
+    finance.fx.refresh(arena, a.inner.io);
+    const result = finance.ibkr.sync(arena, a.inner.io) catch |err| {
+        const msg: []const u8 = switch (err) {
+            error.NotConfigured => messages.not_configured,
+            error.SendFailed, error.StatementFailed => messages.ibkr,
+            error.StatementPending => messages.pending,
+            error.EmptyReport => messages.empty,
+            else => blk: {
+                zx.log.err("admin: finance sync failed: {any}", .{err});
+                break :blk messages.failed;
+            },
+        };
+        return toolbar.set(.{ .flash = .{ .text = msg, .kind = .err }, .base = base });
+    };
+    shared.changed();
+
+    if (!result.saw_cash_report and !result.saw_equity_summary) return toolbar.set(.{
+        .flash = .{ .text = messages.synced_no_cash, .kind = .ok },
+        .base = base,
+        .reload_to = a.fmt("{s}?ok=synced_no_cash", .{base}) catch base,
+    });
+    toolbar.set(.{ .base = base, .reload_to = base, .done = true });
+}
+
+const reload = struct {
+    var target: ?*zx.State(State) = null;
+
+    const delay_ms = 700;
+
+    fn schedule(outcome: zx.ActionHandle.Outcome) void {
+        if (outcome != .ok) return;
+        _ = zx.client.setTimeout(run, .fromMilliseconds(delay_ms));
+    }
+
+    fn run() void {
+        if (comptime zx.platform.role != .client) return;
+        const to = (target orelse return).get().reload_to;
+        if (to.len == 0) return;
+        const js = zx.client.js;
+        const location = js.global.get(js.Object, "location") catch return;
+        defer location.deinit();
+        location.call(void, "replace", .{js.string(to)}) catch {};
+    }
+};
+
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const finance = @import("../../finance.zig");
+const shared = @import("shared.zig");
+const Header = @import("header.zx").Header;

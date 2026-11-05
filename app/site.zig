@@ -1,3 +1,6 @@
+const std = @import("std");
+const zx = @import("zx");
+
 pub const url = "https://nurulhudaapon.com";
 
 // The canonical origin, except when served on this machine (`zig build dev`,
@@ -33,6 +36,3 @@ test isLoopback {
     try std.testing.expect(!isLoopback("localhost:"));
     try std.testing.expect(!isLoopback("127.0.0.1.nip.io"));
 }
-
-const std = @import("std");
-const zx = @import("zx");

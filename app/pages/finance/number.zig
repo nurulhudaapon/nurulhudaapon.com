@@ -1,5 +1,7 @@
 // Kept free of `zx` so it unit-tests standalone.
 
+const std = @import("std");
+
 pub const Grouping = enum {
     // 1,234,567
     western,
@@ -29,8 +31,7 @@ pub fn groupDigits(arena: std.mem.Allocator, n: u64, grouping: Grouping) []const
 }
 
 test groupDigits {
-    const arena = std.testing.allocator;
-    var state: std.heap.ArenaAllocator = .init(arena);
+    var state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer state.deinit();
     const a = state.allocator();
     try std.testing.expectEqualStrings("0", groupDigits(a, 0, .western));
@@ -41,5 +42,3 @@ test groupDigits {
     try std.testing.expectEqualStrings("12,34,567", groupDigits(a, 1234567, .south_asian));
     try std.testing.expectEqualStrings("1,23,45,678", groupDigits(a, 12345678, .south_asian));
 }
-
-const std = @import("std");

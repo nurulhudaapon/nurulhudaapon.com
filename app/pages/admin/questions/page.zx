@@ -9,7 +9,8 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         return ui.redirect(ctx, try ctx.fmt("{s}&{s}", .{ back, flag }));
     }
 
-    const questions = try db.listFiltered(ctx.arena, filter);
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
+    const questions = try db.list(ctx.arena, filter);
     const tabs = try ui.filterTabs(ctx.arena, "/admin/questions", filter, db.counts(ctx.arena));
     const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "answered", "Answer saved. The asker will see it next time they visit /ask." },
@@ -30,7 +31,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             ) else (
                 <div class="adm-card adm-list">
                     {for (questions) |q| (
-                        <QuestionItem q={q} action={back} />
+                        <QuestionItem q={q} now={now} action={back} />
                     )}
                 </div>
             )}
@@ -38,10 +39,14 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     );
 }
 
-fn QuestionItem(allocator: zx.Allocator, props: struct { q: db.Question, action: []const u8 }) zx.Component {
+fn QuestionItem(allocator: zx.Allocator, props: struct { q: db.Question, now: i64, action: []const u8 }) zx.Component {
     const q = props.q;
-    const status_class = if (q.answer == null) "adm-badge adm-badge-accent" else if (q.seen_at != null) "adm-badge adm-badge-ok" else "adm-badge";
-    const status = if (q.answer == null) "Unanswered" else if (q.seen_at != null) "Seen" else "Answered, not seen yet";
+    const class: []const u8, const status: []const u8 = if (q.answer == null)
+        .{ "adm-badge adm-badge-accent", "Unanswered" }
+    else if (q.seen_at != null)
+        .{ "adm-badge adm-badge-ok", "Seen" }
+    else
+        .{ "adm-badge", "Answered, not seen yet" };
 
     return (
         <article @{allocator} class="adm-item">
@@ -49,11 +54,11 @@ fn QuestionItem(allocator: zx.Allocator, props: struct { q: db.Question, action:
                 <div class="adm-item-body">
                     <p class="adm-item-title">{q.question}</p>
                     <div class="adm-meta">
-                        <span>{format.ago(allocator, q.created_at)}</span>
+                        <span>{format.ago(allocator, props.now, q.created_at)}</span>
                         <span>Visitor {q.visitor_id}</span>
                     </div>
                 </div>
-                <span class={status_class}>{status}</span>
+                <span class={class}>{status}</span>
             </div>
             {if (q.answer) |answer| (
                 <div>

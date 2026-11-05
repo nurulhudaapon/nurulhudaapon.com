@@ -1,5 +1,5 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const sources = try posts.listSources(ctx.arena);
+    const sources = try posts.sources(ctx.arena, ctx.io);
 
     return (
         <div @allocator={ctx.arena} class="adm-page-fill">
@@ -24,7 +24,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                 <td>
                                     <span class={if (p.draft) "adm-badge" else "adm-badge adm-badge-ok"}>{if (p.draft) "Draft" else "Published"}</span>
                                 </td>
-                                <td class="adm-hide-sm">{if (p.published_at.len > 0) p.published_at else "-"}</td>
+                                <td class="adm-hide-sm">{if (p.date.len > 0) p.date else "-"}</td>
                                 <td class="adm-hide-sm">{p.read_minutes} min</td>
                             </tr>
                         )}

@@ -12,7 +12,7 @@ pub fn handle(ctx: zx.RouteContext) !void {
         return ctx.response.text("invalid_request: response_type=code, client_id, and redirect_uri are required");
     }
 
-    const allowed = store.clientAllowsRedirect(ctx.arena, client_id, redirect_uri) catch false;
+    const allowed = store.allowsRedirect(ctx.arena, client_id, redirect_uri) catch false;
     if (!allowed) {
         ctx.response.setStatus(.bad_request);
         return ctx.response.text("invalid_request: unknown client_id or redirect_uri not registered");
@@ -36,14 +36,14 @@ pub fn handle(ctx: zx.RouteContext) !void {
             first = false;
             try aw.writer.writeAll(key);
             try aw.writer.writeAll("=");
-            try appendQueryEscaped(&aw.writer, val);
+            try writeEscaped(&aw.writer, val);
         }
     }
     ctx.response.headers.append("Cache-Control", "no-store");
     ctx.response.redirect(aw.written(), .found);
 }
 
-fn appendQueryEscaped(w: *std.Io.Writer, value: []const u8) !void {
+fn writeEscaped(w: *std.Io.Writer, value: []const u8) !void {
     for (value) |c| switch (c) {
         'A'...'Z', 'a'...'z', '0'...'9', '-', '_', '.', '~' => try w.writeByte(c),
         ' ' => try w.writeAll("%20"),

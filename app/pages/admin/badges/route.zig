@@ -5,7 +5,7 @@ pub fn GET(ctx: zx.RouteContext) !void {
         \\SELECT
         \\  COALESCE((SELECT SUM(answer IS NULL) FROM questions WHERE deleted = 0), 0) AS unanswered,
         \\  COALESCE((SELECT SUM(cancelled_at IS NULL AND ends_at >= ?1) FROM bookings), 0) AS upcoming
-    , .{booking.nowUnix()}) orelse Counts{};
+    , .{std.Io.Timestamp.now(ctx.io, .real).toSeconds()}) orelse Counts{};
 
     var aw = std.Io.Writer.Allocating.init(ctx.arena);
     try zx.util.zxon.serialize(counts, &aw.writer, .{});
@@ -17,4 +17,3 @@ pub const options: zx.RouteOptions = .{ .rendering = .request };
 
 const std = @import("std");
 const zx = @import("zx");
-const booking = @import("../../schedule/booking.zig");

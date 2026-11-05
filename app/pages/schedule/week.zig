@@ -5,7 +5,7 @@ const Interval = slots.Interval;
 const day_s = std.time.s_per_day;
 const offset = slots.config.utc_offset_s;
 
-pub fn weekStart(unix: i64, first: slots.Weekday) i64 {
+pub fn start(unix: i64, first: slots.Weekday) i64 {
     const local_day = @divFloor(unix + offset, day_s);
     // 1970-01-01 was a Thursday.
     const back = @mod(local_day + 4 - @as(i64, @backingInt(first)), 7);
@@ -112,15 +112,15 @@ pub fn formatDuration(allocator: std.mem.Allocator, seconds: i64) ![]const u8 {
 const sat_oct24_midnight_dhaka: i64 = 1792778400;
 const sun_oct18_midnight_dhaka: i64 = sat_oct24_midnight_dhaka - 6 * day_s;
 
-test weekStart {
+test start {
     const thu_oct22_10am_dhaka = 1792641600;
-    try std.testing.expectEqual(sun_oct18_midnight_dhaka, weekStart(thu_oct22_10am_dhaka, .sun));
-    try std.testing.expectEqual(sun_oct18_midnight_dhaka, weekStart(sun_oct18_midnight_dhaka, .sun));
-    try std.testing.expectEqual(sun_oct18_midnight_dhaka, weekStart(sun_oct18_midnight_dhaka + 7 * day_s - 1, .sun));
-    try std.testing.expectEqual(sun_oct18_midnight_dhaka + 7 * day_s, weekStart(sun_oct18_midnight_dhaka + 7 * day_s, .sun));
-    try std.testing.expectEqual(sun_oct18_midnight_dhaka + day_s, weekStart(thu_oct22_10am_dhaka, .mon));
-    try std.testing.expectEqual(sun_oct18_midnight_dhaka - day_s, weekStart(thu_oct22_10am_dhaka, .sat));
-    try std.testing.expectEqual(sun_oct18_midnight_dhaka - 6 * day_s, weekStart(sun_oct18_midnight_dhaka, .mon));
+    try std.testing.expectEqual(sun_oct18_midnight_dhaka, start(thu_oct22_10am_dhaka, .sun));
+    try std.testing.expectEqual(sun_oct18_midnight_dhaka, start(sun_oct18_midnight_dhaka, .sun));
+    try std.testing.expectEqual(sun_oct18_midnight_dhaka, start(sun_oct18_midnight_dhaka + 7 * day_s - 1, .sun));
+    try std.testing.expectEqual(sun_oct18_midnight_dhaka + 7 * day_s, start(sun_oct18_midnight_dhaka + 7 * day_s, .sun));
+    try std.testing.expectEqual(sun_oct18_midnight_dhaka + day_s, start(thu_oct22_10am_dhaka, .mon));
+    try std.testing.expectEqual(sun_oct18_midnight_dhaka - day_s, start(thu_oct22_10am_dhaka, .sat));
+    try std.testing.expectEqual(sun_oct18_midnight_dhaka - 6 * day_s, start(sun_oct18_midnight_dhaka, .mon));
 }
 
 test parseDate {

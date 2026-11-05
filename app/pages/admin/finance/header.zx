@@ -1,0 +1,34 @@
+pub fn Header(allocator: zx.Allocator, props: struct {
+    title: []const u8,
+    current: ui.FinancePage,
+    lead: ?zx.Component = null,
+    children: zx.Component,
+}) zx.Component {
+    return (
+        <div @allocator={allocator} class="adm-toolbar">
+            <div class="adm-toolbar-main">
+                <h1 class="adm-page-title">{props.title}</h1>
+                <div class="adm-page-actions">
+                    <div class="adm-finance-nav">
+                        <div class="adm-finance-lead">
+                            {if (props.lead) |lead| (<>{lead}</>)}
+                        </div>
+                        <ui.FinanceNav current={props.current} />
+                    </div>
+                </div>
+            </div>
+            <p class="adm-page-desc">{props.children}</p>
+        </div>
+    );
+}
+
+pub fn BackLink(allocator: zx.Allocator, props: struct { href: []const u8, label: []const u8 = "Back" }) zx.Component {
+    return (
+        <a @allocator={allocator} class="adm-btn adm-btn-ghost adm-btn-icon" href={props.href} title={props.label} aria-label={props.label}>
+            {ui.icon(allocator, .arrow_left)}
+        </a>
+    );
+}
+
+const zx = @import("zx");
+const ui = @import("../ui.zx");

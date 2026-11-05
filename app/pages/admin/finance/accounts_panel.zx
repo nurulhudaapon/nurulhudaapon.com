@@ -1,0 +1,190 @@
+// Not streamed or cached: the group islands' server event is only registered
+// when this panel renders.
+pub fn AccountsPanel(allocator: zx.Allocator) zx.Component {
+    const entries = finance.accounts.entries(allocator) catch &.{};
+
+    return (
+        <section @allocator={allocator} class="adm-card">
+            <div class="adm-section-head">
+                <span>Accounts</span>
+                <a class="adm-hint" href="/admin/finance/accounts">Manage</a>
+            </div>
+            {if (entries.len == 0) (
+                <div class="adm-card-pad"><ui.Empty text="No accounts with a balance." /></div>
+            ) else (
+                <div class="adm-accts" style="border:0;padding:0.25rem 1.25rem 1rem">
+                    {for (entries) |entry| (
+                        <>
+                            {switch (entry) {
+                                .group => |g| (
+                                    <AccountGroup
+                                        @client
+                                        name={g.name}
+                                        total={finance.format.money(allocator, g.value_usd, "USD")}
+                                        sub={groupSub(allocator, g)}
+                                    />
+                                ),
+                                .account => |a| (<AccountLine line={Line.from(allocator, a)} />),
+                            }}
+                        </>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+}
+
+const Line = struct {
+    href: []const u8,
+    name: []const u8,
+    detail: []const u8,
+    amount: []const u8,
+    sub: []const u8,
+    stale: bool,
+
+    fn from(arena: zx.Allocator, a: finance.accounts.Account) Line {
+        const stale = a.isStale();
+        return .{
+            .href = shared.accountHref(arena, a.id),
+            .name = a.name,
+            .detail = arena.print("{s} · {s} · {s}{s}", .{
+                if (a.institution.len > 0) a.institution else a.broker,
+                a.type_label,
+                a.asset_class,
+                if (stale) " · stale (excluded)" else "",
+            }) catch a.asset_class,
+            .amount = finance.format.money(arena, a.net_liquidation, a.currency),
+            .sub = accountSub(arena, a),
+            .stale = stale,
+        };
+    }
+};
+
+fn accountSub(arena: zx.Allocator, a: finance.accounts.Account) []const u8 {
+    const usd = std.ascii.eqlIgnoreCase(a.currency, "USD");
+    const value = finance.format.money(arena, a.value_usd, "USD");
+    if (a.isStale()) return if (usd) "excluded" else arena.print("{s} · excluded", .{value}) catch "excluded";
+    const pct = finance.format.pct(arena, a.weight_pct);
+    if (a.cash_usd > 0.005) {
+        const cash = finance.format.money(arena, a.cash, a.currency);
+        if (usd) return arena.print("cash {s} · {s}", .{ cash, pct }) catch pct;
+        return arena.print("cash {s} · {s} · {s}", .{ cash, value, pct }) catch pct;
+    }
+    if (usd) return pct;
+    return arena.print("{s} · {s}", .{ value, pct }) catch pct;
+}
+
+fn groupSub(arena: zx.Allocator, g: finance.accounts.Group) []const u8 {
+    const count = shared.accountCount(arena, g.account_count);
+    if (g.stale_count == g.account_count) return arena.print("{s} · excluded", .{count}) catch count;
+    return arena.print("{s} · {s}", .{ count, finance.format.pct(arena, g.weight_pct) }) catch count;
+}
+
+fn AccountLine(allocator: zx.Allocator, props: struct { line: Line }) zx.Component {
+    const line = props.line;
+    return (
+        <div @allocator={allocator} class={if (line.stale) "adm-acct adm-row-stale" else "adm-acct"}>
+            <div>
+                <a class="adm-table-title adm-link-plain" href={line.href}>{line.name}</a>
+                <span class="adm-table-sub">{line.detail}</span>
+            </div>
+            <div class="adm-acct-vals">
+                <span>{line.amount}</span>
+                <span class="adm-hint">{line.sub}</span>
+            </div>
+        </div>
+    );
+}
+
+const GroupState = struct {
+    name: []const u8 = "",
+    open: bool = false,
+    loading: bool = false,
+    loaded: bool = false,
+    failed: bool = false,
+    lines: []const Line = &.{},
+};
+
+pub fn AccountGroup(ctx: *zx.ComponentCtx(struct { name: []const u8, total: []const u8, sub: []const u8 })) zx.Component {
+    const group = ctx.state(GroupState, .{ .name = ctx.props.name });
+    const alloc = ctx.allocator;
+    const state = group.get();
+
+    return (
+        <div @allocator={alloc} class={if (state.open) "adm-acct-group adm-acct-group-open" else "adm-acct-group"}>
+            <button
+                type="button"
+                class="adm-acct adm-acct-toggle"
+                aria-expanded={if (state.open) "true" else "false"}
+                aria-busy={if (state.loading) "true" else "false"}
+                onpointerdown={ctx.bind(markLoading)}
+                onkeydown={ctx.bind(markLoadingKey)}
+                onclick={ctx.bind(toggle)}
+            >
+                <span class="adm-acct-main">
+                    <span class="adm-acct-name">
+                        <span class="adm-table-title">{ctx.props.name}</span>
+                        {ui.icon(alloc, if (state.loading) .refresh else .chevron_right)}
+                    </span>
+                    <span class="adm-table-sub">{if (state.failed) "Couldn't load accounts. Try again." else "Group"}</span>
+                </span>
+                <span class="adm-acct-vals">
+                    <span>{ctx.props.total}</span>
+                    <span class="adm-hint">{ctx.props.sub}</span>
+                </span>
+            </button>
+            {if (state.open) (
+                <div class="adm-acct-children">
+                    {for (state.lines) |line| (
+                        <AccountLine line={line} />
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// Spinner before the first load; the server event clears it. Only sets state:
+// disabling the button here would drop the click that follows.
+fn markLoading(e: *zx.client.Event.Stateful) void {
+    const group = e.state(GroupState);
+    var next = group.get();
+    if (next.loaded or next.loading) return;
+    next.loading = true;
+    group.set(next);
+}
+
+fn markLoadingKey(e: *zx.client.Event.Stateful) void {
+    if (shared.isActivationKey(e)) markLoading(e);
+}
+
+// Ziex keeps the handler bound on first render, so this one event loads the
+// accounts on the first click and only toggles after that.
+fn toggle(e: *zx.server.Event.Stateful) void {
+    const group = e.state(GroupState);
+    const arena = e.inner.arena;
+    var next = group.get();
+    next.loading = false;
+    if (next.loaded) {
+        next.open = !next.open;
+        return group.set(next);
+    }
+
+    const accounts = finance.accounts.listGroup(arena, next.name) catch |err| {
+        zx.log.err("admin: load account group failed: {any}", .{err});
+        next.failed = true;
+        return group.set(next);
+    };
+    const lines = arena.alloc(Line, accounts.len) catch {
+        next.failed = true;
+        return group.set(next);
+    };
+    for (accounts, lines) |a, *line| line.* = .from(arena, a);
+    group.set(.{ .name = next.name, .open = true, .loaded = true, .lines = lines });
+}
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const finance = @import("../../finance.zig");
+const shared = @import("shared.zig");

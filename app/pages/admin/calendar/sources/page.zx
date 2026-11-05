@@ -1,33 +1,35 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
     ctx.response.headers.append("Cache-Control", "no-store");
 
-    const rows = try sourceRows(ctx.arena, try calendars.list(ctx.arena));
-    const links = try linkRows(ctx.arena, try calendars.listLinks(ctx.arena));
-    const icloud_ready = (caldav.loadCredentials(ctx.arena) catch null) != null;
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
+    const rows = try sourceRows(ctx.arena, now, try calendars.list(ctx.arena));
+    const links = try linkRows(ctx.arena, now, try calendars.Link.list(ctx.arena));
+    const icloud_ready = (caldav.credentials(ctx.arena) catch null) != null;
 
     return (
         <div @allocator={ctx.arena}>
             <a class="adm-back" href="/admin/calendar">{ui.icon(ctx.arena, .arrow_left)} Calendar</a>
             <ui.PageHeader title="Calendars" description="Calendars shown on the admin calendar. Those set to block booking also count as busy time on /schedule; those in the feed are published through your subscription links." />
-            <PrefsCard @client prefs={calendars.loadPrefs(ctx.arena)} />
+            <PrefsCard @client prefs={calendars.Prefs.load(ctx.arena)} />
             <SourcesCard @client rows={rows} icloud_ready={icloud_ready} />
             <LinksCard @client links={links} />
         </div>
     );
 }
 
-const Tone = enum { none, ok, err };
+fn fail(card: anytype, err: anyerror) void {
+    var next = card.get();
+    next.flash = failure(err);
+    card.set(next);
+}
 
-fn bannerFlash(tone: Tone, msg: []const u8) ?ui.Flash {
-    return switch (tone) {
-        .none => null,
-        .ok => .{ .kind = .ok, .text = msg },
-        .err => .{ .kind = .err, .text = msg },
-    };
+fn failure(err: anyerror) ui.Flash {
+    return .{ .kind = .err, .text = errorText(err) };
 }
 
 fn errorText(err: anyerror) []const u8 {
     return switch (err) {
+        error.InvalidPrefs => "Refresh after must be between 1 and 1440 minutes.",
         error.NotConfigured => "Add your iCloud (CalDAV) credentials in Settings first.",
         error.InvalidUrl => "Calendar links must start with https://, http:// or webcal://.",
         error.InvalidFeed => "That link didn't return an iCal calendar. Check it opens as a .ics file.",
@@ -43,8 +45,7 @@ fn errorText(err: anyerror) []const u8 {
 
 const PrefsState = struct {
     prefs: calendars.Prefs,
-    tone: Tone = .none,
-    msg: []const u8 = "",
+    flash: ?ui.Flash = null,
 };
 
 pub fn PrefsCard(ctx: *zx.ComponentCtx(struct { prefs: calendars.Prefs })) zx.Component {
@@ -64,7 +65,7 @@ pub fn PrefsCard(ctx: *zx.ComponentCtx(struct { prefs: calendars.Prefs })) zx.Co
                     <div class="adm-inline-fields" style="align-items:flex-end">
                         <div class="adm-field">
                             <label class="adm-label" for="stale_minutes">Refresh after (minutes)</label>
-                            <input class="adm-input" id="stale_minutes" name="stale_minutes" type="number" min="1" max="1440" required value={alloc.print("{d}", .{state.prefs.stale_minutes}) catch ""} />
+                            <input class="adm-input" id="stale_minutes" name="stale_minutes" type="number" min="1" max="1440" required value={state.prefs.stale_minutes} />
                         </div>
                         <div class="adm-field">
                             <label class="adm-label" for="week_start">Week starts on</label>
@@ -78,8 +79,8 @@ pub fn PrefsCard(ctx: *zx.ComponentCtx(struct { prefs: calendars.Prefs })) zx.Co
                             {if (save_action.pending) "Saving…" else "Save"}
                         </button>
                     </div>
-                    {if (state.tone != .none) (
-                        <span class={if (state.tone == .ok) "adm-hint" else "adm-hint adm-text-err"} role="status">{state.msg}</span>
+                    {if (state.flash) |f| (
+                        <span class={if (f.kind == .ok) "adm-hint" else "adm-hint adm-text-err"} role="status">{f.text}</span>
                     )}
                 </div>
             </form>
@@ -92,18 +93,12 @@ const PrefsInput = struct { stale_minutes: i64, week_start: []const u8 };
 fn savePrefs(a: *zx.server.Action.Stateful) void {
     const card = a.state(PrefsState);
     const input = a.data(PrefsInput);
-    var next = card.get();
     const prefs: calendars.Prefs = .{
         .stale_minutes = input.stale_minutes,
-        .week_start = std.meta.stringToEnum(slots.Weekday, input.week_start) orelse next.prefs.week_start,
+        .week_start = std.meta.stringToEnum(slots.Weekday, input.week_start) orelse card.get().prefs.week_start,
     };
-    calendars.savePrefs(a.inner.arena, prefs) catch |err| {
-        next.tone = .err;
-        next.msg = if (err == error.InvalidPrefs) "Refresh after must be between 1 and 1440 minutes." else errorText(err);
-        return card.set(next);
-    };
-    next = .{ .prefs = prefs, .tone = .ok, .msg = "Saved." };
-    card.set(next);
+    prefs.save(a.inner.arena) catch |err| return fail(card, err);
+    card.set(.{ .prefs = prefs, .flash = .{ .kind = .ok, .text = "Saved." } });
 }
 
 const Row = struct {
@@ -120,8 +115,7 @@ const Row = struct {
 // Bumping `add_key` clears the add form.
 const SourcesState = struct {
     rows: []const Row = &.{},
-    tone: Tone = .none,
-    msg: []const u8 = "",
+    flash: ?ui.Flash = null,
     add_key: u32 = 0,
     saved_id: i64 = 0,
 };
@@ -138,7 +132,7 @@ pub fn SourcesCard(ctx: *zx.ComponentCtx(struct { rows: []const Row, icloud_read
 
     return (
         <div @allocator={alloc}>
-            <ui.FlashBanner flash={bannerFlash(state.tone, state.msg)} />
+            <ui.FlashBanner flash={state.flash} />
 
             <section class="adm-card adm-settings adm-card-gap">
                 <div class="adm-settings-row">
@@ -196,7 +190,7 @@ pub fn SourcesCard(ctx: *zx.ComponentCtx(struct { rows: []const Row, icloud_read
                     <div class="adm-list">
                         {for (rows) |r| (
                             <form key={r.id} action={save_action} class="adm-cal-source" onchange={ctx.bind(autosave)}>
-                                <input type="hidden" name="id" value={alloc.print("{d}", .{r.id}) catch ""} />
+                                <input type="hidden" name="id" value={r.id} />
                                 <input class="adm-input adm-color" type="color" name="color" value={r.color} aria-label="Color" disabled={saving} />
                                 <div class="adm-cal-source-name">
                                     <input class="adm-input" name="name" value={r.name} maxlength="100" required aria-label="Name" disabled={saving} />
@@ -220,7 +214,7 @@ pub fn SourcesCard(ctx: *zx.ComponentCtx(struct { rows: []const Row, icloud_read
                                         type="button"
                                         title="Remove calendar"
                                         aria-label="Remove calendar"
-                                        value={alloc.print("{d}", .{r.id}) catch ""}
+                                        value={r.id}
                                         disabled={saving}
                                         onclick={ctx.bind(removeCalendar)}
                                     >{ui.icon(alloc, .trash)}</button>
@@ -236,29 +230,25 @@ pub fn SourcesCard(ctx: *zx.ComponentCtx(struct { rows: []const Row, icloud_read
     );
 }
 
-fn refreshed(arena: zx.Allocator, prev: SourcesState, tone: Tone, msg: []const u8) SourcesState {
+fn refreshed(arena: zx.Allocator, now: i64, prev: SourcesState, flash: ?ui.Flash) SourcesState {
     var next = prev;
-    next.tone = tone;
-    next.msg = msg;
+    next.flash = flash;
     next.saved_id = 0;
     const list = calendars.list(arena) catch |err| {
         zx.log.err("admin: listing calendars failed: {any}", .{err});
         return next;
     };
-    next.rows = sourceRows(arena, list) catch prev.rows;
+    next.rows = sourceRows(arena, now, list) catch prev.rows;
     return next;
 }
 
 fn syncCalendars(a: *zx.server.Action.Stateful) void {
     const card = a.state(SourcesState);
     const arena = a.inner.arena;
-    calendars.syncIcloud(arena) catch |err| {
-        var next = card.get();
-        next.tone = .err;
-        next.msg = errorText(err);
-        return card.set(next);
-    };
-    card.set(refreshed(arena, card.get(), .ok, "iCloud calendars synced."));
+    const io = a.inner.io;
+    calendars.syncIcloud(arena, io) catch |err| return fail(card, err);
+    _ = calendars.requestSync(arena, io, a.inner.response, true);
+    card.set(refreshed(arena, timestamp(io), card.get(), .{ .kind = .ok, .text = "iCloud calendars synced. Their events load in the background." }));
 }
 
 const AddInput = struct { url: []const u8, name: []const u8, color: []const u8 };
@@ -266,14 +256,11 @@ const AddInput = struct { url: []const u8, name: []const u8, color: []const u8 }
 fn addCalendar(a: *zx.server.Action.Stateful) void {
     const card = a.state(SourcesState);
     const arena = a.inner.arena;
+    const io = a.inner.io;
     const input = a.data(AddInput);
-    calendars.addFeed(arena, input.url, input.name, input.color) catch |err| {
-        var next = card.get();
-        next.tone = .err;
-        next.msg = errorText(err);
-        return card.set(next);
-    };
-    var next = refreshed(arena, card.get(), .ok, "Calendar added.");
+    calendars.addFeed(arena, io, input.url, input.name, input.color) catch |err| return fail(card, err);
+    _ = calendars.requestSync(arena, io, a.inner.response, true);
+    var next = refreshed(arena, timestamp(io), card.get(), .{ .kind = .ok, .text = "Calendar added. Its events load in the background." });
     next.add_key +%= 1;
     card.set(next);
 }
@@ -289,7 +276,6 @@ const SaveInput = struct {
 
 fn saveCalendar(a: *zx.server.Action.Stateful) void {
     const card = a.state(SourcesState);
-    const arena = a.inner.arena;
     const input = a.data(SaveInput);
     calendars.update(input.id, .{
         .name = input.name,
@@ -297,17 +283,13 @@ fn saveCalendar(a: *zx.server.Action.Stateful) void {
         .visible = input.visible,
         .blocks_booking = input.blocks_booking,
         .in_feed = input.in_feed,
-    }) catch |err| {
-        var next = card.get();
-        next.tone = .err;
-        next.msg = errorText(err);
-        return card.set(next);
-    };
-    var next = refreshed(arena, card.get(), .none, "");
+    }) catch |err| return fail(card, err);
+    var next = refreshed(a.inner.arena, timestamp(a.inner.io), card.get(), null);
     next.saved_id = input.id;
     card.set(next);
 }
 
+// `requestSubmit` rather than `submit` so the change goes through the form's action.
 fn autosave(e: *zx.client.Event.Stateful) void {
     const js = zx.client.js;
     const target = e.getEvent().ref.get(js.Object, "target") catch return;
@@ -319,18 +301,12 @@ fn autosave(e: *zx.client.Event.Stateful) void {
 
 fn removeCalendar(e: *zx.server.Event.Stateful) void {
     const card = e.state(SourcesState);
-    const arena = e.inner.arena;
     const id = std.fmt.parseInt(i64, e.value() orelse "", 10) catch return;
-    calendars.removeFeed(id) catch |err| {
-        var next = card.get();
-        next.tone = .err;
-        next.msg = errorText(err);
-        return card.set(next);
-    };
-    card.set(refreshed(arena, card.get(), .ok, "Calendar removed."));
+    calendars.removeFeed(id) catch |err| return fail(card, err);
+    card.set(refreshed(e.inner.arena, timestamp(e.inner.io), card.get(), .{ .kind = .ok, .text = "Calendar removed." }));
 }
 
-fn sourceRows(arena: zx.Allocator, sources: []const calendars.Source) ![]const Row {
+fn sourceRows(arena: zx.Allocator, now: i64, sources: []const calendars.Source) ![]const Row {
     const rows = try arena.alloc(Row, sources.len);
     for (rows, sources) |*row, s| row.* = .{
         .id = s.id,
@@ -343,7 +319,7 @@ fn sourceRows(arena: zx.Allocator, sources: []const calendars.Source) ![]const R
             },
             s.host(),
             if (s.synced_at != null) " · synced " else "",
-            if (s.synced_at) |at| format.ago(arena, at) else "",
+            if (s.synced_at) |at| format.ago(arena, now, at) else "",
         }),
         .visible = s.visible,
         .blocks_booking = s.blocks_booking,
@@ -361,8 +337,7 @@ const LinksState = struct {
     links: []const LinkRow = &.{},
     created: ?NewLink = null,
     copied: bool = false,
-    tone: Tone = .none,
-    msg: []const u8 = "",
+    flash: ?ui.Flash = null,
     form_key: u32 = 0,
 };
 
@@ -378,7 +353,7 @@ pub fn LinksCard(ctx: *zx.ComponentCtx(struct { links: []const LinkRow })) zx.Co
                 <span>Subscription links</span>
                 <span class="adm-hint">{state.links.len}</span>
             </div>
-            <ui.FlashBanner flash={bannerFlash(state.tone, state.msg)} />
+            <ui.FlashBanner flash={state.flash} />
             {if (state.created) |c| (
                 <div class="adm-settings-row adm-cal-new-link">
                     <div>
@@ -406,7 +381,7 @@ pub fn LinksCard(ctx: *zx.ComponentCtx(struct { links: []const LinkRow })) zx.Co
                     <button
                         class="adm-btn adm-btn-ghost adm-btn-danger"
                         type="button"
-                        value={alloc.print("{d}", .{l.id}) catch ""}
+                        value={l.id}
                         onclick={ctx.bind(revokeLink)}
                     >Revoke</button>
                 </div>
@@ -437,12 +412,12 @@ pub fn LinksCard(ctx: *zx.ComponentCtx(struct { links: []const LinkRow })) zx.Co
     );
 }
 
-fn reloadLinks(arena: zx.Allocator, prev: []const LinkRow) []const LinkRow {
-    const links = calendars.listLinks(arena) catch |err| {
+fn reloadLinks(arena: zx.Allocator, now: i64, prev: []const LinkRow) []const LinkRow {
+    const links = calendars.Link.list(arena) catch |err| {
         zx.log.err("admin: listing calendar links failed: {any}", .{err});
         return prev;
     };
-    return linkRows(arena, links) catch prev;
+    return linkRows(arena, now, links) catch prev;
 }
 
 const LinkInput = struct { label: []const u8, detail: []const u8 };
@@ -455,12 +430,11 @@ fn createLink(a: *zx.server.Action.Stateful) void {
     next.copied = false;
 
     const detail = std.meta.stringToEnum(calendars.Detail, input.detail) orelse .busy;
-    const token = calendars.createLink(arena, input.label, detail) catch |err| {
-        next.tone = .err;
-        next.msg = if (err == error.InvalidName)
-            "Give the link a name (up to 60 characters), like the device it's for."
+    const token = calendars.Link.create(arena, a.inner.io, input.label, detail) catch |err| {
+        next.flash = if (err == error.InvalidName)
+            .{ .kind = .err, .text = "Give the link a name (up to 60 characters), like the device it's for." }
         else
-            errorText(err);
+            failure(err);
         return card.set(next);
     };
     const url = arena.print("{s}/calendar/{s}.ics", .{ site.origin(a.inner.request), token }) catch return;
@@ -470,26 +444,19 @@ fn createLink(a: *zx.server.Action.Stateful) void {
         .webcal = arena.print("webcal{s}", .{url[scheme..]}) catch url,
         .detail = detail.label(),
     };
-    next.links = reloadLinks(arena, next.links);
-    next.tone = .none;
-    next.msg = "";
+    next.links = reloadLinks(arena, timestamp(a.inner.io), next.links);
+    next.flash = null;
     next.form_key +%= 1;
     card.set(next);
 }
 
 fn revokeLink(e: *zx.server.Event.Stateful) void {
     const card = e.state(LinksState);
-    const arena = e.inner.arena;
-    var next = card.get();
     const id = std.fmt.parseInt(i64, e.value() orelse "", 10) catch return;
-    calendars.revokeLink(id) catch |err| {
-        next.tone = .err;
-        next.msg = errorText(err);
-        return card.set(next);
-    };
-    next.links = reloadLinks(arena, next.links);
-    next.tone = .ok;
-    next.msg = "Link revoked. Anything subscribed to it stops updating.";
+    calendars.Link.revoke(id) catch |err| return fail(card, err);
+    var next = card.get();
+    next.links = reloadLinks(e.inner.arena, timestamp(e.inner.io), next.links);
+    next.flash = .{ .kind = .ok, .text = "Link revoked. Anything subscribed to it stops updating." };
     card.set(next);
 }
 
@@ -508,19 +475,23 @@ fn copyLink(e: *zx.client.Event.Stateful) void {
     card.set(next);
 }
 
-fn linkRows(arena: zx.Allocator, links: []const calendars.Link) ![]const LinkRow {
+fn linkRows(arena: zx.Allocator, now: i64, links: []const calendars.Link) ![]const LinkRow {
     const rows = try arena.alloc(LinkRow, links.len);
     for (rows, links) |*row, l| row.* = .{
         .id = l.id,
         .label = l.label,
         .meta = try arena.print("{s} · created {s} · {s}{s}", .{
             l.detail.label(),
-            format.ago(arena, l.created_at),
+            format.ago(arena, now, l.created_at),
             if (l.last_used_at != null) "last fetched " else "never fetched",
-            if (l.last_used_at) |at| format.ago(arena, at) else "",
+            if (l.last_used_at) |at| format.ago(arena, now, at) else "",
         }),
     };
     return rows;
+}
+
+fn timestamp(io: std.Io) i64 {
+    return std.Io.Timestamp.now(io, .real).toSeconds();
 }
 
 pub const options: zx.PageOptions = .{

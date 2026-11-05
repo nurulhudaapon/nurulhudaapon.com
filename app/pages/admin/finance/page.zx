@@ -1,19 +1,18 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    finance.recordHistory() catch |err| zx.log.warn("admin: finance history snapshot failed: {any}", .{err});
-    const ibkr_form = credentials.loadIbkrForm(ctx.arena);
-    const needs_ibkr = !ibkr_form.token_set or ibkr_form.query_id.len == 0;
+    finance.history.record() catch |err| zx.log.warn("admin: finance history snapshot failed: {any}", .{err});
+    const ibkr = credentials.IbkrForm.load(ctx.arena);
     const flash = ui.flashFrom(ctx.request.query, &.{
-        .{ "synced_no_cash", "Synced holdings, but Flex had no Cash Report / Equity Summary - add both in Client Portal so cash is included." },
-        .{ "not_configured", "Add IBKR Flex credentials under Settings first." },
-        .{ "ibkr", "IBKR rejected the Flex request. Check token and query ID." },
-        .{ "pending", "IBKR is still generating the report. Sync again in a few seconds." },
-        .{ "empty", "Flex report had no accounts. Confirm the query covers your sub-accounts." },
-        .{ "failed", "Something went wrong. Check the server logs." },
+        .{ "synced_no_cash", messages.synced_no_cash },
+        .{ "not_configured", messages.not_configured },
+        .{ "ibkr", messages.ibkr },
+        .{ "pending", messages.pending },
+        .{ "empty", messages.empty },
+        .{ "failed", messages.failed },
     });
 
     return (
         <div @allocator={ctx.arena}>
-            <Toolbar @client page={.portfolio} needs_ibkr={needs_ibkr} flash={flash} />
+            <Toolbar @client page={.portfolio} needs_ibkr={!ibkr.token_set or ibkr.query_id.len == 0} flash={flash} />
 
             <div
                 @async={.stream}
@@ -22,7 +21,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 <Kpis loading={false} @caching="15s:finance_kpis" />
             </div>
 
-            <AllocationCard @client allocations={finance.listAllocationActuals(ctx.arena) catch &.{}} />
+            <AllocationCard @client allocations={finance.allocations.actuals(ctx.arena) catch &.{}} />
 
             <div class="adm-split">
                 <AccountsPanel />
@@ -39,19 +38,18 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 }
 
 pub const options: zx.PageOptions = .{
-    .methods = &.{.GET, .POST},
+    .methods = &.{ .GET, .POST },
     .rendering = .streamed,
 };
 
 const zx = @import("zx");
-
 const ui = @import("../ui.zx");
 const credentials = @import("../../../db/credentials.zig");
-const finance = @import("../../finance/db.zig");
-
-const dashboard = @import("dashboard.zx");
-pub const Toolbar = dashboard.Toolbar;
-const Kpis = dashboard.Kpis;
-pub const AllocationCard = dashboard.AllocationCard;
-const AccountsPanel = dashboard.AccountsPanel;
-const HoldingsPanel = dashboard.HoldingsPanel;
+const finance = @import("../../finance.zig");
+const toolbar = @import("toolbar.zx");
+const messages = toolbar.messages;
+const Kpis = @import("kpis.zx").Kpis;
+const AccountsPanel = @import("accounts_panel.zx").AccountsPanel;
+const HoldingsPanel = @import("holdings_panel.zx").HoldingsPanel;
+pub const Toolbar = toolbar.Toolbar;
+pub const AllocationCard = @import("allocation_card.zx").AllocationCard;

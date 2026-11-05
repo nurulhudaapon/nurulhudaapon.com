@@ -1,7 +1,8 @@
 const std = @import("std");
 const zx = @import("zx");
 const slots = @import("slots.zig");
-const sources = @import("calendars.zig");
+
+const Header = zx.http.Header;
 
 pub const Credentials = struct {
     username: []const u8,
@@ -11,8 +12,8 @@ pub const Credentials = struct {
     meeting_url: ?[]const u8,
 };
 
-pub fn loadCredentials(allocator: std.mem.Allocator) !?Credentials {
-    const rows = try zx.db.rows(allocator, struct { cat: []const u8, val: []const u8 },
+pub fn credentials(arena: std.mem.Allocator) !?Credentials {
+    const rows = try zx.db.rows(arena, struct { cat: []const u8, val: []const u8 },
         \\SELECT cat, val FROM credentials WHERE cat LIKE 'caldav_%'
     , .{});
 
@@ -37,76 +38,150 @@ pub fn loadCredentials(allocator: std.mem.Allocator) !?Credentials {
     };
 }
 
-pub fn busy(allocator: std.mem.Allocator, creds: Credentials, range: slots.Interval, use_cache: bool) ![]const slots.Interval {
-    return sources.busy(allocator, creds, range, use_cache);
-}
+pub const Calendar = struct {
+    name: []const u8,
+    url: []const u8,
+    color: []const u8 = "",
+};
 
-pub fn invalidateBusy() void {
-    sources.invalidateBusy();
-}
+pub const Client = struct {
+    arena: std.mem.Allocator,
+    io: std.Io,
+    creds: Credentials,
 
-pub fn eventsIn(allocator: std.mem.Allocator, creds: Credentials, calendar_url: []const u8, range: slots.Interval) ![]const u8 {
-    var start_buf: [16]u8 = undefined;
-    var end_buf: [16]u8 = undefined;
-    const body = try allocator.print(
-        \\<?xml version="1.0" encoding="utf-8"?>
-        \\<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-        \\  <D:prop><C:calendar-data/></D:prop>
-        \\  <C:filter>
-        \\    <C:comp-filter name="VCALENDAR">
-        \\      <C:comp-filter name="VEVENT">
-        \\        <C:time-range start="{s}" end="{s}"/>
-        \\      </C:comp-filter>
-        \\    </C:comp-filter>
-        \\  </C:filter>
-        \\</C:calendar-query>
-    , .{ formatUtc(&start_buf, range.start), formatUtc(&end_buf, range.end) });
+    pub fn events(self: Client, calendar_url: []const u8, range: slots.Interval) ![]const u8 {
+        var start_buf: [16]u8 = undefined;
+        var end_buf: [16]u8 = undefined;
+        const body = try self.arena.print(
+            \\<?xml version="1.0" encoding="utf-8"?>
+            \\<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+            \\  <D:prop><C:calendar-data/></D:prop>
+            \\  <C:filter>
+            \\    <C:comp-filter name="VCALENDAR">
+            \\      <C:comp-filter name="VEVENT">
+            \\        <C:time-range start="{s}" end="{s}"/>
+            \\      </C:comp-filter>
+            \\    </C:comp-filter>
+            \\  </C:filter>
+            \\</C:calendar-query>
+        , .{ formatUtc(&start_buf, range.start), formatUtc(&end_buf, range.end) });
 
-    return send(allocator, creds, calendar_url, "REPORT", &.{
-        .{ .name = "Depth", .value = "1" },
-        .{ .name = "Content-Type", .value = "application/xml; charset=utf-8" },
-    }, body);
-}
-
-pub fn putEvent(allocator: std.mem.Allocator, creds: Credentials, resource: []const u8, ics: []const u8) !void {
-    _ = try send(allocator, creds, try eventUrl(allocator, creds, resource), "PUT", &.{
-        .{ .name = "Content-Type", .value = "text/calendar; charset=utf-8" },
-        .{ .name = "If-None-Match", .value = "*" },
-    }, ics);
-}
-
-pub fn getEvent(allocator: std.mem.Allocator, creds: Credentials, resource: []const u8) ![]const u8 {
-    return send(allocator, creds, try eventUrl(allocator, creds, resource), "GET", &.{}, null);
-}
-
-/// Calendar data for each resource, null where the calendar didn't return it.
-pub fn getEvents(allocator: std.mem.Allocator, creds: Credentials, resources: []const []const u8) ![]const ?[]const u8 {
-    const base = std.mem.trimEnd(u8, urlPath(creds.calendar_url), "/");
-    var body: std.Io.Writer.Allocating = .init(allocator);
-    try body.writer.writeAll(
-        \\<?xml version="1.0" encoding="utf-8"?>
-        \\<C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-        \\  <D:prop><C:calendar-data/></D:prop>
-    );
-    for (resources) |r| try body.writer.print("\n  <D:href>{s}/{s}.ics</D:href>", .{ base, r });
-    try body.writer.writeAll("\n</C:calendar-multiget>\n");
-
-    const xml = try send(allocator, creds, creds.calendar_url, "REPORT", &.{
-        .{ .name = "Depth", .value = "1" },
-        .{ .name = "Content-Type", .value = "application/xml; charset=utf-8" },
-    }, body.written());
-
-    const out = try allocator.alloc(?[]const u8, resources.len);
-    @memset(out, null);
-    for (resources, out) |r, *data| {
-        // A <response> starts with its href, so its data runs to the closing tag.
-        const name = try allocator.print("/{s}.ics<", .{r});
-        const at = std.mem.indexOf(u8, xml, name) orelse continue;
-        const end = std.mem.indexOfPos(u8, xml, at, "response>") orelse xml.len;
-        if (std.mem.indexOf(u8, xml[at..end], "BEGIN:VCALENDAR") != null) data.* = xml[at..end];
+        return self.send(calendar_url, "REPORT", &.{
+            .{ .name = "Depth", .value = "1" },
+            .{ .name = "Content-Type", .value = "application/xml; charset=utf-8" },
+        }, body);
     }
-    return out;
-}
+
+    pub fn put(self: Client, resource: []const u8, ics: []const u8) !void {
+        _ = try self.send(try self.eventUrl(resource), "PUT", &.{
+            .{ .name = "Content-Type", .value = "text/calendar; charset=utf-8" },
+            .{ .name = "If-None-Match", .value = "*" },
+        }, ics);
+    }
+
+    pub fn get(self: Client, resource: []const u8) ![]const u8 {
+        return self.send(try self.eventUrl(resource), "GET", &.{}, null);
+    }
+
+    // Null where the calendar didn't return the resource.
+    pub fn multiget(self: Client, resources: []const []const u8) ![]const ?[]const u8 {
+        const arena = self.arena;
+        const base = std.mem.trimEnd(u8, urlPath(self.creds.calendar_url), "/");
+        var body: std.Io.Writer.Allocating = .init(arena);
+        try body.writer.writeAll(
+            \\<?xml version="1.0" encoding="utf-8"?>
+            \\<C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+            \\  <D:prop><C:calendar-data/></D:prop>
+        );
+        for (resources) |r| try body.writer.print("\n  <D:href>{s}/{s}.ics</D:href>", .{ base, r });
+        try body.writer.writeAll("\n</C:calendar-multiget>\n");
+
+        const xml = try self.send(self.creds.calendar_url, "REPORT", &.{
+            .{ .name = "Depth", .value = "1" },
+            .{ .name = "Content-Type", .value = "application/xml; charset=utf-8" },
+        }, body.written());
+
+        const out = try arena.alloc(?[]const u8, resources.len);
+        @memset(out, null);
+        for (resources, out) |r, *data| {
+            // A <response> starts with its href, so its data runs to the closing tag.
+            const name = try arena.print("/{s}.ics<", .{r});
+            const at = std.mem.indexOf(u8, xml, name) orelse continue;
+            const end = std.mem.indexOfPos(u8, xml, at, "response>") orelse xml.len;
+            if (std.mem.indexOf(u8, xml[at..end], "BEGIN:VCALENDAR") != null) data.* = xml[at..end];
+        }
+        return out;
+    }
+
+    // Deleting the organizer's copy makes iCloud send the attendee a cancellation.
+    pub fn delete(self: Client, resource: []const u8) !void {
+        _ = try self.send(try self.eventUrl(resource), "DELETE", &.{}, null);
+    }
+
+    // Event calendars of the account: principal, then calendar home, then its calendars.
+    pub fn discover(self: Client, server: []const u8) ![]const Calendar {
+        const arena = self.arena;
+        const principal_xml = try self.propfind(server, "0", "<D:current-user-principal/>");
+        const principal = try resolve(arena, server, elementText(afterTag(principal_xml, "current-user-principal"), "href") orelse
+            return error.NoPrincipal);
+
+        const home_xml = try self.propfind(principal, "0", "<C:calendar-home-set/>");
+        const home = try resolve(arena, principal, elementText(afterTag(home_xml, "calendar-home-set"), "href") orelse
+            return error.NoCalendarHome);
+
+        const list_xml = try self.propfind(home, "1", "<D:displayname/><D:resourcetype/><C:supported-calendar-component-set/><A:calendar-color xmlns:A=\"http://apple.com/ns/ical/\"/>");
+        return parseCalendars(arena, home, list_xml);
+    }
+
+    fn eventUrl(self: Client, resource: []const u8) ![]const u8 {
+        return self.arena.print("{s}/{s}.ics", .{ std.mem.trimEnd(u8, self.creds.calendar_url, "/"), resource });
+    }
+
+    fn propfind(self: Client, url: []const u8, depth: []const u8, comptime props: []const u8) ![]const u8 {
+        return self.send(url, "PROPFIND", &.{
+            .{ .name = "Depth", .value = depth },
+            .{ .name = "Content-Type", .value = "application/xml; charset=utf-8" },
+        },
+            \\<?xml version="1.0" encoding="utf-8"?>
+            \\<D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop>
+        ++ props ++
+            \\</D:prop></D:propfind>
+        );
+    }
+
+    fn send(self: Client, url: []const u8, method: []const u8, extra_headers: []const Header, body: ?[]const u8) ![]const u8 {
+        const arena = self.arena;
+        const base_headers = [_]Header{
+            .{ .name = "Authorization", .value = try self.basicAuth() },
+            .{ .name = "User-Agent", .value = "nurulhudaapon.com" },
+        };
+        var client: zx.http.Client = .{ .io = self.io, .allocator = arena };
+        defer client.deinit();
+        const response = try client.fetch(.{
+            .url = url,
+            .method_name = method,
+            .headers = try std.mem.concat(arena, Header, &.{ &base_headers, extra_headers }),
+            .payload = body,
+            .timeout = .{ .duration = .{ .raw = .fromMilliseconds(15_000), .clock = .awake } },
+        });
+        defer response.deinit(arena);
+        if (response.status.class() != .success) {
+            if (response.status == .not_found) return error.NotFound;
+            zx.log.warn("schedule: {s} {s} failed status={d}", .{ method, url, @backingInt(response.status) });
+            return error.CalDavError;
+        }
+        return arena.dupe(u8, response.body);
+    }
+
+    fn basicAuth(self: Client) ![]const u8 {
+        const raw = try self.arena.print("{s}:{s}", .{ self.creds.username, self.creds.password });
+        const encoder = std.base64.standard.Encoder;
+        const out = try self.arena.alloc(u8, "Basic ".len + encoder.calcSize(raw.len));
+        @memcpy(out[0.."Basic ".len], "Basic ");
+        _ = encoder.encode(out["Basic ".len..], raw);
+        return out;
+    }
+};
 
 pub fn urlPath(url: []const u8) []const u8 {
     const scheme = std.mem.indexOf(u8, url, "://") orelse return url;
@@ -114,33 +189,9 @@ pub fn urlPath(url: []const u8) []const u8 {
     return url[slash..];
 }
 
-/// Deleting the organizer's copy makes iCloud send the attendee a cancellation.
-pub fn deleteEvent(allocator: std.mem.Allocator, creds: Credentials, resource: []const u8) !void {
-    _ = try send(allocator, creds, try eventUrl(allocator, creds, resource), "DELETE", &.{}, null);
-}
-
-fn eventUrl(allocator: std.mem.Allocator, creds: Credentials, resource: []const u8) ![]const u8 {
-    return allocator.print("{s}/{s}.ics", .{ std.mem.trimEnd(u8, creds.calendar_url, "/"), resource });
-}
-
-pub const Calendar = struct {
-    name: []const u8,
-    url: []const u8,
-    color: []const u8 = "",
-};
-
-/// Event calendars of the account: principal, then calendar home, then its calendars.
-pub fn discoverCalendars(allocator: std.mem.Allocator, creds: Credentials, server: []const u8) ![]const Calendar {
-    const principal_xml = try propfind(allocator, creds, server, "0", "<D:current-user-principal/>");
-    const principal = try resolve(allocator, server, elementText(afterTag(principal_xml, "current-user-principal"), "href") orelse
-        return error.NoPrincipal);
-
-    const home_xml = try propfind(allocator, creds, principal, "0", "<C:calendar-home-set/>");
-    const home = try resolve(allocator, principal, elementText(afterTag(home_xml, "calendar-home-set"), "href") orelse
-        return error.NoCalendarHome);
-
-    const list_xml = try propfind(allocator, creds, home, "1", "<D:displayname/><D:resourcetype/><C:supported-calendar-component-set/><A:calendar-color xmlns:A=\"http://apple.com/ns/ical/\"/>");
-    return parseCalendars(allocator, home, list_xml);
+// iCloud hands out the same calendar under different hosts (caldav. vs pNN-caldav.).
+pub fn sameCalendar(a: []const u8, b: []const u8) bool {
+    return std.mem.eql(u8, std.mem.trimEnd(u8, urlPath(a), "/"), std.mem.trimEnd(u8, urlPath(b), "/"));
 }
 
 fn parseCalendars(allocator: std.mem.Allocator, home: []const u8, xml: []const u8) ![]const Calendar {
@@ -166,18 +217,6 @@ fn hexColor(raw: []const u8) []const u8 {
     return raw[0..7];
 }
 
-fn propfind(allocator: std.mem.Allocator, creds: Credentials, url: []const u8, depth: []const u8, comptime props: []const u8) ![]const u8 {
-    return send(allocator, creds, url, "PROPFIND", &.{
-        .{ .name = "Depth", .value = depth },
-        .{ .name = "Content-Type", .value = "application/xml; charset=utf-8" },
-    },
-        \\<?xml version="1.0" encoding="utf-8"?>
-        \\<D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop>
-    ++ props ++
-        \\</D:prop></D:propfind>
-    );
-}
-
 fn resolve(allocator: std.mem.Allocator, base: []const u8, href: []const u8) ![]const u8 {
     if (std.mem.indexOf(u8, href, "://") != null) return href;
     const path_at = base.len - urlPath(base).len;
@@ -189,7 +228,7 @@ fn afterTag(xml: []const u8, name: []const u8) []const u8 {
     return xml[at + name.len ..];
 }
 
-/// Text of the first `<name>` or `<prefix:name>` element, "" when self-closing.
+// Text of the first `<name>` or `<prefix:name>` element, "" when self-closing.
 fn elementText(xml: []const u8, name: []const u8) ?[]const u8 {
     var from: usize = 0;
     while (std.mem.indexOfPos(u8, xml, from, name)) |at| {
@@ -232,47 +271,6 @@ test parseCalendars {
         "current-user-principal",
     ), "href").?);
     try std.testing.expectEqualStrings("https://p52-caldav.icloud.com:443/1/", try resolve(arena.allocator(), "https://caldav.icloud.com/", "https://p52-caldav.icloud.com:443/1/"));
-}
-
-const Header = zx.http.Header;
-
-fn send(
-    allocator: std.mem.Allocator,
-    creds: Credentials,
-    url: []const u8,
-    method: []const u8,
-    extra_headers: []const Header,
-    body: ?[]const u8,
-) ![]const u8 {
-    const base_headers = [_]Header{
-        .{ .name = "Authorization", .value = try basicAuth(allocator, creds) },
-        .{ .name = "User-Agent", .value = "nurulhudaapon.com" },
-    };
-    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = allocator };
-    defer client.deinit();
-    const response = try client.fetch(.{
-        .url = url,
-        .method_name = method,
-        .headers = try std.mem.concat(allocator, Header, &.{ &base_headers, extra_headers }),
-        .payload = body,
-        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(15_000), .clock = .awake } },
-    });
-    defer response.deinit(allocator);
-    if (response.status.class() != .success) {
-        if (response.status == .not_found) return error.NotFound;
-        zx.log.warn("schedule: {s} {s} failed status={d}", .{ method, url, @intFromEnum(response.status) });
-        return error.CalDavError;
-    }
-    return allocator.dupe(u8, response.body);
-}
-
-fn basicAuth(allocator: std.mem.Allocator, creds: Credentials) ![]const u8 {
-    const raw = try allocator.print("{s}:{s}", .{ creds.username, creds.password });
-    const encoder = std.base64.standard.Encoder;
-    const out = try allocator.alloc(u8, "Basic ".len + encoder.calcSize(raw.len));
-    @memcpy(out[0.."Basic ".len], "Basic ");
-    _ = encoder.encode(out["Basic ".len..], raw);
-    return out;
 }
 
 fn formatUtc(buf: *[16]u8, unix: i64) []const u8 {

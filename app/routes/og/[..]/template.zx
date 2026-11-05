@@ -1,25 +1,23 @@
-pub const OgKind = enum { site, blog };
-
-pub const OgTemplateProps = struct {
-    kind: OgKind = .site,
+pub const Props = struct {
+    kind: enum { site, blog } = .site,
     path: []const u8,
     title: []const u8,
-    subtitle: []const u8,
-    domain: []const u8 = "nurulhudaapon.com",
-    author: []const u8 = "Nurul Huda (Apon)",
-    meta: []const u8 = "",
-    avatar_href: []const u8,
     title_lines: []const []const u8 = &.{},
     title_size: u32 = 48,
+    subtitle: []const []const u8 = &.{},
+    meta: []const u8 = "",
+    domain: []const u8 = "nurulhudaapon.com",
+    avatar_href: []const u8 = "",
 };
 
-pub fn OgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component {
-    if (props.kind == .blog) return BlogOgTemplate(allocator, props);
-    return SiteOgTemplate(allocator, props);
+pub fn Card(allocator: zx.Allocator, props: Props) zx.Component {
+    return switch (props.kind) {
+        .site => SiteCard(allocator, props),
+        .blog => BlogCard(allocator, props),
+    };
 }
 
-fn SiteOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component {
-    const lines = if (props.title_lines.len > 0) props.title_lines else &.{props.title};
+fn SiteCard(allocator: zx.Allocator, props: Props) zx.Component {
     const is_home = std.mem.eql(u8, props.path, "home");
 
     return (
@@ -47,7 +45,7 @@ fn SiteOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
                 />
 
                 <g font-family="'Geist', Arial, sans-serif" letter-spacing="0em">
-                    {for (lines, 0..) |line, i| (
+                    {for (props.title_lines, 0..) |line, i| (
                         <text
                             xml:space="preserve"
                             fill="#ffffff"
@@ -73,7 +71,7 @@ fn SiteOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
                         </g>
                     ) else (
                         <g fill="#a3a3a3" font-size="22" font-weight="normal">
-                            {for (wrapPlain(props.subtitle), 0..) |line, i| (
+                            {for (props.subtitle, 0..) |line, i| (
                                 <text xml:space="preserve" style="white-space:pre">
                                     <tspan x="490" y={318 + @as(i32, @intCast(i)) * 32}>{line}</tspan>
                                 </text>
@@ -104,10 +102,9 @@ fn SiteOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
     );
 }
 
-fn BlogOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component {
-    const lines = if (props.title_lines.len > 0) props.title_lines else &.{props.title};
+fn BlogCard(allocator: zx.Allocator, props: Props) zx.Component {
     const line_gap: i32 = @intCast(props.title_size + 10);
-    const title_start_y: i32 = if (lines.len > 2) 240 else 260;
+    const title_y: i32 = if (props.title_lines.len > 2) 240 else 260;
 
     return (
         <svg
@@ -144,7 +141,7 @@ fn BlogOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
                         <tspan x="500" y="175">BLOG</tspan>
                     </text>
 
-                    {for (lines, 0..) |line, i| (
+                    {for (props.title_lines, 0..) |line, i| (
                         <text
                             xml:space="preserve"
                             fill="#ffffff"
@@ -152,7 +149,7 @@ fn BlogOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
                             font-weight="bold"
                             style="white-space:pre"
                         >
-                            <tspan x="500" y={title_start_y + @as(i32, @intCast(i)) * line_gap}>{line}</tspan>
+                            <tspan x="500" y={title_y + @as(i32, @intCast(i)) * line_gap}>{line}</tspan>
                         </text>
                     )}
 
@@ -187,23 +184,6 @@ fn BlogOgTemplate(allocator: zx.Allocator, props: OgTemplateProps) zx.Component 
             </defs>
         </svg>
     );
-}
-
-fn wrapPlain(text: []const u8) []const []const u8 {
-    // Static fallbacks for known page subtitles (avoids allocator in template).
-    if (text.len == 0) return &.{};
-    if (std.mem.eql(u8, text, "Building high quality software for companies and crafting Ziex, a full-stack web framework for Zig."))
-        return &.{
-            "Building high quality software for companies and",
-            "crafting Ziex, a full-stack web framework for Zig.",
-        };
-    if (std.mem.eql(u8, text, "Writing and notes"))
-        return &.{"Writing and notes from Nurul Huda (Apon)"};
-    if (std.mem.eql(u8, text, "Pick a time and let's talk"))
-        return &.{"Pick a time that works for you and let's talk"};
-    if (std.mem.eql(u8, text, "Anonymously ask me anything"))
-        return &.{"Anonymously ask me anything"};
-    return &.{text};
 }
 
 const zx = @import("zx");

@@ -1,11 +1,3 @@
-pub fn Route(ctx: zx.RouteContext) !void {
-    return handle(ctx);
-}
-
-pub const options: zx.RouteOptions = .{
-    .rendering = .request,
-};
-
 const login_path = "/auth/login";
 const settings_path = "/admin/settings";
 
@@ -44,7 +36,7 @@ const AuthRoute = enum {
     const prefix = "/auth/";
 };
 
-fn handle(ctx: zx.RouteContext) !void {
+pub fn Route(ctx: zx.RouteContext) !void {
     ctx.response.headers.append("Cache-Control", "no-store");
     const route, const provider = AuthRoute.parse(ctx.request.pathname) orelse return ctx.response.setStatus(.not_found);
     if (ctx.request.method != route.method()) return ctx.response.setStatus(.method_not_allowed);
@@ -67,13 +59,13 @@ fn handle(ctx: zx.RouteContext) !void {
         },
         // The passkey endpoints answer the page script in JSON: ceremony options as
         // `{"publicKey": …}`, or `{"redirect": url}` once only a page is left to show.
-        .@"passkey/login/options" => opts(ctx, try auth.passkeyRequestOptions(ctx.arena)),
+        .@"passkey/login/options" => json(ctx, try auth.passkeyRequestOptions(ctx.arena)),
         .@"passkey/login" => {
             const next = auth.signInWithPasskey(ctx.arena, ctx.request.text() orelse "", q.get("next")) catch |err|
                 return jsonRedirect(ctx, try failure(ctx, login_path, err));
             jsonRedirect(ctx, next);
         },
-        .@"passkey/register/options" => opts(ctx, auth.passkeyCreationOptions(ctx.arena) catch |err|
+        .@"passkey/register/options" => json(ctx, auth.passkeyCreationOptions(ctx.arena) catch |err|
             return jsonRedirect(ctx, try failure(ctx, settings_path, err))),
         .@"passkey/register" => {
             const body = ctx.request.text() orelse "";
@@ -115,14 +107,16 @@ fn redirect(ctx: zx.RouteContext, url: []const u8) void {
     ctx.response.redirect(url, .see_other);
 }
 
-fn opts(ctx: zx.RouteContext, json: []const u8) void {
+fn json(ctx: zx.RouteContext, body: []const u8) void {
     ctx.response.setContentType(.@"application/json");
-    ctx.response.text(json);
+    ctx.response.text(body);
 }
 
 fn jsonRedirect(ctx: zx.RouteContext, url: []const u8) void {
     ctx.response.json(.{ .redirect = url }, .{}) catch {};
 }
+
+pub const options: zx.RouteOptions = .{ .rendering = .request };
 
 test "AuthRoute.parse" {
     try std.testing.expectEqualDeep(.{ AuthRoute.start, "github" }, AuthRoute.parse("/auth/start/github").?);

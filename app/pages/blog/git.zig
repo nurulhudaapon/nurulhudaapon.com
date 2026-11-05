@@ -3,431 +3,298 @@ const zx = @import("zx");
 const github = @import("../dev/github.zig");
 
 pub const Archive = struct {
-    files: std.StringArrayHashMapUnmanaged([]u8),
+    files: std.StringArrayHashMapUnmanaged([]u8) = .empty,
 
-    pub fn get(self: *const Archive, path: []const u8) ?[]const u8 {
-        return self.files.get(path);
+    pub fn get(archive: *const Archive, path: []const u8) ?[]const u8 {
+        return archive.files.get(path);
+    }
+
+    // `path\nlen\ncontent` per file; paths never contain newlines.
+    fn encode(archive: Archive, allocator: std.mem.Allocator) ![]u8 {
+        var out: std.Io.Writer.Allocating = .init(allocator);
+        var it = archive.files.iterator();
+        while (it.next()) |entry| {
+            try out.writer.print("{s}\n{d}\n{s}", .{ entry.key_ptr.*, entry.value_ptr.len, entry.value_ptr.* });
+        }
+        return out.toOwnedSlice();
+    }
+
+    fn decode(allocator: std.mem.Allocator, data: []u8) !Archive {
+        var archive: Archive = .{};
+        var rest = data;
+        while (rest.len > 0) {
+            const path_end = std.mem.indexOfScalar(u8, rest, '\n') orelse return error.InvalidCachedArchive;
+            const path = rest[0..path_end];
+            rest = rest[path_end + 1 ..];
+            const len_end = std.mem.indexOfScalar(u8, rest, '\n') orelse return error.InvalidCachedArchive;
+            const len = std.fmt.parseInt(usize, rest[0..len_end], 10) catch return error.InvalidCachedArchive;
+            rest = rest[len_end + 1 ..];
+            if (len > rest.len) return error.InvalidCachedArchive;
+            try archive.files.put(allocator, path, rest[0..len]);
+            rest = rest[len..];
+        }
+        return archive;
+    }
+
+    fn fromDirectory(allocator: std.mem.Allocator, io: std.Io, dir_path: []const u8) !Archive {
+        var dir = try openDir(io, dir_path, .{ .iterate = true });
+        defer dir.close(io);
+
+        var archive: Archive = .{};
+        errdefer {
+            var it = archive.files.iterator();
+            while (it.next()) |entry| {
+                allocator.free(entry.key_ptr.*);
+                allocator.free(entry.value_ptr.*);
+            }
+            archive.files.deinit(allocator);
+        }
+
+        var it = dir.iterateAssumeFirstIteration();
+        while (try it.next(io)) |entry| {
+            if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".md")) continue;
+            const value = try dir.readFileAlloc(io, entry.name, allocator, .unlimited);
+            errdefer allocator.free(value);
+            const key = try allocator.dupe(u8, entry.name);
+            errdefer allocator.free(key);
+            try archive.files.put(allocator, key, value);
+        }
+
+        zx.log.debug("git: loaded {s} files={d}", .{ dir_path, archive.files.count() });
+        return archive;
+    }
+
+    fn fromTarball(allocator: std.mem.Allocator, gz: []const u8) !Archive {
+        var gz_reader: std.Io.Reader = .fixed(gz);
+        var window: [std.compress.flate.max_window_len]u8 = undefined;
+        var decompress: std.compress.flate.Decompress = .init(&gz_reader, .gzip, &window);
+
+        var file_name_buf: [std.fs.max_path_bytes]u8 = undefined;
+        var link_name_buf: [std.fs.max_path_bytes]u8 = undefined;
+        var it = std.tar.Iterator.init(&decompress.reader, .{
+            .file_name_buffer = &file_name_buf,
+            .link_name_buffer = &link_name_buf,
+        });
+
+        var scratch: std.Io.Writer.Allocating = .init(allocator);
+        defer scratch.deinit();
+
+        var archive: Archive = .{};
+        while (try it.next()) |file| {
+            if (file.kind != .file) continue;
+            // Tarballs nest everything under `<repo>-<ref>/`.
+            const name = if (std.mem.startsWith(u8, file.name, "/")) file.name[1..] else file.name;
+            const slash = std.mem.indexOfScalar(u8, name, '/') orelse continue;
+            const path = name[slash + 1 ..];
+            if (!std.mem.endsWith(u8, path, ".md")) continue;
+
+            scratch.clearRetainingCapacity();
+            try it.streamRemaining(file, &scratch.writer);
+            try archive.files.put(allocator, try allocator.dupe(u8, path), try allocator.dupe(u8, scratch.written()));
+        }
+
+        zx.log.debug("git: extracted tarball files={d}", .{archive.files.count()});
+        return archive;
     }
 };
 
 pub const Repository = struct {
-    url: []const u8 = "",
+    url: []const u8,
     ref: ?[]const u8 = null,
+
+    // A `file://` URL reads `.md` files from that local directory instead of GitHub.
+    pub fn archive(repo: Repository, arena: std.mem.Allocator, io: std.Io) !Archive {
+        if (localPath(repo.url)) |path| return Archive.fromDirectory(arena, io, path);
+        return (try Remote.init(arena, io, repo.url, repo.ref orelse "main")).archive();
+    }
+
+    // `path` is relative to the repository root.
+    pub fn readFile(repo: Repository, arena: std.mem.Allocator, io: std.Io, path: []const u8) ![]u8 {
+        if (!isSafeRelative(path)) return error.InvalidPath;
+        if (localPath(repo.url)) |root| {
+            var dir = try openDir(io, root, .{});
+            defer dir.close(io);
+            return dir.readFileAlloc(io, path, arena, .unlimited);
+        }
+        return (try Remote.init(arena, io, repo.url, repo.ref orelse "HEAD")).readFile(path);
+    }
 };
 
-const default_repo: Repository = .{
+pub const blogs: Repository = .{
     .url = "https://github.com/nurulhudaapon/blogs",
     .ref = "main",
-    // .url = "file://../blogs",
 };
 
-/// Load `.md` files from a local `file://` directory, or download a repository
-/// (cached in `zx.kv`) and return an in-memory archive.
-pub fn fetchArchive(allocator: std.mem.Allocator, repo: Repository) !Archive {
-    if (fileUrlPath(repo.url)) |local_path| {
-        const archive = try archiveFromDirectory(allocator, local_path);
-        zx.log.debug("git.fetchArchive: loaded local path={s} files={d}", .{
-            local_path,
-            archive.files.count(),
+// A cached archive is trusted this long before asking GitHub whether the tip moved.
+const freshness_ttl: std.Io.Duration = .fromSeconds(5 * 60);
+
+// Raw files are also dropped whenever the archive is rebuilt for a new tip; the TTL
+// keeps a failed tip check from pinning a stale file forever.
+const file_ttl: std.Io.Duration = .fromSeconds(60 * 60);
+
+const Remote = struct {
+    arena: std.mem.Allocator,
+    io: std.Io,
+    owner: []const u8,
+    name: []const u8,
+    ref: []const u8,
+    kv: zx.Kv,
+
+    fn init(arena: std.mem.Allocator, io: std.Io, url: []const u8, ref: []const u8) !Remote {
+        var rest = for ([_][]const u8{ "https://github.com/", "http://github.com/", "git@github.com:" }) |prefix| {
+            if (std.mem.startsWith(u8, url, prefix)) break url[prefix.len..];
+        } else return error.UnsupportedRepositoryUrl;
+
+        const slash = std.mem.indexOfScalar(u8, rest, '/') orelse return error.UnsupportedRepositoryUrl;
+        const owner = rest[0..slash];
+        rest = rest[slash + 1 ..];
+        if (std.mem.endsWith(u8, rest, ".git")) rest = rest[0 .. rest.len - ".git".len];
+        if (owner.len == 0 or rest.len == 0) return error.UnsupportedRepositoryUrl;
+        return .{ .arena = arena, .io = io, .owner = owner, .name = rest, .ref = ref, .kv = zx.kv.scoped(.blogs) };
+    }
+
+    // The repo's `.md` files are cached in KV as one small blob. The tarball (mostly
+    // images) is only downloaded when the branch tip moves, and the tip is checked at
+    // most once per `freshness_ttl`, so a request is usually a KV read plus a parse.
+    fn archive(r: Remote) !Archive {
+        const archive_key = try r.key("archive");
+        const sha_key = try r.key("archive-sha");
+        const fresh_key = try r.key("archive-fresh");
+
+        const cached = try r.kv.get(r.arena, archive_key);
+        if (cached) |data| {
+            if (try r.kv.get(r.arena, fresh_key) != null) {
+                if (Archive.decode(r.arena, data)) |a| return a else |_| {}
+            }
+        }
+
+        const head = r.tip() catch |err| blk: {
+            zx.log.warn("git: tip check failed: {any}", .{err});
+            break :blk null;
+        };
+        const cached_head = try r.kv.get(r.arena, sha_key);
+        const unchanged = head == null or (cached_head != null and std.mem.eql(u8, cached_head.?, head.?));
+        if (cached != null and unchanged) {
+            if (Archive.decode(r.arena, cached.?)) |a| {
+                r.kv.put(fresh_key, "1", .{ .ttl = freshness_ttl }) catch {};
+                return a;
+            } else |err| zx.log.warn("git: invalid cache entry: {any}", .{err});
+        }
+
+        zx.log.info("git: rebuilding from tarball (tip {s})", .{head orelse "unknown"});
+        const gz = try r.get(try r.tarballUrl(), "*/*");
+        defer r.arena.free(gz);
+        const a = try Archive.fromTarball(r.arena, gz);
+
+        try r.kv.put(archive_key, try a.encode(r.arena), .{});
+        if (head) |sha| r.kv.put(sha_key, sha, .{}) catch {};
+        r.kv.put(fresh_key, "1", .{ .ttl = freshness_ttl }) catch {};
+        r.dropFiles();
+        return a;
+    }
+
+    fn readFile(r: Remote, path: []const u8) ![]u8 {
+        const cache_key = try r.arena.print("file:{s}/{s}:{s}:{s}", .{ r.owner, r.name, r.ref, path });
+        defer r.arena.free(cache_key);
+
+        if (try r.kv.get(r.arena, cache_key)) |cached| return cached;
+
+        const url = try r.arena.print("https://raw.githubusercontent.com/{s}/{s}/{s}/{s}", .{ r.owner, r.name, r.ref, path });
+        defer r.arena.free(url);
+
+        const body = r.get(url, "*/*") catch |err| switch (err) {
+            error.RepositoryNotFound => return error.FileNotFound,
+            else => return err,
+        };
+        errdefer r.arena.free(body);
+
+        try r.kv.put(cache_key, body, .{ .ttl = file_ttl });
+        return body;
+    }
+
+    fn key(r: Remote, comptime kind: []const u8) ![]const u8 {
+        return r.arena.print(kind ++ ":{s}/{s}:{s}", .{ r.owner, r.name, r.ref });
+    }
+
+    fn dropFiles(r: Remote) void {
+        const prefix = r.arena.print("file:{s}/{s}:", .{ r.owner, r.name }) catch return;
+        const keys = r.kv.list(r.arena, prefix) catch return;
+        for (keys) |k| r.kv.delete(k) catch {};
+    }
+
+    fn tip(r: Remote) ![]u8 {
+        const url = try r.arena.print("https://api.github.com/repos/{s}/{s}/commits/{s}", .{ r.owner, r.name, r.ref });
+        defer r.arena.free(url);
+
+        const body = try r.get(url, "application/vnd.github+json");
+        defer r.arena.free(body);
+
+        // The payload starts with {"sha":"..."}; no need to parse the whole commit.
+        const needle = "\"sha\":\"";
+        const start = (std.mem.indexOf(u8, body, needle) orelse return error.InvalidCommitPayload) + needle.len;
+        const end = std.mem.indexOfScalarPos(u8, body, start, '"') orelse return error.InvalidCommitPayload;
+        if (end <= start) return error.InvalidCommitPayload;
+        return try r.arena.dupe(u8, body[start..end]);
+    }
+
+    fn tarballUrl(r: Remote) ![]const u8 {
+        const ref = if (std.mem.eql(u8, r.ref, "HEAD") or std.mem.startsWith(u8, r.ref, "refs/"))
+            r.ref
+        else
+            try r.arena.print("refs/heads/{s}", .{r.ref});
+        return r.arena.print("https://codeload.github.com/{s}/{s}/tar.gz/{s}", .{ r.owner, r.name, ref });
+    }
+
+    fn get(r: Remote, url: []const u8, accept: []const u8) ![]u8 {
+        var headers: std.ArrayList(zx.http.Header) = .empty;
+        defer headers.deinit(r.arena);
+        try headers.appendSlice(r.arena, &.{
+            .{ .name = "Accept", .value = accept },
+            .{ .name = "User-Agent", .value = "nurulhudaapon.com" },
         });
-        return archive;
-    }
+        if (try authorization(r.arena)) |auth| try headers.append(r.arena, .{ .name = "Authorization", .value = auth });
 
-    return try fetchArchiveCached(allocator, repo);
-}
+        var client: zx.http.Client = .{ .io = r.io, .allocator = r.arena };
+        defer client.deinit();
+        const response = try client.fetch(.{
+            .url = url,
+            .headers = headers.items,
+            .timeout = .{ .duration = .{ .raw = .fromMilliseconds(120_000), .clock = .awake } },
+        });
+        defer response.deinit(r.arena);
 
-pub fn fetchDefaultArchive(allocator: std.mem.Allocator) !Archive {
-    return fetchArchive(allocator, default_repo);
-}
-
-/// Read top-level `.md` files from a local directory into an archive.
-pub fn archiveFromDirectory(allocator: std.mem.Allocator, dir_path: []const u8) !Archive {
-    const io = std.Io.Threaded.global_single_threaded.io();
-
-    var dir = if (std.fs.path.isAbsolute(dir_path))
-        try std.Io.Dir.openDirAbsolute(io, dir_path, .{ .iterate = true })
-    else
-        try std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true });
-    defer dir.close(io);
-
-    var archive: Archive = .{ .files = .empty };
-    errdefer {
-        var it = archive.files.iterator();
-        while (it.next()) |entry| {
-            allocator.free(entry.key_ptr.*);
-            allocator.free(entry.value_ptr.*);
+        if (response.status.class() != .success) {
+            zx.log.warn("git: GET {s} returned {d}", .{ url, @backingInt(response.status) });
+            if (response.status == .not_found) return error.RepositoryNotFound;
+            return error.NetworkError;
         }
-        archive.files.deinit(allocator);
+        return try r.arena.dupe(u8, response.body);
     }
+};
 
-    var file_count: usize = 0;
-    var total_bytes: usize = 0;
-    var skipped_non_md: usize = 0;
-
-    var it = dir.iterateAssumeFirstIteration();
-    while (try it.next(io)) |entry| {
-        if (entry.kind != .file) continue;
-        if (!std.mem.endsWith(u8, entry.name, ".md")) {
-            skipped_non_md += 1;
-            continue;
-        }
-
-        const value = try dir.readFileAlloc(io, entry.name, allocator, .unlimited);
-        errdefer allocator.free(value);
-        const key = try allocator.dupe(u8, entry.name);
-        errdefer allocator.free(key);
-        try archive.files.put(allocator, key, value);
-        file_count += 1;
-        total_bytes += value.len;
-    }
-
-    zx.log.debug("git.archiveFromDirectory: path={s} files={d} bytes={d} skipped={d}", .{
-        dir_path,
-        file_count,
-        total_bytes,
-        skipped_non_md,
-    });
-    return archive;
+fn authorization(arena: std.mem.Allocator) !?[]const u8 {
+    if (github.authorization()) |auth| return auth;
+    const token = std.mem.span(std.c.getenv("GITHUB_TOKEN") orelse return null);
+    if (token.len == 0) return null;
+    return try arena.print("Bearer {s}", .{token});
 }
 
-/// Local blogs directory from `default_repo`'s `file://` URL, if configured.
-pub fn defaultLocalPath() ?[]const u8 {
-    return fileUrlPath(default_repo.url);
-}
-
-/// Read a file from the blogs repo (`file://` disk or GitHub raw + KV cache).
-/// `relative_path` must be a safe relative path (no `..`, no absolute).
-pub fn readRepoFile(allocator: std.mem.Allocator, relative_path: []const u8) ![]u8 {
-    if (!isSafeRelativePath(relative_path)) return error.InvalidPath;
-
-    if (fileUrlPath(default_repo.url)) |root| {
-        return try readLocalFile(allocator, root, relative_path);
-    }
-
-    return try fetchRemoteFileCached(allocator, default_repo, relative_path);
-}
-
-fn readLocalFile(allocator: std.mem.Allocator, root: []const u8, relative_path: []const u8) ![]u8 {
-    const io = std.Io.Threaded.global_single_threaded.io();
-    var dir = if (std.fs.path.isAbsolute(root))
-        try std.Io.Dir.openDirAbsolute(io, root, .{})
-    else
-        try std.Io.Dir.cwd().openDir(io, root, .{});
-    defer dir.close(io);
-
-    return try dir.readFileAlloc(io, relative_path, allocator, .unlimited);
-}
-
-fn fetchRemoteFileCached(allocator: std.mem.Allocator, repo: Repository, relative_path: []const u8) ![]u8 {
-    const parsed = try parseGitHubUrl(repo.url);
-    const ref = repo.ref orelse "HEAD";
-    const cache_key = try allocator.print("file:{s}/{s}:{s}:{s}", .{
-        parsed.owner,
-        parsed.repo,
-        ref,
-        relative_path,
-    });
-    defer allocator.free(cache_key);
-
-    const blogs_kv = zx.kv.scoped(.blogs);
-    if (try blogs_kv.get(allocator, cache_key)) |cached| {
-        zx.log.debug("git.fetchRemoteFileCached: kv hit key={s} bytes={d}", .{ cache_key, cached.len });
-        return cached;
-    }
-
-    const url = try allocator.print(
-        "https://raw.githubusercontent.com/{s}/{s}/{s}/{s}",
-        .{ parsed.owner, parsed.repo, ref, relative_path },
-    );
-    defer allocator.free(url);
-
-    zx.log.debug("git.fetchRemoteFileCached: kv miss key={s}, downloading", .{cache_key});
-    const body = fetchBytes(allocator, url, .{}) catch |err| switch (err) {
-        error.RepositoryNotFound => return error.FileNotFound,
-        else => return err,
-    };
-    errdefer allocator.free(body);
-
-    try blogs_kv.put(cache_key, body, .{ .ttl = file_cache_ttl });
-    return body;
-}
-
-fn isSafeRelativePath(path: []const u8) bool {
-    if (path.len == 0) return false;
-    if (path[0] == '/' or path[0] == '\\') return false;
-    var parts = std.mem.splitAny(u8, path, "/\\");
-    while (parts.next()) |part| {
-        if (part.len == 0) continue;
-        if (std.mem.eql(u8, part, ".") or std.mem.eql(u8, part, "..")) return false;
-    }
-    return true;
-}
-
-fn fileUrlPath(url: []const u8) ?[]const u8 {
+fn localPath(url: []const u8) ?[]const u8 {
     if (!std.mem.startsWith(u8, url, "file://")) return null;
     const path = url["file://".len..];
     return if (path.len > 0) path else null;
 }
 
-/// Soft TTL so a failed SHA check cannot pin a stale archive forever.
-// Raw files are also dropped whenever the archive is rebuilt for a new tip.
-const file_cache_ttl: std.Io.Duration = .fromSeconds(60 * 60);
+fn openDir(io: std.Io, path: []const u8, options: std.Io.Dir.OpenOptions) !std.Io.Dir {
+    if (std.fs.path.isAbsolute(path)) return std.Io.Dir.openDirAbsolute(io, path, options);
+    return std.Io.Dir.cwd().openDir(io, path, options);
+}
 
-// How long a cached archive is trusted before asking GitHub whether the tip moved.
-const freshness_ttl: std.Io.Duration = .fromSeconds(5 * 60);
-
-/// The repo's `.md` files, cached in `zx.kv` as one small blob. The tarball (mostly
-/// images) is only downloaded and unpacked when the branch tip moves, and the tip is
-/// checked at most once per `freshness_ttl`, so a request is a KV read plus a parse.
-pub fn fetchArchiveCached(allocator: std.mem.Allocator, repo: Repository) !Archive {
-    const parsed = try parseGitHubUrl(repo.url);
-    const ref = repo.ref orelse "main";
-    const archive_key = try allocator.print("archive:{s}/{s}:{s}", .{ parsed.owner, parsed.repo, ref });
-    const sha_key = try allocator.print("archive-sha:{s}/{s}:{s}", .{ parsed.owner, parsed.repo, ref });
-    const fresh_key = try allocator.print("archive-fresh:{s}/{s}:{s}", .{ parsed.owner, parsed.repo, ref });
-
-    const blogs_kv = zx.kv.scoped(.blogs);
-    const cached = try blogs_kv.get(allocator, archive_key);
-    if (cached) |data| {
-        if (try blogs_kv.get(allocator, fresh_key) != null) {
-            if (decodeArchive(allocator, data)) |archive| return archive else |_| {}
-        }
+fn isSafeRelative(path: []const u8) bool {
+    if (path.len == 0 or path[0] == '/' or path[0] == '\\') return false;
+    var parts = std.mem.splitAny(u8, path, "/\\");
+    while (parts.next()) |part| {
+        if (std.mem.eql(u8, part, ".") or std.mem.eql(u8, part, "..")) return false;
     }
-
-    const remote_sha = resolveRefSha(allocator, parsed, ref) catch |err| blk: {
-        zx.log.warn("git.fetchArchiveCached: tip check failed: {any}", .{err});
-        break :blk null;
-    };
-    const cached_sha = try blogs_kv.get(allocator, sha_key);
-    const tip_unchanged = remote_sha == null or
-        (cached_sha != null and std.mem.eql(u8, cached_sha.?, remote_sha.?));
-    if (cached != null and tip_unchanged) {
-        if (decodeArchive(allocator, cached.?)) |archive| {
-            blogs_kv.put(fresh_key, "1", .{ .ttl = freshness_ttl }) catch {};
-            return archive;
-        } else |err| zx.log.warn("git.fetchArchiveCached: invalid cache entry: {any}", .{err});
-    }
-
-    zx.log.info("git.fetchArchiveCached: rebuilding from tarball (tip {s})", .{remote_sha orelse "unknown"});
-    const gz = try fetchTarball(allocator, parsed, try normalizeTarballRef(allocator, ref));
-    defer allocator.free(gz);
-    const archive = try archiveFromTarball(allocator, gz);
-
-    try blogs_kv.put(archive_key, try encodeArchive(allocator, archive), .{});
-    if (remote_sha) |sha| blogs_kv.put(sha_key, sha, .{}) catch {};
-    blogs_kv.put(fresh_key, "1", .{ .ttl = freshness_ttl }) catch {};
-    invalidateFileCache(allocator, parsed);
-    return archive;
-}
-
-fn invalidateFileCache(allocator: std.mem.Allocator, parsed: GitHubRepo) void {
-    const blogs_kv = zx.kv.scoped(.blogs);
-    const prefix = allocator.print("file:{s}/{s}:", .{ parsed.owner, parsed.repo }) catch return;
-    const keys = blogs_kv.list(allocator, prefix) catch return;
-    for (keys) |k| blogs_kv.delete(k) catch {};
-}
-
-// `path\nlen\ncontent` per file; paths never contain newlines.
-fn encodeArchive(allocator: std.mem.Allocator, archive: Archive) ![]u8 {
-    var out: std.Io.Writer.Allocating = .init(allocator);
-    var it = archive.files.iterator();
-    while (it.next()) |entry| {
-        try out.writer.print("{s}\n{d}\n{s}", .{ entry.key_ptr.*, entry.value_ptr.len, entry.value_ptr.* });
-    }
-    return out.toOwnedSlice();
-}
-
-fn decodeArchive(allocator: std.mem.Allocator, data: []u8) !Archive {
-    var archive: Archive = .{ .files = .empty };
-    var rest = data;
-    while (rest.len > 0) {
-        const path_end = std.mem.indexOfScalar(u8, rest, '\n') orelse return error.InvalidCachedArchive;
-        const path = rest[0..path_end];
-        rest = rest[path_end + 1 ..];
-        const len_end = std.mem.indexOfScalar(u8, rest, '\n') orelse return error.InvalidCachedArchive;
-        const len = std.fmt.parseInt(usize, rest[0..len_end], 10) catch return error.InvalidCachedArchive;
-        rest = rest[len_end + 1 ..];
-        if (len > rest.len) return error.InvalidCachedArchive;
-        try archive.files.put(allocator, path, rest[0..len]);
-        rest = rest[len..];
-    }
-    return archive;
-}
-
-fn resolveRefSha(allocator: std.mem.Allocator, parsed: GitHubRepo, ref: []const u8) ![]u8 {
-    const url = try allocator.print(
-        "https://api.github.com/repos/{s}/{s}/commits/{s}",
-        .{ parsed.owner, parsed.repo, ref },
-    );
-    defer allocator.free(url);
-
-    const body = try fetchBytes(allocator, url, .{ .accept = "application/vnd.github+json" });
-    defer allocator.free(body);
-
-    // Commit payloads start with {"sha":"..."} - avoid a full JSON dependency here.
-    const key = "\"sha\":\"";
-    const start = std.mem.indexOf(u8, body, key) orelse return error.InvalidCommitPayload;
-    const sha_start = start + key.len;
-    const sha_end = std.mem.indexOfScalarPos(u8, body, sha_start, '"') orelse return error.InvalidCommitPayload;
-    if (sha_end <= sha_start) return error.InvalidCommitPayload;
-    return try allocator.dupe(u8, body[sha_start..sha_end]);
-}
-
-pub fn archiveFromTarball(allocator: std.mem.Allocator, gz: []const u8) !Archive {
-    var gz_reader: std.Io.Reader = .fixed(gz);
-    var decompress_buf: [std.compress.flate.max_window_len]u8 = undefined;
-    var decompress: std.compress.flate.Decompress = .init(&gz_reader, .gzip, &decompress_buf);
-
-    const archive = try extractTar(allocator, &decompress.reader);
-    zx.log.debug("git.archiveFromTarball: extracted files={d}", .{archive.files.count()});
-    return archive;
-}
-
-fn fetchTarball(allocator: std.mem.Allocator, parsed: GitHubRepo, ref: []const u8) ![]u8 {
-    zx.log.debug("git.fetchTarball: owner={s} repo={s} ref={s}", .{ parsed.owner, parsed.repo, ref });
-
-    const tarball_url = try allocator.print(
-        "https://codeload.github.com/{s}/{s}/tar.gz/{s}",
-        .{ parsed.owner, parsed.repo, ref },
-    );
-    defer allocator.free(tarball_url);
-
-    const gz = try fetchBytes(allocator, tarball_url, .{});
-    zx.log.debug("git.fetchTarball: fetched tarball bytes={d}", .{gz.len});
-    return gz;
-}
-
-const GitHubRepo = struct {
-    owner: []const u8,
-    repo: []const u8,
-};
-
-fn parseGitHubUrl(url: []const u8) !GitHubRepo {
-    var rest = url;
-    if (std.mem.startsWith(u8, rest, "https://github.com/")) {
-        rest = rest["https://github.com/".len..];
-    } else if (std.mem.startsWith(u8, rest, "http://github.com/")) {
-        rest = rest["http://github.com/".len..];
-    } else if (std.mem.startsWith(u8, rest, "git@github.com:")) {
-        rest = rest["git@github.com:".len..];
-    } else {
-        return error.UnsupportedRepositoryUrl;
-    }
-
-    const slash = std.mem.indexOfScalar(u8, rest, '/') orelse return error.UnsupportedRepositoryUrl;
-    const owner = rest[0..slash];
-    var repo = rest[slash + 1 ..];
-    if (std.mem.endsWith(u8, repo, ".git")) repo = repo[0 .. repo.len - ".git".len];
-    if (owner.len == 0 or repo.len == 0) return error.UnsupportedRepositoryUrl;
-    return .{ .owner = owner, .repo = repo };
-}
-
-fn normalizeTarballRef(allocator: std.mem.Allocator, ref: []const u8) ![]const u8 {
-    if (std.mem.eql(u8, ref, "HEAD")) return ref;
-    if (std.mem.startsWith(u8, ref, "refs/")) return try allocator.dupe(u8, ref);
-    return try allocator.print("refs/heads/{s}", .{ref});
-}
-
-const FetchOpts = struct {
-    accept: []const u8 = "*/*",
-};
-
-fn fetchBytes(allocator: std.mem.Allocator, url: []const u8, opts: FetchOpts) ![]u8 {
-    zx.log.debug("git.fetchBytes: GET {s}", .{url});
-    var headers_buf: [3]zx.http.Header = undefined;
-    var headers_len: usize = 0;
-
-    headers_buf[headers_len] = .{ .name = "Accept", .value = opts.accept };
-    headers_len += 1;
-    headers_buf[headers_len] = .{ .name = "User-Agent", .value = "nurulhudaapon.com" };
-    headers_len += 1;
-
-    var auth_owned: ?[]const u8 = null;
-    defer if (auth_owned) |a| allocator.free(a);
-
-    if (github.authorization()) |auth| {
-        headers_buf[headers_len] = .{ .name = "Authorization", .value = auth };
-        headers_len += 1;
-    } else if (std.c.getenv("GITHUB_TOKEN")) |token_c| {
-        const token = std.mem.span(token_c);
-        if (token.len > 0) {
-            auth_owned = try allocator.print("Bearer {s}", .{token});
-            headers_buf[headers_len] = .{ .name = "Authorization", .value = auth_owned.? };
-            headers_len += 1;
-        }
-    }
-
-    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = allocator };
-    defer client.deinit();
-    const response = try client.fetch(.{
-        .url = url,
-        .headers = headers_buf[0..headers_len],
-        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(120_000), .clock = .awake } },
-    });
-    defer response.deinit(allocator);
-
-    if (response.status.class() != .success) {
-        zx.log.warn("git.fetchBytes: response status={d} url={s}", .{ @intFromEnum(response.status), url });
-        if (response.status == .not_found) return error.RepositoryNotFound;
-        return error.NetworkError;
-    }
-
-    zx.log.debug("git.fetchBytes: response status={d} bytes={d}", .{ @intFromEnum(response.status), response.body.len });
-    return try allocator.dupe(u8, response.body);
-}
-
-fn extractTar(allocator: std.mem.Allocator, reader: *std.Io.Reader) !Archive {
-    var archive: Archive = .{ .files = .empty };
-    var file_count: usize = 0;
-    var total_bytes: usize = 0;
-    var skipped_non_md: usize = 0;
-
-    var file_name_buf: [std.fs.max_path_bytes]u8 = undefined;
-    var link_name_buf: [std.fs.max_path_bytes]u8 = undefined;
-    var it = std.tar.Iterator.init(reader, .{
-        .file_name_buffer = &file_name_buf,
-        .link_name_buffer = &link_name_buf,
-    });
-
-    var scratch = std.Io.Writer.Allocating.init(allocator);
-    defer scratch.deinit();
-
-    zx.log.debug("git.extractTar: start", .{});
-
-    while (try it.next()) |file| {
-        if (file.kind != .file) continue;
-        const stripped = stripComponents(file.name, 1) orelse continue;
-        if (stripped.len == 0) continue;
-        if (!std.mem.endsWith(u8, stripped, ".md")) {
-            skipped_non_md += 1;
-            continue;
-        }
-
-        scratch.clearRetainingCapacity();
-        try it.streamRemaining(file, &scratch.writer);
-
-        const key = try allocator.dupe(u8, stripped);
-        const value = try allocator.dupe(u8, scratch.written());
-        try archive.files.put(allocator, key, value);
-        file_count += 1;
-        total_bytes += value.len;
-    }
-
-    zx.log.debug("git.extractTar: done files={d} bytes={d} skipped={d}", .{
-        file_count,
-        total_bytes,
-        skipped_non_md,
-    });
-    return archive;
-}
-
-fn stripComponents(path: []const u8, count: u32) ?[]const u8 {
-    var rest = path;
-    var i: u32 = 0;
-    while (i < count) : (i += 1) {
-        if (rest.len > 0 and rest[0] == '/') rest = rest[1..];
-        const slash = std.mem.indexOfScalar(u8, rest, '/') orelse return null;
-        rest = rest[slash + 1 ..];
-    }
-    return rest;
+    return true;
 }

@@ -1,46 +1,33 @@
 const markz = @import("markz");
-const highlight = @import("highlight");
+const highlighter = @import("highlight");
 const std = @import("std");
 
 const Document = markz.Document;
 const Node = markz.Node;
 const SourceSpan = markz.SourceSpan;
 
-pub fn renderMarkdown(allocator: std.mem.Allocator, source: []const u8) ![]const u8 {
-    if (source.len == 0) return error.EmptySource;
+pub fn html(allocator: std.mem.Allocator, markdown: []const u8) ![]const u8 {
+    if (markdown.len == 0) return error.EmptySource;
 
-    var doc = try markz.parseWith(allocator, source, .{ .gfm = true });
+    var doc = try markz.parseWith(allocator, markdown, .{ .gfm = true });
     defer doc.deinit();
 
-    try transformBlogAst(&doc);
+    try transform(&doc, doc.root);
     return try markz.renderHtml(allocator, &doc);
 }
 
-/// Rewrite blog markdown extensions that CommonMark leaves as plain text:
-/// - `![](url align="center")` → image nodes
-/// - `%[https://youtu.be/…]` → YouTube embed HTML
-fn transformBlogAst(doc: *Document) !void {
-    try transformChildren(doc, doc.root);
-}
-
-fn transformChildren(doc: *Document, parent: *Node) !void {
+// Rewrites the blog's markdown extensions that CommonMark leaves as plain text:
+// `![](url align="center")` images and `%[https://youtu.be/…]` embeds.
+fn transform(doc: *Document, parent: *Node) !void {
     var child = parent.first_child;
     while (child) |node| {
         const next = node.next;
-        try transformChildren(doc, node);
+        try transform(doc, node);
 
         switch (node.tag) {
-            .paragraph => try transformParagraph(doc, node),
-            // Images/embeds can also appear in headings.
-            .heading => {
-                var inline_child = node.first_child;
-                while (inline_child) |n| {
-                    const nnext = n.next;
-                    if (n.tag == .text) try rewriteTextNode(doc, n);
-                    inline_child = nnext;
-                }
-            },
-            .code_block => try highlightCodeBlock(doc, node),
+            .paragraph => try paragraph(doc, node),
+            .heading => try rewriteTexts(doc, node),
+            .code_block => try highlight(doc, node),
             else => {},
         }
 
@@ -48,42 +35,44 @@ fn transformChildren(doc: *Document, parent: *Node) !void {
     }
 }
 
-fn highlightCodeBlock(doc: *Document, node: *Node) !void {
+fn highlight(doc: *Document, node: *Node) !void {
     const allocator = doc.arena.allocator();
     const lang = std.mem.sliceTo(doc.getCodeBlockData(node.data.code_block).info, ' ');
     const code = if (node.first_child) |c| doc.nodeText(c) else "";
-    const body = try highlight.html(allocator, lang, code) orelse return;
-    const html = try allocator.print("<pre><code class=\"language-{s} hl\">{s}\n</code></pre>", .{ lang, body });
-    const block = try doc.createNode(.html_block, .{ .literal = html }, SourceSpan.empty);
-    node.insertAfter(block);
-    node.detach();
+    const body = try highlighter.html(allocator, lang, code) orelse return;
+    const block_html = try allocator.print("<pre><code class=\"language-{s} hl\">{s}\n</code></pre>", .{ lang, body });
+    replace(node, try doc.createNode(.html_block, .{ .literal = block_html }, SourceSpan.empty));
 }
 
-fn transformParagraph(doc: *Document, para: *Node) !void {
-    if (para.first_child != null and para.first_child == para.last_child) {
-        const only = para.first_child.?;
-        if (only.tag == .text) {
+fn paragraph(doc: *Document, para: *Node) !void {
+    if (para.first_child) |only| {
+        if (only == para.last_child and only.tag == .text) {
             const trimmed = std.mem.trim(u8, doc.nodeText(only), " \t\r\n");
-            if (parsePercentEmbed(trimmed)) |url| {
-                if (try youtubeEmbedHtml(doc, url)) |html| {
-                    const block = try doc.createNode(.html_block, .{ .literal = html }, SourceSpan.empty);
-                    para.insertAfter(block);
-                    para.detach();
-                    return;
+            if (wholeEmbed(trimmed)) |url| {
+                if (try youtube(doc, url, .block)) |embed| {
+                    return replace(para, try doc.createNode(.html_block, .{ .literal = embed }, SourceSpan.empty));
                 }
             }
         }
     }
+    try rewriteTexts(doc, para);
+}
 
-    var child = para.first_child;
+fn replace(node: *Node, with: *Node) void {
+    node.insertAfter(with);
+    node.detach();
+}
+
+fn rewriteTexts(doc: *Document, parent: *Node) !void {
+    var child = parent.first_child;
     while (child) |node| {
         const next = node.next;
-        if (node.tag == .text) try rewriteTextNode(doc, node);
+        if (node.tag == .text) try rewriteText(doc, node);
         child = next;
     }
 }
 
-fn rewriteTextNode(doc: *Document, text_node: *Node) !void {
+fn rewriteText(doc: *Document, text_node: *Node) !void {
     const text = doc.nodeText(text_node);
     if (std.mem.indexOf(u8, text, "%[") == null and std.mem.indexOf(u8, text, "![") == null) return;
 
@@ -116,15 +105,15 @@ fn rewriteTextNode(doc: *Document, text_node: *Node) !void {
         }
 
         const parsed = switch (special.kind) {
-            .embed => parsePercentEmbedAt(text, special.at),
-            .image => parseBrokenImageAt(text, special.at),
+            .embed => embedAt(text, special.at),
+            .image => imageAt(text, special.at),
         };
 
         if (parsed) |p| {
             const replacement: *Node = switch (p.value) {
                 .embed => |url| blk: {
-                    if (try youtubeEmbedHtmlInline(doc, url)) |html| {
-                        break :blk try doc.createNode(.html_inline, .{ .literal = html }, SourceSpan.empty);
+                    if (try youtube(doc, url, .span)) |embed| {
+                        break :blk try doc.createNode(.html_inline, .{ .literal = embed }, SourceSpan.empty);
                     }
                     break :blk try makeText(doc, text[special.at..p.end]);
                 },
@@ -157,26 +146,21 @@ fn rewriteTextNode(doc: *Document, text_node: *Node) !void {
     text_node.detach();
 }
 
-const ParsedSpecial = union(enum) {
-    embed: []const u8,
-    image: struct { alt: []const u8, destination: []const u8 },
-};
-
-const ParsedAt = struct {
-    value: ParsedSpecial,
+const Special = struct {
+    value: union(enum) {
+        embed: []const u8,
+        image: struct { alt: []const u8, destination: []const u8 },
+    },
     end: usize,
 };
 
-fn parsePercentEmbed(text: []const u8) ?[]const u8 {
-    const parsed = parsePercentEmbedAt(text, 0) orelse return null;
+fn wholeEmbed(text: []const u8) ?[]const u8 {
+    const parsed = embedAt(text, 0) orelse return null;
     if (parsed.end != text.len) return null;
-    return switch (parsed.value) {
-        .embed => |url| url,
-        else => null,
-    };
+    return parsed.value.embed;
 }
 
-fn parsePercentEmbedAt(text: []const u8, at: usize) ?ParsedAt {
+fn embedAt(text: []const u8, at: usize) ?Special {
     if (at + 2 > text.len or text[at] != '%' or text[at + 1] != '[') return null;
     const close = std.mem.indexOfScalarPos(u8, text, at + 2, ']') orelse return null;
     const url = std.mem.trim(u8, text[at + 2 .. close], " \t\r\n");
@@ -184,7 +168,8 @@ fn parsePercentEmbedAt(text: []const u8, at: usize) ?ParsedAt {
     return .{ .value = .{ .embed = url }, .end = close + 1 };
 }
 
-fn parseBrokenImageAt(text: []const u8, at: usize) ?ParsedAt {
+// `![alt](url align="center")`: CommonMark rejects the attributes, so the image is left as text.
+fn imageAt(text: []const u8, at: usize) ?Special {
     if (at + 2 > text.len or text[at] != '!' or text[at + 1] != '[') return null;
     const alt_end = std.mem.indexOfScalarPos(u8, text, at + 2, ']') orelse return null;
     if (alt_end + 1 >= text.len or text[alt_end + 1] != '(') return null;
@@ -192,7 +177,7 @@ fn parseBrokenImageAt(text: []const u8, at: usize) ?ParsedAt {
     const dest_start = alt_end + 2;
     const dest_end = std.mem.indexOfScalarPos(u8, text, dest_start, ')') orelse return null;
     const raw_dest = text[dest_start..dest_end];
-    const destination = stripInlineHtmlAttrs(raw_dest);
+    const destination = stripAttrs(raw_dest);
     if (destination.len == 0) return null;
 
     if (std.mem.eql(u8, raw_dest, destination)) return null;
@@ -208,7 +193,7 @@ fn parseBrokenImageAt(text: []const u8, at: usize) ?ParsedAt {
     };
 }
 
-fn stripInlineHtmlAttrs(dest: []const u8) []const u8 {
+fn stripAttrs(dest: []const u8) []const u8 {
     var cut = dest.len;
     if (std.mem.indexOf(u8, dest, " align=")) |idx| cut = @min(cut, idx);
     return std.mem.trimEnd(u8, dest[0..cut], " \t");
@@ -219,25 +204,19 @@ fn makeText(doc: *Document, text: []const u8) !*Node {
     return try doc.createNode(.text, .{ .literal = duped }, SourceSpan.empty);
 }
 
-fn youtubeEmbedHtml(doc: *Document, url: []const u8) !?[]const u8 {
-    const id = youtubeVideoId(url) orelse return null;
-    return try doc.arena.allocator().print(
-        \\<div class="video-embed"><iframe src="https://www.youtube.com/embed/{s}" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe></div>
-    ,
-        .{id},
-    );
+fn youtube(doc: *Document, url: []const u8, comptime placement: enum { block, span }) !?[]const u8 {
+    const id = videoId(url) orelse return null;
+    const iframe_attrs =
+        \\src="https://www.youtube.com/embed/{s}" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe>
+    ;
+    const fmt = switch (placement) {
+        .block => "<div class=\"video-embed\"><iframe " ++ iframe_attrs ++ "</div>",
+        .span => "<iframe class=\"video-embed\" " ++ iframe_attrs,
+    };
+    return try doc.arena.allocator().print(fmt, .{id});
 }
 
-fn youtubeEmbedHtmlInline(doc: *Document, url: []const u8) !?[]const u8 {
-    const id = youtubeVideoId(url) orelse return null;
-    return try doc.arena.allocator().print(
-        \\<iframe class="video-embed" src="https://www.youtube.com/embed/{s}" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe>
-    ,
-        .{id},
-    );
-}
-
-fn youtubeVideoId(url: []const u8) ?[]const u8 {
+fn videoId(url: []const u8) ?[]const u8 {
     const prefixes = [_][]const u8{
         "https://youtu.be/",
         "http://youtu.be/",

@@ -1,40 +1,27 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
     const raw_id = ctx.request.params.get("id") orelse return error.MissingParameter;
-    if (std.mem.eql(u8, raw_id, "new")) return (<form_page.FormPage @allocator={ctx.arena} account={form_page.blank_account} />);
+    if (std.mem.eql(u8, raw_id, "new")) return (<form.FormPage @allocator={ctx.arena} account={form.blank} />);
 
     const id = std.fmt.parseInt(i64, raw_id, 10) catch return error.AccountMissing;
-    const account = try finance.getAccount(ctx.arena, id) orelse return error.AccountMissing;
-    const history = try finance.listBalanceHistory(ctx.arena, id, history_limit);
+    const account = try finance.accounts.get(ctx.arena, id) orelse return error.AccountMissing;
+    const history = try finance.history.balances(ctx.arena, id, history_limit);
     const changes = recordedOnly(ctx.arena, history);
-    const holdings = try finance.listAccountHoldings(ctx.arena, id);
-    const cash = try finance.listAccountCash(ctx.arena, id);
+    const holdings = try finance.holdings.forAccount(ctx.arena, id);
+    const cash = try finance.holdings.cashForAccount(ctx.arena, id);
     const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
     const manual = std.mem.eql(u8, account.broker, "manual");
-    const liability = finance.isLiability(account);
+    const liability = account.isLiability();
 
     return (
         <div @allocator={ctx.arena}>
-            <div class="adm-toolbar">
-                <div class="adm-toolbar-main">
-                    <h1 class="adm-page-title">{account.name}</h1>
-                    <div class="adm-page-actions">
-                        <div class="adm-finance-nav">
-                            <div class="adm-finance-lead">
-                                <a class="adm-btn adm-btn-ghost adm-btn-icon" href="/admin/finance/accounts" title="Back to accounts" aria-label="Back to accounts">
-                                    {ui.icon(ctx.arena, .arrow_left)}
-                                </a>
-                            </div>
-                            <ui.FinanceNav current={.accounts} />
-                        </div>
-                    </div>
-                </div>
-                <p class="adm-page-desc">{describe(ctx.arena, account)}</p>
-            </div>
+            <Header title={account.name} current={.accounts} lead={(<BackLink href="/admin/finance/accounts" label="Back to accounts" />)}>
+                {describe(ctx.arena, account)}
+            </Header>
 
             <section class="adm-card adm-card-gap">
                 <div class="adm-section-head">
                     <span>Overview</span>
-                    <a class="adm-btn adm-btn-ghost" href={editHref(ctx.arena, id)}>Edit</a>
+                    <a class="adm-btn adm-btn-ghost" href={shared.editHref(ctx.arena, id)}>Edit</a>
                 </div>
                 <div class="adm-kpis adm-card-pad" style="margin:0;min-height:0">
                     <BalanceCard
@@ -42,15 +29,15 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                         id={id}
                         balance={account.net_liquidation}
                         currency={account.currency}
-                        amount={finance.formatMoney(ctx.arena, account.net_liquidation, account.currency)}
-                        updated={if (account.synced_at) |at| format.ago(ctx.arena, at) else "never"}
-                        needs_update={finance.needsBalanceUpdate(account, now)}
+                        amount={finance.format.money(ctx.arena, account.net_liquidation, account.currency)}
+                        updated={if (account.synced_at) |at| format.ago(ctx.arena, now, at) else "never"}
+                        needs_update={account.needsUpdate(now)}
                         manual={manual}
                         liability={liability}
                     />
                     <div class="adm-kpi">
                         <p class="adm-label">{if (liability) "Owed in USD" else "Value in USD"}</p>
-                        <p class="adm-kpi-val">{finance.formatMoney(ctx.arena, @abs(account.value_usd), "USD")}</p>
+                        <p class="adm-kpi-val">{finance.format.money(ctx.arena, @abs(account.value_usd), "USD")}</p>
                         <p class="adm-hint">{weightLabel(ctx.arena, account)}</p>
                     </div>
                     <div class="adm-kpi">
@@ -70,7 +57,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     <span class="adm-hint">{if (account.opened_on) |d| ctx.fmt("Since opening on {s}", .{d}) catch d else "Since first recorded"}</span>
                 </div>
                 <div class="adm-card-pad">
-                    <dashboard.TrendChart
+                    <trend.TrendChart
                         points={trendPoints(ctx.arena, history)}
                         currency={account.currency}
                         step={true}
@@ -91,7 +78,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                 {for (changes, 0..) |h, i| (
                                     <tr>
                                         <td>{h.date}</td>
-                                        <td>{finance.formatMoney(ctx.arena, h.balance, account.currency)}</td>
+                                        <td>{finance.format.money(ctx.arena, h.balance, account.currency)}</td>
                                         <td>{changeLabel(ctx.arena, changes, i, account.currency)}</td>
                                     </tr>
                                 )}
@@ -127,12 +114,12 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                             <span class="adm-table-title">{h.symbol}</span>
                                             <span class="adm-table-sub">{holdingSub(ctx.arena, h)}</span>
                                         </td>
-                                        <td class="adm-hide-sm">{finance.formatQty(ctx.arena, h.quantity)}</td>
-                                        <td class="adm-hide-sm">{if (h.cost_price) |p| finance.formatMoney(ctx.arena, p, h.currency) else "-"}</td>
-                                        <td class="adm-hide-sm">{finance.formatMoney(ctx.arena, h.market_price, h.currency)}</td>
-                                        <dashboard.PnlCell holding={h} />
-                                        <td class="adm-hide-sm">{finance.formatPct(ctx.arena, h.weight_pct)}</td>
-                                        <td>{finance.formatMoney(ctx.arena, h.market_value_base, "USD")}</td>
+                                        <td class="adm-hide-sm">{finance.format.qty(ctx.arena, h.quantity)}</td>
+                                        <td class="adm-hide-sm">{if (h.cost_price) |p| finance.format.money(ctx.arena, p, h.currency) else "-"}</td>
+                                        <td class="adm-hide-sm">{finance.format.money(ctx.arena, h.market_price, h.currency)}</td>
+                                        <PnlCell holding={h} />
+                                        <td class="adm-hide-sm">{finance.format.pct(ctx.arena, h.weight_pct)}</td>
+                                        <td>{finance.format.money(ctx.arena, h.market_value_base, "USD")}</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -162,10 +149,10 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                 {for (cash) |c| (
                                     <tr>
                                         <td><span class="adm-table-title">{c.currency}</span></td>
-                                        <td class="adm-hide-sm">{finance.formatMoney(ctx.arena, c.settled, c.currency)}</td>
-                                        <td class="adm-hide-sm">{if (c.unsettled() == 0) "-" else finance.formatMoney(ctx.arena, c.unsettled(), c.currency)}</td>
-                                        <td class="adm-hide-sm">{finance.formatMoney(ctx.arena, c.amount, c.currency)}</td>
-                                        <td>{finance.formatMoney(ctx.arena, c.amount_base, "USD")}</td>
+                                        <td class="adm-hide-sm">{finance.format.money(ctx.arena, c.settled, c.currency)}</td>
+                                        <td class="adm-hide-sm">{if (c.unsettled() == 0) "-" else finance.format.money(ctx.arena, c.unsettled(), c.currency)}</td>
+                                        <td class="adm-hide-sm">{finance.format.money(ctx.arena, c.amount, c.currency)}</td>
+                                        <td>{finance.format.money(ctx.arena, c.amount_base, "USD")}</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -179,49 +166,46 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
 const history_limit = 365;
 
-fn describe(arena: zx.Allocator, a: finance.Account) []const u8 {
+fn describe(arena: zx.Allocator, a: finance.accounts.Account) []const u8 {
     return arena.print("{s} · {s}{s}{s}{s}{s}", .{
         a.type_label,
         if (a.institution.len > 0) a.institution else a.broker,
         if (a.opened_on != null) " · opened " else "",
         a.opened_on orelse "",
         if (std.mem.eql(u8, a.broker, "ibkr")) " · synced from IBKR" else "",
-        if (finance.isAccountStale(a)) " · stale (excluded from totals)" else "",
+        if (a.isStale()) " · stale (excluded from totals)" else "",
     }) catch a.name;
 }
 
-fn holdingSub(arena: zx.Allocator, h: finance.Holding) []const u8 {
+fn holdingSub(arena: zx.Allocator, h: finance.holdings.Holding) []const u8 {
     if (h.exchange.len == 0) return h.description;
     return arena.print("{s} · {s}", .{ h.description, h.exchange }) catch h.description;
 }
 
-fn weightLabel(arena: zx.Allocator, a: finance.Account) []const u8 {
-    if (finance.isAccountStale(a)) return "Excluded from totals";
-    if (finance.isLiability(a)) return "Counts against net worth";
-    return arena.print("{s} of assets", .{finance.formatPct(arena, a.weight_pct)}) catch "";
+fn weightLabel(arena: zx.Allocator, a: finance.accounts.Account) []const u8 {
+    if (a.isStale()) return "Excluded from totals";
+    if (a.isLiability()) return "Counts against net worth";
+    return arena.print("{s} of assets", .{finance.format.pct(arena, a.weight_pct)}) catch "";
 }
 
-fn editHref(arena: zx.Allocator, id: i64) []const u8 {
-    return arena.print("/admin/finance/accounts/{d}/edit", .{id}) catch "/admin/finance/accounts";
-}
-
-fn trendPoints(arena: zx.Allocator, history: []const finance.BalancePoint) []const dashboard.TrendPoint {
-    const out = arena.alloc(dashboard.TrendPoint, history.len) catch return &.{};
+// `history` is newest first; the chart wants oldest first.
+fn trendPoints(arena: zx.Allocator, history: []const finance.history.BalancePoint) []const trend.Point {
+    const out = arena.alloc(trend.Point, history.len) catch return &.{};
     for (history, 0..) |h, i| out[history.len - 1 - i] = .{ .t = h.t, .date = h.date, .value = h.balance };
     return out;
 }
 
-fn recordedOnly(arena: zx.Allocator, history: []const finance.BalancePoint) []const finance.BalancePoint {
-    var out: std.ArrayList(finance.BalancePoint) = .empty;
+fn recordedOnly(arena: zx.Allocator, history: []const finance.history.BalancePoint) []const finance.history.BalancePoint {
+    var out: std.ArrayList(finance.history.BalancePoint) = .empty;
     for (history) |h| if (h.recorded) out.append(arena, h) catch {};
     return out.items;
 }
 
-fn changeLabel(arena: zx.Allocator, history: []const finance.BalancePoint, i: usize, currency: []const u8) []const u8 {
+fn changeLabel(arena: zx.Allocator, history: []const finance.history.BalancePoint, i: usize, currency: []const u8) []const u8 {
     if (i + 1 >= history.len) return "-";
     const delta = history[i].balance - history[i + 1].balance;
     if (@abs(delta) < 0.005) return "-";
-    return arena.print("{s}{s}", .{ if (delta > 0) "+" else "", finance.formatMoney(arena, delta, currency) }) catch "";
+    return shared.signedMoney(arena, delta, currency);
 }
 
 const BalanceProps = struct {
@@ -302,7 +286,7 @@ fn updateBalance(a: *zx.server.Action.Stateful) void {
     const arena = a.inner.arena;
     var next = card.get();
 
-    finance.updateBalance(arena, next.id, input.balance) catch |err| {
+    finance.accounts.updateBalance(arena, a.inner.io, next.id, input.balance) catch |err| {
         next.err = switch (err) {
             error.InvalidAmount => "Enter a balance of zero or more.",
             error.AccountMissing => "Only manual accounts can be updated here.",
@@ -313,9 +297,9 @@ fn updateBalance(a: *zx.server.Action.Stateful) void {
         };
         return card.set(next);
     };
-    dashboard.financeChanged();
+    shared.changed();
 
-    next.amount = finance.formatMoney(arena, input.balance, next.currency);
+    next.amount = finance.format.money(arena, input.balance, next.currency);
     next.updated = "just now";
     next.needs_update = false;
     next.err = "";
@@ -330,9 +314,13 @@ pub const options: zx.PageOptions = .{
 
 const std = @import("std");
 const zx = @import("zx");
-const ui = @import("../../../ui.zx");
 const format = @import("../../../format.zig");
-const finance = @import("../../../../finance/db.zig");
-const dashboard = @import("../../dashboard.zx");
-const form_page = @import("../form.zx");
-pub const AccountForm = form_page.AccountForm;
+const finance = @import("../../../../finance.zig");
+const shared = @import("../../shared.zig");
+const trend = @import("../../trend.zx");
+const header = @import("../../header.zx");
+const Header = header.Header;
+const BackLink = header.BackLink;
+const PnlCell = @import("../../holdings_panel.zx").PnlCell;
+const form = @import("../form.zx");
+pub const AccountForm = form.AccountForm;

@@ -1,35 +1,21 @@
-pub fn FormPage(allocator: zx.Allocator, props: struct { account: finance.Account }) zx.Component {
+pub fn FormPage(allocator: zx.Allocator, props: struct { account: finance.accounts.Account }) zx.Component {
     const creating = props.account.id == 0;
     return (
         <div @allocator={allocator}>
-            <div class="adm-toolbar">
-                <div class="adm-toolbar-main">
-                    <h1 class="adm-page-title">{if (creating) "Add account" else "Edit account"}</h1>
-                    <div class="adm-page-actions">
-                        <div class="adm-finance-nav">
-                            <div class="adm-finance-lead">
-                                <a
-                                    class="adm-btn adm-btn-ghost adm-btn-icon"
-                                    href={if (creating) "/admin/finance/accounts" else dashboard.accountHref(allocator, props.account.id)}
-                                    title="Back"
-                                    aria-label="Back"
-                                >
-                                    {ui.icon(allocator, .arrow_left)}
-                                </a>
-                            </div>
-                            <ui.FinanceNav current={.accounts} />
-                        </div>
-                    </div>
-                </div>
-                <p class="adm-page-desc">Group accounts to see them summed together on the portfolio. Loans and credit cards count against net worth.</p>
-            </div>
+            <Header
+                title={if (creating) "Add account" else "Edit account"}
+                current={.accounts}
+                lead={(<BackLink href={if (creating) "/admin/finance/accounts" else shared.accountHref(allocator, props.account.id)} />)}
+            >
+                Group accounts to see them summed together on the portfolio. Loans and credit cards count against net worth.
+            </Header>
 
             <AccountForm
                 @client
                 account={props.account}
-                account_types={finance.listAccountTypes(allocator) catch &.{}}
-                asset_classes={finance.listAssetClasses(allocator) catch &.{}}
-                currencies={finance.listCurrencies(allocator) catch &.{}}
+                account_types={finance.accounts.types(allocator) catch &.{}}
+                asset_classes={finance.classes.list(allocator) catch &.{}}
+                currencies={finance.fx.currencies(allocator) catch &.{}}
                 groups={groupNames(allocator)}
             />
         </div>
@@ -38,11 +24,11 @@ pub fn FormPage(allocator: zx.Allocator, props: struct { account: finance.Accoun
 
 fn groupNames(arena: zx.Allocator) []const []const u8 {
     var names: std.ArrayList([]const u8) = .empty;
-    for (finance.listAccountGroups(arena) catch &.{}) |g| names.append(arena, g.name) catch {};
+    for (finance.accounts.groups(arena) catch &.{}) |g| names.append(arena, g.name) catch {};
     return names.items;
 }
 
-pub const blank_account: finance.Account = .{
+pub const blank: finance.accounts.Account = .{
     .id = 0,
     .broker = "manual",
     .external_id = "",
@@ -58,9 +44,9 @@ pub const blank_account: finance.Account = .{
 };
 
 pub const Props = struct {
-    account: finance.Account,
-    account_types: []const finance.AccountType,
-    asset_classes: []const finance.AssetClass,
+    account: finance.accounts.Account,
+    account_types: []const finance.accounts.Type,
+    asset_classes: []const finance.classes.Class,
     currencies: []const []const u8,
     groups: []const []const u8,
 };
@@ -212,7 +198,7 @@ pub fn AccountForm(ctx: *zx.ComponentCtx(Props)) zx.Component {
                 </div>
                 <div class="adm-settings-foot">
                     <p class={status_class} role="status" aria-live="polite">{state.msg}</p>
-                    <a class="adm-btn adm-btn-ghost" href={if (creating) "/admin/finance/accounts" else dashboard.accountHref(alloc, state.id)}>{if (creating) "Cancel" else "Back"}</a>
+                    <a class="adm-btn adm-btn-ghost" href={if (creating) "/admin/finance/accounts" else shared.accountHref(alloc, state.id)}>{if (creating) "Cancel" else "Back"}</a>
                     <button class="adm-btn adm-btn-primary" type="submit" disabled={pending}>
                         {if (pending) "Saving…" else if (creating) "Add account" else "Save changes"}
                     </button>
@@ -238,16 +224,14 @@ fn save(a: *zx.server.Action.Stateful) void {
     var next = prev;
     next.tone = .err;
 
-    const group = if (std.mem.eql(u8, input.group, new_group_value))
-        std.mem.trim(u8, input.new_group, " \t\r\n")
-    else
-        input.group;
-    if (std.mem.eql(u8, input.group, new_group_value) and group.len == 0) {
+    const creates_group = std.mem.eql(u8, input.group, new_group_value);
+    const group = if (creates_group) std.mem.trim(u8, input.new_group, " \t\r\n") else input.group;
+    if (creates_group and group.len == 0) {
         next.msg = "Name the new group, or pick an existing one.";
         return form.set(next);
     }
 
-    const id = finance.saveAccount(arena, .{
+    const id = finance.accounts.save(arena, a.inner.io, .{
         .id = prev.id,
         .name = input.name,
         .institution = input.institution,
@@ -270,7 +254,7 @@ fn save(a: *zx.server.Action.Stateful) void {
         };
         return form.set(next);
     };
-    dashboard.financeChanged();
+    shared.changed();
 
     next.tone = .ok;
     next.new_group = false;
@@ -303,6 +287,8 @@ fn withGroup(arena: zx.Allocator, groups: []const []const u8, group: []const u8)
 
 const std = @import("std");
 const zx = @import("zx");
-const ui = @import("../../ui.zx");
-const finance = @import("../../../finance/db.zig");
-const dashboard = @import("../dashboard.zx");
+const finance = @import("../../../finance.zig");
+const shared = @import("../shared.zig");
+const header = @import("../header.zx");
+const Header = header.Header;
+const BackLink = header.BackLink;

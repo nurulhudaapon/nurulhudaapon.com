@@ -3,7 +3,7 @@ const c = @import("ical");
 const slots = @import("slots.zig");
 const Interval = slots.Interval;
 
-pub fn busyIntervals(allocator: std.mem.Allocator, multistatus: []const u8, range: Interval) ![]const Interval {
+pub fn busy(allocator: std.mem.Allocator, multistatus: []const u8, range: Interval) ![]const Interval {
     var arena_state: std.heap.ArenaAllocator = .init(allocator);
     defer arena_state.deinit();
     const all = try events(arena_state.allocator(), multistatus, range, .xml);
@@ -126,7 +126,7 @@ fn blocksTime(event: ?*c.icalcomponent) bool {
     return transp == null or c.icalproperty_get_transp(transp) != c.ICAL_TRANSP_TRANSPARENT;
 }
 
-pub const NewEvent = struct {
+pub const Invite = struct {
     uid: []const u8,
     start: i64,
     end: i64,
@@ -153,7 +153,7 @@ const vtimezone = blk: {
     );
 };
 
-pub fn buildEvent(allocator: std.mem.Allocator, ev: NewEvent) ![]const u8 {
+pub fn build(allocator: std.mem.Allocator, ev: Invite) ![]const u8 {
     var arena_state: std.heap.ArenaAllocator = .init(allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -207,7 +207,7 @@ pub fn buildEvent(allocator: std.mem.Allocator, ev: NewEvent) ![]const u8 {
     return allocator.dupe(u8, std.mem.span(out));
 }
 
-/// Floating (zone-less) local time; `withTzid` pins it to the owner's zone.
+// Floating (zone-less) local time; `withTzid` pins it to the owner's zone.
 fn localTime(unix: i64) c.icaltimetype {
     return c.icaltime_from_timet_with_zone(unix + tz.utc_offset_s, 0, null);
 }
@@ -217,27 +217,30 @@ fn withTzid(prop: ?*c.icalproperty) ?*c.icalproperty {
     return prop;
 }
 
-pub const Stored = struct { span: Interval, cancelled: bool };
+pub const Stored = struct {
+    span: Interval,
+    cancelled: bool,
 
-/// `calendar_data` may still be XML-escaped from a CalDAV response.
-pub fn storedEvent(allocator: std.mem.Allocator, calendar_data: []const u8) !?Stored {
-    const end_marker = "END:VCALENDAR";
-    const begin = std.mem.indexOf(u8, calendar_data, "BEGIN:VCALENDAR") orelse return null;
-    const end = (std.mem.indexOfPos(u8, calendar_data, begin, end_marker) orelse return null) + end_marker.len;
-    const text = try xmlUnescapeZ(allocator, calendar_data[begin..end]);
-    defer allocator.free(text);
+    // `calendar_data` may still be XML-escaped from a CalDAV response.
+    pub fn parse(allocator: std.mem.Allocator, calendar_data: []const u8) !?Stored {
+        const end_marker = "END:VCALENDAR";
+        const begin = std.mem.indexOf(u8, calendar_data, "BEGIN:VCALENDAR") orelse return null;
+        const end = (std.mem.indexOfPos(u8, calendar_data, begin, end_marker) orelse return null) + end_marker.len;
+        const text = try xmlUnescapeZ(allocator, calendar_data[begin..end]);
+        defer allocator.free(text);
 
-    const root = c.icalparser_parse_string(text.ptr) orelse return null;
-    defer c.icalcomponent_free(root);
-    const event = c.icalcomponent_get_first_component(root, c.ICAL_VEVENT_COMPONENT) orelse return null;
-    const start = c.icalcomponent_get_dtstart(event);
-    const finish = c.icalcomponent_get_dtend(event);
-    if (c.icaltime_is_null_time(start) != 0 or c.icaltime_is_null_time(finish) != 0) return null;
-    return .{
-        .span = .{ .start = toUnix(start), .end = toUnix(finish) },
-        .cancelled = c.icalcomponent_get_status(event) == c.ICAL_STATUS_CANCELLED,
-    };
-}
+        const root = c.icalparser_parse_string(text.ptr) orelse return null;
+        defer c.icalcomponent_free(root);
+        const event = c.icalcomponent_get_first_component(root, c.ICAL_VEVENT_COMPONENT) orelse return null;
+        const start = c.icalcomponent_get_dtstart(event);
+        const finish = c.icalcomponent_get_dtend(event);
+        if (c.icaltime_is_null_time(start) != 0 or c.icaltime_is_null_time(finish) != 0) return null;
+        return .{
+            .span = .{ .start = toUnix(start), .end = toUnix(finish) },
+            .cancelled = c.icalcomponent_get_status(event) == c.ICAL_STATUS_CANCELLED,
+        };
+    }
+};
 
 fn toUnix(t: c.icaltimetype) i64 {
     const shift: i64 = if (t.zone == null) -tz.utc_offset_s else 0;
@@ -282,7 +285,7 @@ fn decodeEntity(entity: []const u8) ?u8 {
 
 const range_oct19_to_nov2: Interval = .{ .start = 1792368000, .end = 1793577600 };
 
-test busyIntervals {
+test busy {
     const tue_oct20_11am_dhaka = 1792472400;
     const xml =
         "<multistatus xmlns=\"DAV:\"><response><propstat><prop>" ++
@@ -299,20 +302,20 @@ test busyIntervals {
         "DTSTART:20261022T040000Z\r\nDTEND:20261022T050000Z\r\nTRANSP:TRANSPARENT\r\nEND:VEVENT\r\n" ++
         "END:VCALENDAR\r\n</calendar-data></prop></propstat></response></multistatus>";
 
-    const busy = try busyIntervals(std.testing.allocator, xml, range_oct19_to_nov2);
-    defer std.testing.allocator.free(busy);
+    const got = try busy(std.testing.allocator, xml, range_oct19_to_nov2);
+    defer std.testing.allocator.free(got);
     const hour = std.time.s_per_hour;
     const week = std.time.s_per_week;
     try std.testing.expectEqualSlices(Interval, &.{
         .{ .start = tue_oct20_11am_dhaka, .end = tue_oct20_11am_dhaka + hour },
         .{ .start = tue_oct20_11am_dhaka + week, .end = tue_oct20_11am_dhaka + week + hour },
-    }, busy);
+    }, got);
 }
 
-test buildEvent {
+test build {
     const thu_oct22_10am_dhaka = 1792641600;
     const half_hour = 30 * std.time.s_per_min;
-    const ics = try buildEvent(std.testing.allocator, .{
+    const ics = try build(std.testing.allocator, .{
         .uid = "abc@nurulhudaapon.com",
         .start = thu_oct22_10am_dhaka,
         .end = thu_oct22_10am_dhaka + half_hour,
@@ -342,15 +345,15 @@ test buildEvent {
         "CONFERENCE;VALUE=URI;FEATURE=VIDEO;",
     }) |needle| try std.testing.expect(std.mem.indexOf(u8, ics, needle) != null);
 
-    const stored = (try storedEvent(std.testing.allocator, ics)).?;
+    const stored = (try Stored.parse(std.testing.allocator, ics)).?;
     try std.testing.expectEqual(Interval{ .start = thu_oct22_10am_dhaka, .end = thu_oct22_10am_dhaka + half_hour }, stored.span);
     try std.testing.expect(!stored.cancelled);
 
-    const busy = try busyIntervals(std.testing.allocator, ics, range_oct19_to_nov2);
-    defer std.testing.allocator.free(busy);
+    const got = try busy(std.testing.allocator, ics, range_oct19_to_nov2);
+    defer std.testing.allocator.free(got);
     try std.testing.expectEqualSlices(Interval, &.{
         .{ .start = thu_oct22_10am_dhaka, .end = thu_oct22_10am_dhaka + half_hour },
-    }, busy);
+    }, got);
 }
 
 test "all-day events block the whole local day" {
@@ -360,14 +363,14 @@ test "all-day events block the whole local day" {
         "BEGIN:VEVENT\r\nUID:allday\r\nDTSTAMP:20261001T000000Z\r\n" ++
         "DTSTART;VALUE=DATE:20261024\r\nDTEND;VALUE=DATE:20261025\r\nTRANSP:OPAQUE\r\nEND:VEVENT\r\n" ++
         "END:VCALENDAR\r\n</calendar-data>";
-    const busy = try busyIntervals(std.testing.allocator, xml, range_oct19_to_nov2);
-    defer std.testing.allocator.free(busy);
+    const got = try busy(std.testing.allocator, xml, range_oct19_to_nov2);
+    defer std.testing.allocator.free(got);
     try std.testing.expectEqualSlices(Interval, &.{
         .{ .start = sat_oct24_midnight_dhaka, .end = sat_oct24_midnight_dhaka + std.time.s_per_day },
-    }, busy);
+    }, got);
 }
 
-test "storedEvent reads an event moved in the calendar app" {
+test "Stored.parse reads an event moved in the calendar app" {
     const thu_oct22_3pm_dhaka = 1792659600;
     const xml =
         "<response><href>/1/calendars/x/abc.ics</href><propstat><prop>" ++
@@ -375,9 +378,9 @@ test "storedEvent reads an event moved in the calendar app" {
         "BEGIN:VEVENT\r\nUID:abc@nurulhudaapon.com\r\nDTSTAMP:20261021T000000Z\r\n" ++
         "DTSTART:20261022T090000Z\r\nDURATION:PT45M\r\nSUMMARY:Ada &lt;&gt; Nurul\r\nEND:VEVENT\r\n" ++
         "END:VCALENDAR\r\n</calendar-data></prop></propstat></response>";
-    const stored = (try storedEvent(std.testing.allocator, xml)).?;
+    const stored = (try Stored.parse(std.testing.allocator, xml)).?;
     try std.testing.expectEqual(Interval{ .start = thu_oct22_3pm_dhaka, .end = thu_oct22_3pm_dhaka + 45 * std.time.s_per_min }, stored.span);
-    try std.testing.expectEqual(null, try storedEvent(std.testing.allocator, "<response><status>HTTP/1.1 404 Not Found</status></response>"));
+    try std.testing.expectEqual(null, try Stored.parse(std.testing.allocator, "<response><status>HTTP/1.1 404 Not Found</status></response>"));
 }
 
 test "events from a raw feed: moved occurrences, free and all-day events" {

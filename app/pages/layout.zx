@@ -1,33 +1,20 @@
 pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
-    const current_year = blk: {
-        const timestamp: i64 = @intCast(@divFloor(std.Io.Timestamp.now(ctx.io, .real).nanoseconds, std.time.ns_per_s));
-        const seconds_per_year = 365.25 * 24 * 60 * 60;
-        const years_since_epoch = @as(i64, @intFromFloat(@as(f64, @floatFromInt(timestamp)) / seconds_per_year));
-        break :blk 1970 + years_since_epoch;
-    };
-    const copyright = ctx.fmt("© {d} {s}.", .{ current_year, data.author }) catch data.author;
-
     const path = ctx.request.pathname;
     if (isAdminPath(path)) return AdminDocument(ctx, children);
-    if (isDevPath(path)) return DevDocument(ctx, children);
-    // Pages set these through `ctx.data`; anything unset falls back to the site defaults.
+    if (isUnder(path, "/dev")) return DevDocument(ctx, children);
+
     const title = ctx.data.get("title") orelse data.title;
     const description = ctx.data.get("description") orelse data.description;
     const robots = ctx.data.get("robots") orelse "index, follow";
+    const copyright = ctx.fmt("© {d} {s}.", .{ currentYear(ctx.io), data.author }) catch data.author;
 
     const origin = siteOrigin(ctx);
-    const page_url = blk: {
-        if (std.mem.eql(u8, path, "/") or std.mem.eql(u8, path, "")) break :blk origin;
-        const clean = if (std.mem.endsWith(u8, path, "/")) path[0 .. path.len - 1] else path;
-        break :blk ctx.fmt("{s}{s}", .{ origin, clean }) catch data.url;
-    };
-    const og_image_url = blk: {
-        if (ctx.data.get("og_image")) |og_path| break :blk ctx.fmt("{s}{s}", .{ origin, og_path }) catch data.og_image;
-        if (std.mem.eql(u8, path, "/") or std.mem.eql(u8, path, ""))
-            break :blk ctx.fmt("{s}/og/home.png", .{origin}) catch data.og_image;
-        const clean = if (std.mem.endsWith(u8, path, "/")) path[0 .. path.len - 1] else path;
-        break :blk ctx.fmt("{s}/og{s}.png", .{ origin, clean }) catch data.og_image;
-    };
+    const route = if (std.mem.endsWith(u8, path, "/")) path[0 .. path.len - 1] else path;
+    const page_url = if (route.len == 0) origin else ctx.fmt("{s}{s}", .{ origin, route }) catch data.url;
+    const og_image_url = if (ctx.data.get("og_image")) |og_path|
+        ctx.fmt("{s}{s}", .{ origin, og_path }) catch data.og_image
+    else
+        ctx.fmt("{s}/og{s}.png", .{ origin, if (route.len == 0) "/home" else route }) catch data.og_image;
 
     return (
         <html @allocator={ctx.arena} lang="en">
@@ -97,24 +84,25 @@ fn AdminDocument(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
 }
 
 fn isAdminPath(path: []const u8) bool {
-    return std.mem.eql(u8, path, "/admin") or std.mem.startsWith(u8, path, "/admin/") or
-        std.mem.startsWith(u8, path, "/auth/");
+    return isUnder(path, "/admin") or std.mem.startsWith(u8, path, "/auth/");
 }
 
-fn isDevPath(path: []const u8) bool {
-    return std.mem.eql(u8, path, "/dev") or std.mem.startsWith(u8, path, "/dev/");
+fn isUnder(path: []const u8, comptime prefix: []const u8) bool {
+    return std.mem.eql(u8, path, prefix) or std.mem.startsWith(u8, path, prefix ++ "/");
+}
+
+fn currentYear(io: std.Io) u16 {
+    const now = std.Io.Timestamp.now(io, .real).toSeconds();
+    const seconds: std.time.epoch.EpochSeconds = .{ .secs = @intCast(now) };
+    return seconds.getEpochDay().calculateYearDay().year;
 }
 
 fn siteOrigin(ctx: zx.LayoutContext) []const u8 {
-    if (@import("builtin").optimize == .debug) {
-        if (ctx.request.headers.get("host")) |host| {
-            if (host.len > 0) {
-                return ctx.fmt("http://{s}", .{host}) catch data.url;
-            }
-        }
-        if (originFromUrl(ctx.request.url)) |origin| return origin;
+    if (builtin.optimize != .debug) return data.url;
+    if (ctx.request.headers.get("host")) |host| {
+        if (host.len > 0) return ctx.fmt("http://{s}", .{host}) catch data.url;
     }
-    return data.url;
+    return originFromUrl(ctx.request.url) orelse data.url;
 }
 
 fn originFromUrl(url: []const u8) ?[]const u8 {
@@ -124,8 +112,8 @@ fn originFromUrl(url: []const u8) ?[]const u8 {
     return url[0 .. scheme_end + 3 + path_start];
 }
 
-fn icon(allocator: zx.Allocator, icon_type: IconType) zx.Component {
-    return switch (icon_type) {
+fn icon(allocator: zx.Allocator, kind: Icon) zx.Component {
+    return switch (kind) {
         .email => icons.Email(allocator),
         .github => icons.GitHub(allocator),
         .npm => icons.Npm(allocator),
@@ -135,7 +123,7 @@ fn icon(allocator: zx.Allocator, icon_type: IconType) zx.Component {
     };
 }
 
-const IconType = enum {
+const Icon = enum {
     email,
     github,
     npm,
@@ -147,7 +135,7 @@ const IconType = enum {
 const Link = struct {
     label: []const u8,
     href: []const u8,
-    icon: IconType,
+    icon: Icon,
 };
 
 const SiteData = struct {
@@ -165,5 +153,6 @@ pub const options: zx.LayoutOptions = .{ .rendering = .prerendered };
 
 const DevDocument = @import("dev/document.zx").Document;
 const icons = @import("component.zx").icons;
+const builtin = @import("builtin");
 const std = @import("std");
 const zx = @import("zx");

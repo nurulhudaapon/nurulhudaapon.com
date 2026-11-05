@@ -1,35 +1,31 @@
 pub fn GET(ctx: zx.RouteContext) !void {
     const pathname = ctx.request.pathname;
-    const og_name = pathname["/og/".len..(pathname.len - ".png".len)];
+    const name = pathname["/og/".len..(pathname.len - ".png".len)];
 
-    // Static avatar: GitHub profile photo, cached and exported at /og/avatar.png
-    if (std.mem.eql(u8, og_name, "avatar")) {
-        const bytes = try avatar.fetch(ctx.arena);
+    if (std.mem.eql(u8, name, "avatar")) {
+        const bytes = try avatar.fetch(ctx.arena, ctx.io);
         ctx.response.text(bytes);
         ctx.response.setContentType(avatar.contentType(bytes));
         ctx.response.headers.append("Cache-Control", "public, max-age=86400");
         return;
     }
 
-    ensureOgFonts();
+    registerFonts();
 
-    var og_data = try getOgImageData(ctx.arena, og_name);
-
+    var props = try propsFor(ctx.arena, ctx.io, name);
     if (try queryText(ctx, "title")) |title| {
-        og_data.title = title;
-        og_data.title_lines = try wrapText(ctx.arena, title, maxCharsForSize(og_data.title_size));
+        props.title = title;
+        props.title_lines = try wrapText(ctx.arena, title, maxChars(props.title_size));
     }
-    if (try queryText(ctx, "subtitle")) |subtitle| og_data.subtitle = subtitle;
-    if (try queryText(ctx, "meta")) |meta| og_data.meta = meta;
+    if (try queryText(ctx, "subtitle")) |subtitle| {
+        props.subtitle = if (subtitle.len == 0) &.{} else try ctx.arena.dupe([]const u8, &.{subtitle});
+    }
+    if (try queryText(ctx, "meta")) |meta| props.meta = meta;
+    props.avatar_href = try avatar.dataUri(ctx.arena, ctx.io);
 
-    og_data.avatar_href = try avatar.dataUri(ctx.arena);
-
-    const og_template = OgTemplate(ctx.arena, og_data);
-    var aw = std.Io.Writer.Allocating.init(ctx.arena);
-
-    try og_template.render(&aw.writer, .{});
-    const svg_text = aw.written();
-    const png = try lunasvg.svgToPngAlloc(ctx.arena, svg_text, 1200, 630, 0xff000000);
+    var aw: std.Io.Writer.Allocating = .init(ctx.arena);
+    try Card(ctx.arena, props).render(&aw.writer, .{});
+    const png = try lunasvg.svgToPngAlloc(ctx.arena, aw.written(), 1200, 630, 0xff000000);
 
     ctx.response.text(png);
     ctx.response.setContentType(.@"image/png");
@@ -38,70 +34,54 @@ pub fn GET(ctx: zx.RouteContext) !void {
 fn queryText(ctx: zx.RouteContext, name: []const u8) !?[]const u8 {
     const raw = ctx.request.query.get(name) orelse return null;
     const buf = try ctx.arena.dupe(u8, raw);
-    for (buf) |*c| {
-        if (c.* == '+') c.* = ' ';
-    }
+    std.mem.replaceScalar(u8, buf, '+', ' ');
     return std.Uri.percentDecodeInPlace(buf);
 }
 
-fn ensureOgFonts() void {
+var fonts_registered: std.atomic.Value(bool) = .init(false);
+
+fn registerFonts() void {
     if (fonts_registered.swap(true, .acq_rel)) return;
-    var ok = true;
-    if (!lunasvg.addFontFaceFromData("Geist", true, false, geist_fonts.bold)) ok = false;
-    if (!lunasvg.addFontFaceFromData("Geist", false, false, geist_fonts.regular)) ok = false;
-    if (!ok) {
+    const bold = lunasvg.addFontFaceFromData("Geist", true, false, geist_fonts.bold);
+    const regular = lunasvg.addFontFaceFromData("Geist", false, false, geist_fonts.regular);
+    if (!bold or !regular) {
         fonts_registered.store(false, .release);
         std.log.warn("lunasvg: failed to register Geist fonts", .{});
     }
 }
 
-var fonts_registered: std.atomic.Value(bool) = .init(false);
-
-fn getOgImageData(allocator: std.mem.Allocator, path: []const u8) !OgTemplateProps {
-    for (og_images) |og_image| {
-        if (std.mem.eql(u8, og_image.path, path)) {
-            return try finalizeSite(allocator, og_image);
-        }
+fn propsFor(arena: std.mem.Allocator, io: std.Io, name: []const u8) !Props {
+    for (pages) |page| {
+        if (std.mem.eql(u8, page.path, name)) return sitePage(arena, page);
     }
-
-    if (std.mem.startsWith(u8, path, "blog/")) {
-        const slug = path["blog/".len..];
-        if (posts.getPostBySlug(allocator, slug, .none)) |post| {
-            const title = try truncate(allocator, stripTrailingEmoji(post.title), 56);
-            const title_size = blogTitleSize(title);
-            const meta = try allocator.print("{s}  ·  {s}  ·  {d} min read", .{
-                post.author.name,
-                post.publishedAt,
-                post.readTimeInMinutes,
-            });
-            return .{
-                .kind = .blog,
-                .path = path,
-                .title = title,
-                .subtitle = "",
-                .meta = meta,
-                .author = post.author.name,
-                .avatar_href = "",
-                .title_lines = try wrapText(allocator, title, maxCharsForSize(title_size)),
-                .title_size = title_size,
-            };
-        } else |_| {}
+    if (std.mem.startsWith(u8, name, "blog/")) {
+        if (blogPost(arena, io, name)) |props| return props else |_| {}
     }
-
-    return try finalizeSite(allocator, default_og_image);
+    return sitePage(arena, home);
 }
 
-fn finalizeSite(allocator: std.mem.Allocator, props: OgTemplateProps) !OgTemplateProps {
-    var out = props;
-    out.kind = .site;
-    out.title_size = siteTitleSize(props.title);
-    out.title_lines = try wrapText(allocator, props.title, maxCharsForSize(out.title_size));
-    out.avatar_href = "";
-    return out;
+fn sitePage(arena: std.mem.Allocator, page: Props) !Props {
+    var props = page;
+    props.title_size = siteTitleSize(page.title);
+    props.title_lines = try wrapText(arena, page.title, maxChars(props.title_size));
+    return props;
+}
+
+fn blogPost(arena: std.mem.Allocator, io: std.Io, name: []const u8) !Props {
+    const post = try posts.get(arena, io, name["blog/".len..], .none);
+    const title = try truncate(arena, stripTrailingEmoji(post.title), 56);
+    const title_size = blogTitleSize(title);
+    return .{
+        .kind = .blog,
+        .path = name,
+        .title = title,
+        .title_lines = try wrapText(arena, title, maxChars(title_size)),
+        .title_size = title_size,
+        .meta = try arena.print("{s}  ·  {s}  ·  {d} min read", .{ posts.author, post.date, post.read_minutes }),
+    };
 }
 
 fn siteTitleSize(title: []const u8) u32 {
-    if (std.mem.eql(u8, title, "Nurul Huda (Apon)")) return 52;
     if (title.len <= 18) return 52;
     if (title.len <= 28) return 40;
     return 34;
@@ -113,29 +93,23 @@ fn blogTitleSize(title: []const u8) u32 {
     return 34;
 }
 
-fn maxCharsForSize(size: u32) usize {
-    return switch (size) {
+fn maxChars(title_size: u32) usize {
+    return switch (title_size) {
         48 => 26,
         40 => 32,
         else => 38,
     };
 }
 
-fn wrapText(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) ![]const []const u8 {
-    if (text.len <= max_chars) {
-        const one = try allocator.alloc([]const u8, 1);
-        one[0] = text;
-        return one;
-    }
+fn wrapText(arena: std.mem.Allocator, text: []const u8, max_chars: usize) ![]const []const u8 {
+    if (text.len <= max_chars) return arena.dupe([]const u8, &.{text});
 
     var lines: std.ArrayList([]const u8) = .empty;
-    errdefer lines.deinit(allocator);
 
     var start: usize = 0;
     while (start < text.len and lines.items.len < 3) {
-        const remaining = text.len - start;
-        if (remaining <= max_chars) {
-            try lines.append(allocator, text[start..]);
+        if (text.len - start <= max_chars) {
+            try lines.append(arena, text[start..]);
             break;
         }
 
@@ -143,17 +117,16 @@ fn wrapText(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) ![
         while (end > start and text[end - 1] != ' ') : (end -= 1) {}
         if (end <= start) end = start + max_chars;
 
-        const is_last_slot = lines.items.len == 2;
-        if (is_last_slot and end < text.len) {
-            try lines.append(allocator, try truncate(allocator, text[start..], max_chars));
+        if (lines.items.len == 2 and end < text.len) {
+            try lines.append(arena, try truncate(arena, text[start..], max_chars));
             break;
         }
 
-        try lines.append(allocator, text[start..end]);
+        try lines.append(arena, text[start..end]);
         start = end;
         while (start < text.len and text[start] == ' ') : (start += 1) {}
     }
-    return try lines.toOwnedSlice(allocator);
+    return lines.items;
 }
 
 fn stripTrailingEmoji(text: []const u8) []const u8 {
@@ -162,62 +135,36 @@ fn stripTrailingEmoji(text: []const u8) []const u8 {
     return if (end == 0) text else text[0..end];
 }
 
-fn truncate(allocator: std.mem.Allocator, text: []const u8, max: usize) ![]const u8 {
+fn truncate(arena: std.mem.Allocator, text: []const u8, max: usize) ![]const u8 {
     if (text.len <= max) return text;
-    const cut = @min(max, text.len);
-    var end = cut;
+    var end = max;
     while (end > 0 and text[end - 1] != ' ') : (end -= 1) {}
-    if (end < max / 2) end = cut;
+    if (end < max / 2) end = max;
     if (end > 0 and text[end - 1] == ' ') end -= 1;
-    return try allocator.print("{s}…", .{text[0..end]});
+    return arena.print("{s}…", .{text[0..end]});
 }
 
-const site_tagline = "Building high quality software for companies and crafting Ziex, a full-stack web framework for Zig.";
-
-const default_og_image: OgTemplateProps = .{
-    .path = "home",
-    .title = "Nurul Huda (Apon)",
-    .subtitle = site_tagline,
-    .avatar_href = "",
+const tagline: []const []const u8 = &.{
+    "Building high quality software for companies and",
+    "crafting Ziex, a full-stack web framework for Zig.",
 };
 
-const og_images = [_]OgTemplateProps{
-    default_og_image,
-    .{
-        .path = "about",
-        .title = "About",
-        .subtitle = site_tagline,
-        .avatar_href = "",
-    },
-    .{
-        .path = "blog",
-        .title = "Blog",
-        .subtitle = "Writing and notes",
-        .avatar_href = "",
-    },
-    .{
-        .path = "schedule",
-        .title = "Schedule",
-        .subtitle = "Pick a time and let's talk",
-        .avatar_href = "",
-    },
-    .{
-        .path = "ask",
-        .title = "Ask Me Anything",
-        .subtitle = "Anonymously ask me anything",
-        .avatar_href = "",
-    },
+const home: Props = .{ .path = "home", .title = "Nurul Huda (Apon)", .subtitle = tagline };
+
+const pages = [_]Props{
+    home,
+    .{ .path = "about", .title = "About", .subtitle = tagline },
+    .{ .path = "blog", .title = "Blog", .subtitle = &.{"Writing and notes from Nurul Huda (Apon)"} },
+    .{ .path = "schedule", .title = "Schedule", .subtitle = &.{"Pick a time that works for you and let's talk"} },
+    .{ .path = "ask", .title = "Ask Me Anything", .subtitle = &.{"Anonymously ask me anything"} },
 };
 
 fn staticParams(ctx: *zx.StaticContext) !void {
     try ctx.params.add(.{ .@"*" = "avatar.png" });
-
-    inline for (og_images) |og_image| {
-        try ctx.params.add(.{ .@"*" = og_image.path ++ ".png" });
+    inline for (pages) |page| {
+        try ctx.params.add(.{ .@"*" = page.path ++ ".png" });
     }
-
-    const blog_posts = posts.getPosts(ctx.arena) catch &.{};
-    for (blog_posts) |post| {
+    for (posts.list(ctx.arena, ctx.io) catch &.{}) |post| {
         try ctx.params.add(.{ .@"*" = try ctx.arena.print("blog/{s}.png", .{post.slug}) });
     }
 }
@@ -227,8 +174,8 @@ pub const options = zx.RouteOptions{
     .static = staticParams,
 };
 
-const OgTemplate = @import("template.zx").OgTemplate;
-const OgTemplateProps = @import("template.zx").OgTemplateProps;
+const Card = @import("template.zx").Card;
+const Props = @import("template.zx").Props;
 const avatar = @import("../avatar.zig");
 const posts = @import("../../../pages/blog/posts.zig");
 

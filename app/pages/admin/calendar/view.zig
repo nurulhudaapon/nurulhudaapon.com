@@ -4,21 +4,24 @@ const format = @import("../format.zig");
 const slots = @import("../../schedule/slots.zig");
 const ical = @import("../../schedule/ical.zig");
 const week = @import("../../schedule/week.zig");
-const booking = @import("../../schedule/booking.zig");
 const settings = @import("../../schedule/settings.zig");
 const calendars = @import("../../schedule/calendars.zig");
 
 const Interval = slots.Interval;
 pub const day_s = std.time.s_per_day;
 
-pub const Sync = enum { idle, stale, forced };
+// `stale` and `forced` ask the client to request a sync; `waiting` has it poll
+// until every copy is newer than `since`. See page.zx.
+pub const Sync = enum { idle, stale, forced, waiting };
 
-// `sync` asks the client to refetch in the background; see page.zx.
 pub const WeekState = struct {
     start: i64,
     href: []const u8,
     loading: bool = false,
     sync: Sync = .idle,
+    since: i64 = 0,
+    // Fetch time of the oldest copy shown; 0 when one was never synced.
+    synced_at: i64 = 0,
     has_calendars: bool,
     err: []const u8 = "",
     view: View,
@@ -27,33 +30,37 @@ pub const WeekState = struct {
     alloc: []const AllocRow = &.{},
 };
 
-pub fn load(arena: zx.Allocator, start: i64, max_age: ?i64, with_alloc: bool) !WeekState {
-    const now = booking.nowUnix();
+pub fn load(arena: zx.Allocator, now: i64, start: i64, with_alloc: bool) !WeekState {
     const range: Interval = .{ .start = start, .end = start + 7 * day_s };
-    const prefs = calendars.loadPrefs(arena);
-    const loaded = try calendars.loadVisible(arena, range, max_age);
-    const v = try buildView(arena, loaded, settings.load(arena), range, now);
+    const prefs: calendars.Prefs = .load(arena);
+    const loaded = try calendars.visible(arena, range, now);
+    const v = try build(arena, loaded, settings.load(arena), range, now);
     var stale = false;
-    for (loaded) |l| stale = stale or (!l.failed and now - l.at > prefs.staleSeconds());
+    var synced_at: i64 = std.math.maxInt(i64);
+    for (loaded) |l| {
+        stale = stale or l.stale;
+        synced_at = @min(synced_at, l.at);
+    }
     var buf: [10]u8 = undefined;
     return .{
         .start = start,
-        .href = if (start == week.weekStart(now, prefs.week_start))
+        .href = if (start == week.start(now, prefs.week_start))
             "/admin/calendar"
         else
             try arena.print("/admin/calendar?week={s}", .{week.formatDate(&buf, start)}),
         .sync = if (stale) .stale else .idle,
+        .synced_at = if (loaded.len > 0) synced_at else now,
         .has_calendars = loaded.len > 0,
-        .err = if (v.failed.len > 0) try arena.print("Couldn't load {s}. Showing the rest.", .{v.failed}) else "",
+        .err = if (v.unsynced.len > 0) try arena.print("{s} not synced yet.", .{v.unsynced}) else "",
         .view = v,
         .alloc_open = with_alloc,
         .alloc = if (with_alloc) try allocationRows(arena, loaded, range) else &.{},
     };
 }
 
-pub fn allocation(arena: zx.Allocator, start: i64) ![]const AllocRow {
+pub fn allocation(arena: zx.Allocator, now: i64, start: i64) ![]const AllocRow {
     const range: Interval = .{ .start = start, .end = start + 7 * day_s };
-    return allocationRows(arena, try calendars.loadVisible(arena, range, null), range);
+    return allocationRows(arena, try calendars.visible(arena, range, now), range);
 }
 
 pub const Chip = struct { title: []const u8, style: []const u8 };
@@ -86,7 +93,7 @@ pub const View = struct {
     grid_style: []const u8,
     hours: []const Hour,
     days: []const Day,
-    failed: []const u8,
+    unsynced: []const u8,
     busy_total: []const u8,
     busy_hint: []const u8,
     busy_work: []const u8,
@@ -97,13 +104,13 @@ pub const View = struct {
 
 const Item = struct { ev: ical.Event, color: []const u8, calendar: []const u8 };
 
-fn buildView(arena: zx.Allocator, loaded: []const calendars.Loaded, rules: slots.Rules, range: Interval, now: i64) !View {
+fn build(arena: zx.Allocator, loaded: []const calendars.Loaded, rules: slots.Rules, range: Interval, now: i64) !View {
     var items: std.ArrayList(Item) = .empty;
-    var failed: std.ArrayList(u8) = .empty;
+    var unsynced: std.ArrayList(u8) = .empty;
     for (loaded) |l| {
-        if (l.failed) {
-            if (failed.items.len > 0) try failed.appendSlice(arena, ", ");
-            try failed.appendSlice(arena, l.source.name);
+        if (l.at == 0) {
+            if (unsynced.items.len > 0) try unsynced.appendSlice(arena, ", ");
+            try unsynced.appendSlice(arena, l.source.name);
         }
         for (l.events) |ev| if (ev.end > range.start and ev.start < range.end)
             try items.append(arena, .{ .ev = ev, .color = l.source.color, .calendar = l.source.name });
@@ -194,7 +201,7 @@ fn buildView(arena: zx.Allocator, loaded: []const calendars.Loaded, rules: slots
         .grid_style = try arena.print("--cal-hours:{d}", .{h1 - h0}),
         .hours = hours,
         .days = days,
-        .failed = failed.items,
+        .unsynced = unsynced.items,
         .busy_total = try week.formatDuration(arena, busy_secs),
         .busy_hint = try arena.print("{d} timed {s} across {d} {s}", .{
             timed_count, if (timed_count == 1) "event" else "events",

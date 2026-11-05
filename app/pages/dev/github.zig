@@ -20,7 +20,7 @@ pub const Stats = struct {
 
 pub const endpoint = "/api/data/github.json";
 
-/// Set at startup from `GITHUB_TOKEN`; unauthenticated requests are limited to 60/hour per IP.
+// Unauthenticated requests are limited to 60/hour per IP.
 var auth_header: ?[]const u8 = null;
 
 pub fn setToken(token: []const u8) !void {
@@ -34,7 +34,7 @@ pub fn authorization() ?[]const u8 {
 
 const owners = [_][]const u8{ "ziex-dev", "nurulhudaapon" };
 
-const pinned = [_][]const u8{
+const pinned_names = [_][]const u8{
     "ziex-dev/ziex",
     "nurulhudaapon/zzon",
     "nurulhudaapon/temporalz",
@@ -48,45 +48,57 @@ const pinned = [_][]const u8{
     "nurulhudaapon/asdf-sst",
 };
 
-pub fn fetchPinned(arena: std.mem.Allocator) ![]const Repo {
-    var by_name: std.StringHashMapUnmanaged(Repo) = .empty;
-    for (owners) |owner| {
-        const url = try arena.print("https://api.github.com/users/{s}/repos?per_page=100", .{owner});
+pub const Client = struct {
+    arena: std.mem.Allocator,
+    io: std.Io,
+    authorization: ?[]const u8,
+
+    pub fn init(arena: std.mem.Allocator, io: std.Io) Client {
+        return .{ .arena = arena, .io = io, .authorization = auth_header };
+    }
+
+    pub fn pinned(c: Client) ![]const Repo {
+        var by_name: std.StringHashMapUnmanaged(Repo) = .empty;
+        for (owners) |owner| {
+            const url = try c.arena.print("https://api.github.com/users/{s}/repos?per_page=100", .{owner});
+            for (try c.get([]const Repo, url)) |repo| try by_name.put(c.arena, repo.full_name, repo);
+        }
+
+        var repos: std.ArrayList(Repo) = .empty;
+        for (pinned_names) |name| {
+            if (by_name.get(name)) |repo| try repos.append(c.arena, repo);
+        }
+        return repos.toOwnedSlice(c.arena);
+    }
+
+    pub fn stats(c: Client) ![]const Stats {
+        const repos = try c.pinned();
+        const out = try c.arena.alloc(Stats, repos.len);
+        for (repos, out) |r, *s| s.* = .{ .repo = r.full_name, .stars = r.stargazers_count, .forks = r.forks_count };
+        return out;
+    }
+
+    fn get(c: Client, comptime T: type, url: []const u8) !T {
         const headers = [_]zx.http.Header{
             .{ .name = "Accept", .value = "application/vnd.github+json" },
             .{ .name = "User-Agent", .value = "nuhu.dev" },
-            .{ .name = "Authorization", .value = auth_header orelse "" },
+            .{ .name = "Authorization", .value = c.authorization orelse "" },
         };
-        var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = arena };
+        var client: zx.http.Client = .{ .io = c.io, .allocator = c.arena };
         defer client.deinit();
         const response = try client.fetch(.{
             .url = url,
-            .headers = if (auth_header != null) &headers else headers[0..2],
+            .headers = if (c.authorization != null) &headers else headers[0..2],
             .timeout = .{ .duration = .{ .raw = .fromMilliseconds(5_000), .clock = .awake } },
         });
-        defer response.deinit(arena);
+        defer response.deinit(c.arena);
         if (response.status.class() != .success) {
-            zx.log.warn("github: {s} returned {d}", .{ url, @intFromEnum(response.status) });
+            zx.log.warn("github: {s} returned {d}", .{ url, @backingInt(response.status) });
             return error.GitHubUnavailable;
         }
-
-        const parsed = try response.json([]const Repo, arena);
-        for (parsed.value) |repo| try by_name.put(arena, repo.full_name, repo);
+        return (try response.json(T, c.arena)).value;
     }
-
-    var repos: std.ArrayList(Repo) = .empty;
-    for (pinned) |name| {
-        if (by_name.get(name)) |repo| try repos.append(arena, repo);
-    }
-    return repos.toOwnedSlice(arena);
-}
-
-pub fn fetchStats(arena: std.mem.Allocator) ![]const Stats {
-    const repos = try fetchPinned(arena);
-    const stats = try arena.alloc(Stats, repos.len);
-    for (repos, stats) |r, *s| s.* = .{ .repo = r.full_name, .stars = r.stargazers_count, .forks = r.forks_count };
-    return stats;
-}
+};
 
 pub fn compact(allocator: std.mem.Allocator, n: u32) []const u8 {
     const out = if (n < 1000)

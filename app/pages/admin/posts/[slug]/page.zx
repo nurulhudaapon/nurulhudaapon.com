@@ -1,6 +1,6 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
     const slug = ctx.request.params.get("slug") orelse return error.MissingParameter;
-    const source = try posts.getSource(ctx.arena, slug);
+    const source = try posts.source(ctx.arena, ctx.io, slug);
     const drafts = zx.kv.scoped(.admin_drafts);
     const self_url = try ctx.fmt("/admin/posts/{s}", .{slug});
 
@@ -44,7 +44,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 draft={source.draft}
                 markdown={markdown}
                 state={state}
-                preview_url={try ctx.fmt("/assets/_/preview.wasm?v={s}", .{&previewVersion()})}
+                preview_url={try ctx.fmt("/assets/_/preview.wasm?v={s}", .{&previewVersion(ctx.io)})}
             />
         </div>
     );
@@ -56,10 +56,10 @@ const State = enum { original, draft, unsaved };
 // browser's cache of the preview wasm.
 var preview_version: ?[16]u8 = null;
 
-fn previewVersion() [16]u8 {
+fn previewVersion(io: std.Io) [16]u8 {
     if (preview_version) |v| return v;
     var bytes: [8]u8 = undefined;
-    zx.Io.default().random(&bytes);
+    io.random(&bytes);
     preview_version = std.fmt.bytesToHex(bytes, .lower);
     return preview_version.?;
 }
@@ -158,7 +158,7 @@ fn togglePreview(e: *zx.client.Event.Stateful) void {
     const preview = e.state(PreviewState);
     var next = preview.get();
     next.open = !next.open;
-    if (next.open) loadPreviewWasm(next.url);
+    if (next.open) renderer.load(next.url);
     renderPreview(preview, next, next.markdown);
 }
 
@@ -170,14 +170,14 @@ fn updatePreview(e: *zx.client.Event.Stateful) void {
 // Each render owns an arena; the previous one is freed once state points at the new one.
 var preview_arena: ?std.heap.ArenaAllocator = null;
 
-fn renderPreview(preview: anytype, base: PreviewState, markdown: []const u8) void {
+fn renderPreview(preview: *zx.State(PreviewState), base: PreviewState, markdown: []const u8) void {
     var arena: std.heap.ArenaAllocator = .init(zx.allocator);
     const alloc = arena.allocator();
     var next = base;
     next.markdown = alloc.dupe(u8, markdown) catch return arena.deinit();
     next.title = alloc.dupe(u8, base.title) catch return arena.deinit();
     next.html = alloc.dupe(u8, base.html) catch return arena.deinit();
-    if (next.open) if (renderWithWasm(alloc, next.markdown)) |rendered| {
+    if (next.open) if (renderer.render(alloc, next.markdown)) |rendered| {
         if (rendered.title.len > 0) next.title = rendered.title;
         next.html = rendered.html;
         next.minutes = rendered.minutes;
@@ -187,60 +187,76 @@ fn renderPreview(preview: anytype, base: PreviewState, markdown: []const u8) voi
     preview_arena = arena;
 }
 
-const Rendered = struct { title: []const u8, html: []const u8, minutes: u32 };
-
-// Null until the wasm has loaded; the loader then fires `input` on the source to render.
-fn renderWithWasm(alloc: std.mem.Allocator, markdown: []const u8) ?Rendered {
-    if (comptime zx.platform.role != .client) return null;
+const renderer = struct {
     const js = zx.client.js;
-    const renderer = js.global.get(js.Object, "__postPreview") catch return null;
-    defer renderer.deinit();
-    const result = renderer.call(js.Object, "render", .{js.string(markdown)}) catch return null;
-    defer result.deinit();
-    return .{
-        .title = result.getAlloc(js.String, alloc, "title") catch "",
-        .html = result.getAlloc(js.String, alloc, "html") catch return null,
-        .minutes = result.get(u32, "minutes") catch 0,
-    };
-}
+    const Rendered = struct { title: []const u8, html: []const u8, minutes: u32 };
 
-// Instantiating a wasm module is promise-based, which Zig can't await, so this
-// small loader stays in JS. It also moves strings in and out of the module's memory.
-const preview_loader =
-    \\(url) => {
-    \\  if (window.__postPreviewLoading) return;
-    \\  window.__postPreviewLoading = true;
-    \\  const wasi = { fd_seek: () => 0, fd_write: () => 0, fd_close: () => 0 };
-    \\  WebAssembly.instantiateStreaming(fetch(url), { wasi_snapshot_preview1: wasi }).then(({ instance }) => {
-    \\    const x = instance.exports;
-    \\    x._initialize();
-    \\    const read = (ptr, len) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, ptr, len));
-    \\    window.__postPreview = {
-    \\      render(markdown) {
-    \\        const bytes = new TextEncoder().encode(markdown);
-    \\        x.preview_reset();
-    \\        const ptr = x.preview_alloc(bytes.length);
-    \\        new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
-    \\        if (!x.preview_render(ptr, bytes.length)) {
-    \\          return { title: "", html: "<p>Couldn't render this markdown. Check the frontmatter block.</p>", minutes: 0 };
-    \\        }
-    \\        return {
-    \\          title: read(x.preview_title_ptr(), x.preview_title_len()),
-    \\          html: read(x.preview_html_ptr(), x.preview_html_len()),
-    \\          minutes: x.preview_minutes(),
-    \\        };
-    \\      },
-    \\    };
-    \\    document.querySelector(".adm-source")?.dispatchEvent(new Event("input", { bubbles: true }));
-    \\  }, () => { window.__postPreviewLoading = false; });
-    \\}
-;
+    var handle: ?js.Object = null;
 
-fn loadPreviewWasm(url: []const u8) void {
-    const code = zx.allocator.print("({s})(\"{s}\")", .{ preview_loader, url }) catch return;
-    defer zx.allocator.free(code);
-    _ = zx.client.eval(void, code) catch {};
-}
+    // Instantiating a wasm module is promise-based, which Zig can't await, so
+    // this small JS object does it. It also moves strings in and out of the
+    // module's memory, then fires `input` on the source to render once ready.
+    const source =
+        \\(() => {
+        \\  let x = null;
+        \\  let loading = false;
+        \\  const read = (ptr, len) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, ptr, len));
+        \\  return {
+        \\    load(url) {
+        \\      if (x || loading) return;
+        \\      loading = true;
+        \\      const wasi = { fd_seek: () => 0, fd_write: () => 0, fd_close: () => 0 };
+        \\      WebAssembly.instantiateStreaming(fetch(url), { wasi_snapshot_preview1: wasi }).then(({ instance }) => {
+        \\        instance.exports._initialize();
+        \\        x = instance.exports;
+        \\        document.querySelector(".adm-source")?.dispatchEvent(new Event("input", { bubbles: true }));
+        \\      }, () => { loading = false; });
+        \\    },
+        \\    ready() {
+        \\      return x !== null;
+        \\    },
+        \\    render(markdown) {
+        \\      const bytes = new TextEncoder().encode(markdown);
+        \\      x.preview_reset();
+        \\      const ptr = x.preview_alloc(bytes.length);
+        \\      new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
+        \\      if (!x.preview_render(ptr, bytes.length)) {
+        \\        return { title: "", html: "<p>Couldn't render this markdown. Check the frontmatter block.</p>", minutes: 0 };
+        \\      }
+        \\      return {
+        \\        title: read(x.preview_title_ptr(), x.preview_title_len()),
+        \\        html: read(x.preview_html_ptr(), x.preview_html_len()),
+        \\        minutes: x.preview_minutes(),
+        \\      };
+        \\    },
+        \\  };
+        \\})()
+    ;
+
+    fn get() ?js.Object {
+        if (handle == null) handle = js.global.call(js.Object, "eval", .{js.string(source)}) catch return null;
+        return handle;
+    }
+
+    fn load(url: []const u8) void {
+        if (comptime zx.platform.role != .client) return;
+        const r = get() orelse return;
+        r.call(void, "load", .{js.string(url)}) catch {};
+    }
+
+    fn render(alloc: std.mem.Allocator, markdown: []const u8) ?Rendered {
+        if (comptime zx.platform.role != .client) return null;
+        const r = get() orelse return null;
+        if (!(r.call(bool, "ready", .{}) catch false)) return null;
+        const result = r.call(js.Object, "render", .{js.string(markdown)}) catch return null;
+        defer result.deinit();
+        return .{
+            .title = result.getAlloc(js.String, alloc, "title") catch "",
+            .html = result.getAlloc(js.String, alloc, "html") catch return null,
+            .minutes = result.get(u32, "minutes") catch 0,
+        };
+    }
+};
 
 fn stateLabel(state: State) []const u8 {
     return switch (state) {

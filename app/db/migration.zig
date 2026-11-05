@@ -41,14 +41,14 @@ pub fn run() !void {
         , .{m.name});
         if (applied != null) continue;
 
-        try execScript(m.sql);
+        try exec(m.sql);
         _ = try zx.db.run("INSERT INTO d1_migrations (name) VALUES (?1)", .{m.name});
         std.log.info("migration applied: {s}", .{m.name});
     }
 }
 
 // Comment lines are dropped before splitting so a `;` inside one can't cut a statement.
-fn execScript(sql: []const u8) !void {
+fn exec(sql: []const u8) !void {
     var code: std.ArrayList(u8) = .empty;
     defer code.deinit(zx.allocator);
     var lines = std.mem.splitScalar(u8, sql, '\n');

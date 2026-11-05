@@ -2,7 +2,8 @@ pub fn Page(ctx: zx.PageContext) zx.Component {
     ctx.data.set("title", "Schedule - Nurul Huda (Apon)");
     ctx.data.set("description", "Pick a time that works for you and let's talk.");
     const rules = settings.load(ctx.arena);
-    const days = loadDays(ctx.arena, rules);
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
+    const days = openDays(ctx, rules, now);
 
     return (
         <main @allocator={ctx.arena} class="page-inner page-schedule">
@@ -25,14 +26,17 @@ pub fn Page(ctx: zx.PageContext) zx.Component {
     );
 }
 
-fn loadDays(arena: zx.Allocator, rules: slots.Rules) ?[]const slots.Day {
-    const now = booking.nowUnix();
-    const creds = (caldav.loadCredentials(arena) catch null) orelse return null;
-    const busy = caldav.busy(arena, creds, slots.horizon(rules, now), true) catch |err| {
-        zx.log.err("schedule: failed to load busy times from {s}: {any}", .{ creds.calendar_url, err });
+// Reads the synced copies only: a stale copy queues a sync for later visitors
+// rather than making this one wait for it.
+fn openDays(ctx: zx.PageContext, rules: slots.Rules, now: i64) ?[]const slots.Day {
+    const arena = ctx.arena;
+    const creds = (caldav.credentials(arena) catch null) orelse return null;
+    const busy = calendars.busy(arena, ctx.io, creds, slots.horizon(rules, now), false) catch |err| {
+        zx.log.err("schedule: failed to load busy times: {any}", .{err});
         return null;
     };
-    return slots.availableDays(arena, rules, now, busy) catch null;
+    if (busy.stale) _ = calendars.requestSync(arena, ctx.io, ctx.response, false);
+    return slots.availableDays(arena, rules, now, busy.intervals) catch null;
 }
 
 pub const options: zx.PageOptions = .{
@@ -40,10 +44,11 @@ pub const options: zx.PageOptions = .{
     .rendering = .request,
 };
 
+const std = @import("std");
 const zx = @import("zx");
 const Navbar = @import("../component.zx").Navbar;
 pub const Scheduler = @import("scheduler.zx").Scheduler;
 const slots = @import("slots.zig");
 const caldav = @import("caldav.zig");
-const booking = @import("booking.zig");
 const settings = @import("settings.zig");
+const calendars = @import("calendars.zig");

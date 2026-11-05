@@ -1,16 +1,16 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const accounts = try finance.listAccounts(ctx.arena);
-    const asset_classes = try finance.listAssetClasses(ctx.arena);
-    const groups = try finance.listAccountGroups(ctx.arena);
-    const usd_bdt_rate = finance.usdBdtRate(ctx.arena);
+    const accounts = try finance.accounts.list(ctx.arena);
+    const asset_classes = try finance.classes.list(ctx.arena);
+    const groups = try finance.accounts.groups(ctx.arena);
+    const usd_bdt_rate = finance.fx.usdBdt(ctx.arena);
     const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
     const flash = ui.flashFrom(ctx.request.query, &.{
-        .{ "synced_no_cash", "Synced holdings, but Flex had no Cash Report / Equity Summary - add both in Client Portal so cash is included." },
+        .{ "synced_no_cash", toolbar.messages.synced_no_cash },
     });
 
     return (
         <div @allocator={ctx.arena}>
-            <RowMenuOutsideClose @client />
+            <RowMenuCloser @client />
             <Toolbar @client page={.accounts} flash={flash} />
 
             <section class="adm-card adm-card-gap">
@@ -41,7 +41,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                     <AccountItem
                                         @client
                                         account={a}
-                                        needs_update={finance.needsBalanceUpdate(a, now)}
+                                        needs_update={a.needsUpdate(now)}
                                         asset_classes={asset_classes}
                                     />
                                 )}
@@ -77,26 +77,26 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             )}
 
             <p class="adm-hint" style="margin-top:0.5rem">
-                FX via Frankfurter · 1 USD = {finance.formatMoney(ctx.arena, usd_bdt_rate, "BDT")} · <a href="/admin/finance/rates">Manage rates</a>
+                FX via Frankfurter · 1 USD = {finance.format.money(ctx.arena, usd_bdt_rate, "BDT")} · <a href="/admin/finance/rates">Manage rates</a>
             </p>
         </div>
     );
 }
 
-fn accountSub(arena: zx.Allocator, a: finance.Account) []const u8 {
+fn accountSub(arena: zx.Allocator, a: finance.accounts.Account) []const u8 {
     return arena.print("{s}{s}{s}{s}{s}", .{
         if (a.institution.len > 0) a.institution else "-",
         if (std.mem.eql(u8, a.broker, "ibkr")) " · IBKR" else "",
         if (a.group_name.len > 0) " · " else "",
         a.group_name,
-        if (finance.isAccountStale(a)) " · stale" else "",
+        if (a.isStale()) " · stale" else "",
     }) catch a.institution;
 }
 
 const ItemProps = struct {
-    account: finance.Account,
+    account: finance.accounts.Account,
     needs_update: bool,
-    asset_classes: []const finance.AssetClass,
+    asset_classes: []const finance.classes.Class,
 };
 
 // Row actions update this in place; totals and weights catch up on the next load.
@@ -111,21 +111,21 @@ const ItemState = struct {
 pub fn AccountItem(ctx: *zx.ComponentCtx(ItemProps)) zx.Component {
     const p = ctx.props;
     const a = p.account;
-    const stale = finance.isAccountStale(a);
+    const stale = a.isStale();
     const item = ctx.state(ItemState, .{ .id = a.id, .asset_class = a.asset_class, .stale = stale });
-    const class_action = ctx.action(setClass, .{});
-    const stale_action = ctx.action(toggleStale, .{});
-    const delete_action = ctx.action(deleteAccount, .{});
+    const set_class = ctx.action(setClass, .{});
+    const set_stale = ctx.action(toggleStale, .{});
+    const delete = ctx.action(deleteAccount, .{});
     const alloc = ctx.allocator;
     const state = item.get();
-    const busy = class_action.pending or stale_action.pending or delete_action.pending;
+    const busy = set_class.pending or set_stale.pending or delete.pending;
 
     if (state.deleted) return (<tr @allocator={alloc} hidden></tr>);
 
     return (
         <tr @allocator={alloc} class={if (state.stale) "adm-row-stale" else ""} aria-busy={if (busy) "true" else "false"}>
             <td>
-                <a class="adm-table-title adm-link-plain" href={dashboard.accountHref(alloc, a.id)}>{a.name}</a>
+                <a class="adm-table-title adm-link-plain" href={shared.accountHref(alloc, a.id)}>{a.name}</a>
                 {if (state.err.len > 0) (
                     <span class="adm-table-sub adm-text-err" role="status">{state.err}</span>
                 ) else (
@@ -139,40 +139,40 @@ pub fn AccountItem(ctx: *zx.ComponentCtx(ItemProps)) zx.Component {
             </td>
             <td class="adm-hide-sm">{a.type_label}</td>
             <td>
-                <form action={class_action} class="adm-inline-fields">
-                    <select class="adm-select" name="asset_class" disabled={class_action.pending}>
+                <form action={set_class} class="adm-inline-fields">
+                    <select class="adm-select" name="asset_class" disabled={set_class.pending}>
                         {for (p.asset_classes) |c| (
                             <option value={c.name} selected={std.mem.eql(u8, c.name, state.asset_class)}>{c.name}</option>
                         )}
                     </select>
-                    <button class="adm-btn adm-btn-ghost" type="submit" disabled={class_action.pending}>
-                        {if (class_action.pending) "Saving…" else "Set"}
+                    <button class="adm-btn adm-btn-ghost" type="submit" disabled={set_class.pending}>
+                        {if (set_class.pending) "Saving…" else "Set"}
                     </button>
                 </form>
             </td>
             <td>
-                <span class="adm-table-title">{finance.formatMoney(alloc, a.net_liquidation, a.currency)}</span>
+                <span class="adm-table-title">{finance.format.money(alloc, a.net_liquidation, a.currency)}</span>
                 {if (!std.ascii.eqlIgnoreCase(a.currency, "USD")) (
-                    <span class="adm-table-sub">{finance.formatMoney(alloc, a.value_usd, "USD")}</span>
+                    <span class="adm-table-sub">{finance.format.money(alloc, a.value_usd, "USD")}</span>
                 )}
             </td>
-            <td>{if (state.stale or stale) "-" else if (finance.isLiability(a)) "Debt" else finance.formatPct(alloc, a.weight_pct)}</td>
+            <td>{if (state.stale or stale) "-" else if (a.isLiability()) "Debt" else finance.format.pct(alloc, a.weight_pct)}</td>
             <td class="adm-table-actions">
                 <details class="adm-row-menu">
                     <summary class="adm-btn adm-btn-ghost adm-btn-icon" aria-label="Account actions">
                         {ui.icon(alloc, .more)}
                     </summary>
                     <div class="adm-row-menu-panel">
-                        <a class="adm-row-menu-item" href={alloc.print("/admin/finance/accounts/{d}/edit", .{a.id}) catch ""}>Edit</a>
-                        <form action={stale_action}>
-                            <button class="adm-row-menu-item" type="submit" disabled={stale_action.pending}>
-                                {if (stale_action.pending) "Saving…" else if (state.stale) "Restore to totals" else "Mark stale"}
+                        <a class="adm-row-menu-item" href={shared.editHref(alloc, a.id)}>Edit</a>
+                        <form action={set_stale}>
+                            <button class="adm-row-menu-item" type="submit" disabled={set_stale.pending}>
+                                {if (set_stale.pending) "Saving…" else if (state.stale) "Restore to totals" else "Mark stale"}
                             </button>
                         </form>
                         {if (std.mem.eql(u8, a.broker, "manual")) (
-                            <form action={delete_action}>
-                                <button class="adm-row-menu-item adm-row-menu-danger" type="submit" disabled={delete_action.pending}>
-                                    {if (delete_action.pending) "Deleting…" else "Delete"}
+                            <form action={delete}>
+                                <button class="adm-row-menu-item adm-row-menu-danger" type="submit" disabled={delete.pending}>
+                                    {if (delete.pending) "Deleting…" else "Delete"}
                                 </button>
                             </form>
                         ) else (
@@ -185,81 +185,61 @@ pub fn AccountItem(ctx: *zx.ComponentCtx(ItemProps)) zx.Component {
     );
 }
 
-const ClassInput = struct { asset_class: []const u8 };
-
 fn setClass(a: *zx.server.Action.Stateful) void {
     const item = a.state(ItemState);
-    const input = a.data(ClassInput);
+    const class = a.data(struct { asset_class: []const u8 }).asset_class;
     var next = item.get();
-    finance.setAccountAssetClass(a.inner.arena, next.id, input.asset_class) catch |err| {
-        next.err = rowError(err);
-        return item.set(next);
-    };
-    dashboard.financeChanged();
-    next.asset_class = input.asset_class;
-    next.err = "";
+    if (commit(&next, finance.accounts.setAssetClass(a.inner.arena, next.id, class))) next.asset_class = class;
     item.set(next);
 }
 
 fn toggleStale(a: *zx.server.Action.Stateful) void {
     const item = a.state(ItemState);
     var next = item.get();
-    finance.setAccountStale(next.id, !next.stale) catch |err| {
-        next.err = rowError(err);
-        return item.set(next);
-    };
-    dashboard.financeChanged();
-    next.stale = !next.stale;
-    next.err = "";
+    if (commit(&next, finance.accounts.setStale(next.id, !next.stale))) next.stale = !next.stale;
     item.set(next);
 }
 
 fn deleteAccount(a: *zx.server.Action.Stateful) void {
     const item = a.state(ItemState);
     var next = item.get();
-    finance.deleteManualAccount(next.id) catch |err| {
-        next.err = rowError(err);
-        return item.set(next);
-    };
-    dashboard.financeChanged();
-    next.deleted = true;
+    if (commit(&next, finance.accounts.deleteManual(next.id))) next.deleted = true;
     item.set(next);
 }
 
-const GroupItemState = struct {
+const GroupState = struct {
     name: []const u8 = "",
     removed: bool = false,
     err: []const u8 = "",
 };
 
-pub fn GroupItem(ctx: *zx.ComponentCtx(finance.GroupSummary)) zx.Component {
-    const group = ctx.state(GroupItemState, .{ .name = ctx.props.name });
-    const rename_action = ctx.action(renameGroup, .{});
-    const ungroup_action = ctx.action(ungroup, .{});
+pub fn GroupItem(ctx: *zx.ComponentCtx(finance.accounts.GroupSummary)) zx.Component {
+    const group = ctx.state(GroupState, .{ .name = ctx.props.name });
+    const rename = ctx.action(renameGroup, .{});
+    const remove = ctx.action(ungroup, .{});
     const alloc = ctx.allocator;
     const state = group.get();
-    const count = ctx.props.account_count;
 
     if (state.removed) return (<tr @allocator={alloc} hidden></tr>);
 
     return (
         <tr @allocator={alloc}>
             <td>
-                <form action={rename_action} class="adm-inline-fields">
-                    <input class="adm-input" name="name" value={state.name} required aria-label="Group name" disabled={rename_action.pending} />
-                    <button class="adm-btn adm-btn-ghost" type="submit" disabled={rename_action.pending}>
-                        {if (rename_action.pending) "Saving…" else "Rename"}
+                <form action={rename} class="adm-inline-fields">
+                    <input class="adm-input" name="name" value={state.name} required aria-label="Group name" disabled={rename.pending} />
+                    <button class="adm-btn adm-btn-ghost" type="submit" disabled={rename.pending}>
+                        {if (rename.pending) "Saving…" else "Rename"}
                     </button>
                 </form>
                 {if (state.err.len > 0) (
                     <span class="adm-table-sub adm-text-err" role="status">{state.err}</span>
                 )}
             </td>
-            <td>{alloc.print("{d} account{s}", .{ count, if (count == 1) "" else "s" }) catch ""}</td>
+            <td>{shared.accountCount(alloc, ctx.props.account_count)}</td>
             <td class="adm-table-actions">
-                <form action={ungroup_action}>
-                    <button class="adm-btn adm-btn-ghost" type="submit" disabled={ungroup_action.pending}>
-                        {if (ungroup_action.pending) "Ungrouping…" else "Ungroup"}
+                <form action={remove}>
+                    <button class="adm-btn adm-btn-ghost" type="submit" disabled={remove.pending}>
+                        {if (remove.pending) "Ungrouping…" else "Ungroup"}
                     </button>
                 </form>
             </td>
@@ -267,66 +247,62 @@ pub fn GroupItem(ctx: *zx.ComponentCtx(finance.GroupSummary)) zx.Component {
     );
 }
 
-const RenameInput = struct { name: []const u8 };
-
 fn renameGroup(a: *zx.server.Action.Stateful) void {
-    const group = a.state(GroupItemState);
+    const group = a.state(GroupState);
     var next = group.get();
-    const name = std.mem.trim(u8, a.data(RenameInput).name, " \t\r\n");
+    const name = std.mem.trim(u8, a.data(struct { name: []const u8 }).name, " \t\r\n");
     if (name.len == 0) {
         next.err = "Give the group a name, or use Ungroup.";
-        return group.set(next);
+    } else if (commit(&next, finance.accounts.renameGroup(next.name, name))) {
+        next.name = name;
     }
-    finance.renameGroup(next.name, name) catch |err| {
-        next.err = rowError(err);
-        return group.set(next);
-    };
-    dashboard.financeChanged();
-    next.name = name;
-    next.err = "";
     group.set(next);
 }
 
 fn ungroup(a: *zx.server.Action.Stateful) void {
-    const group = a.state(GroupItemState);
+    const group = a.state(GroupState);
     var next = group.get();
-    finance.renameGroup(next.name, "") catch |err| {
-        next.err = rowError(err);
-        return group.set(next);
-    };
-    dashboard.financeChanged();
-    next.removed = true;
+    if (commit(&next, finance.accounts.renameGroup(next.name, ""))) next.removed = true;
     group.set(next);
 }
 
-fn rowError(err: anyerror) []const u8 {
-    if (err == error.InvalidName) return "Pick a valid asset class.";
-    zx.log.err("admin: finance account action failed: {any}", .{err});
-    return "Something went wrong. Check the server logs.";
+fn commit(next: anytype, result: anyerror!void) bool {
+    result catch |err| {
+        next.err = if (err == error.InvalidName) "Pick a valid asset class." else blk: {
+            zx.log.err("admin: finance account action failed: {any}", .{err});
+            break :blk "Something went wrong. Check the server logs.";
+        };
+        return false;
+    };
+    shared.changed();
+    next.err = "";
+    return true;
 }
 
-pub fn RowMenuOutsideClose(ctx: *zx.ComponentCtx(struct {})) zx.Component {
-    if (comptime zx.platform.role == .client) ensureRowMenuOutsideClose();
+// Closes open row menus on any click outside them. Zig can't hand the DOM a
+// listener, so this installs a small one once per page load.
+pub fn RowMenuCloser(ctx: *zx.ComponentCtx(struct {})) zx.Component {
+    if (comptime zx.platform.role == .client) row_menu.install();
     return (<span @allocator={ctx.allocator} hidden aria-hidden="true"></span>);
 }
 
-var row_menu_listener = false;
+const row_menu = struct {
+    var installed = false;
 
-fn ensureRowMenuOutsideClose() void {
-    if (row_menu_listener) return;
-    row_menu_listener = true;
-    _ = zx.client.eval(void,
-        \\(() => {
-        \\  if (window.__admRowMenuOutside) return;
-        \\  window.__admRowMenuOutside = true;
-        \\  document.addEventListener("click", (e) => {
-        \\    document.querySelectorAll("details.adm-row-menu[open]").forEach((d) => {
-        \\      if (!d.contains(e.target)) d.removeAttribute("open");
-        \\    });
+    const listener =
+        \\document.addEventListener("click", (e) => {
+        \\  document.querySelectorAll("details.adm-row-menu[open]").forEach((d) => {
+        \\    if (!d.contains(e.target)) d.removeAttribute("open");
         \\  });
-        \\})()
-    ) catch {};
-}
+        \\})
+    ;
+
+    fn install() void {
+        if (installed) return;
+        installed = true;
+        _ = zx.client.eval(void, listener) catch {};
+    }
+};
 
 pub const options: zx.PageOptions = .{
     .methods = &.{ .GET, .POST },
@@ -336,6 +312,7 @@ pub const options: zx.PageOptions = .{
 const std = @import("std");
 const zx = @import("zx");
 const ui = @import("../../ui.zx");
-const finance = @import("../../../finance/db.zig");
-const dashboard = @import("../dashboard.zx");
-pub const Toolbar = dashboard.Toolbar;
+const finance = @import("../../../finance.zig");
+const shared = @import("../shared.zig");
+const toolbar = @import("../toolbar.zx");
+pub const Toolbar = toolbar.Toolbar;

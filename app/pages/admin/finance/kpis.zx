@@ -1,0 +1,62 @@
+pub fn Kpis(ctx: *zx.ComponentCtx(struct { loading: bool })) zx.Component {
+    const arena = ctx.allocator;
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
+    const summary: ?finance.portfolio.Summary = if (ctx.props.loading) null else finance.portfolio.summary(arena) catch null;
+
+    return (
+        <div @allocator={arena} class="adm-kpis">
+            <div class="adm-kpi">
+                <p class="adm-label">Net worth</p>
+                <p class="adm-kpi-lg">
+                    {if (summary) |s| finance.format.money(arena, s.net_worth, "USD") else "…"}
+                </p>
+                <p class="adm-hint">
+                    {if (summary) |s| (
+                        <span>
+                            {finance.format.money(arena, s.net_worth_bdt, "BDT")}
+                            · 1 USD = {finance.format.money(arena, s.usd_bdt_rate, "BDT")}
+                        </span>
+                    ) else (
+                        <span>… · …</span>
+                    )}
+                </p>
+            </div>
+            <div class="adm-kpi">
+                <p class="adm-label">Invested</p>
+                <p class="adm-kpi-val">
+                    {if (summary) |s| finance.format.money(arena, s.invested_total, "USD") else "…"}
+                </p>
+                <p class="adm-hint">
+                    {if (summary) |s| (
+                        <span>{s.holding_count} holdings</span>
+                    ) else (
+                        <span>… holdings</span>
+                    )}
+                </p>
+            </div>
+            <div class="adm-kpi">
+                <p class="adm-label">Cash</p>
+                <p class="adm-kpi-val">
+                    {if (summary) |s| finance.format.money(arena, s.cash_total, "USD") else "…"}
+                </p>
+                <p class="adm-hint">
+                    {if (summary) |s| (
+                        <span>
+                            {s.account_count} accounts
+                            {if (s.last_synced) |at| (
+                                <span> · IBKR {format.ago(arena, now, at)}</span>
+                            )}
+                        </span>
+                    ) else (
+                        <span>… accounts · …</span>
+                    )}
+                </p>
+            </div>
+        </div>
+    );
+}
+
+const std = @import("std");
+const zx = @import("zx");
+const format = @import("../format.zig");
+const finance = @import("../../finance.zig");

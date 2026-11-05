@@ -4,8 +4,10 @@ const zx = @import("zx");
 const rates_url = "https://api.frankfurter.dev/v2/rates?base=usd";
 const bajus_url = "https://www.bajus.org/gold-price";
 const cache_ttl_secs: i64 = 12 * 60 * 60;
+const fallback_usd_bdt: f64 = 122;
 const bajus_22k_haircut: f64 = 0.85;
 
+// `rate` is units per USD; metals are stored as grams per USD.
 pub const Rate = struct {
     currency: []const u8,
     rate: f64,
@@ -13,18 +15,21 @@ pub const Rate = struct {
     fetched_at: i64,
 };
 
-pub fn refresh(arena: std.mem.Allocator) void {
-    if (!cacheFresh(arena, false)) _ = fetchFiat(arena);
-    if (!cacheFresh(arena, true)) _ = fetchBajusGold(arena);
+// Fetches only what is older than the cache TTL.
+pub fn refresh(arena: std.mem.Allocator, io: std.Io) void {
+    const client: Client = .{ .arena = arena, .io = io };
+    if (!client.isFresh(.fiat)) _ = client.fetchFiat();
+    if (!client.isFresh(.gold)) _ = client.fetchGold();
 }
 
-pub fn syncNow(arena: std.mem.Allocator) !void {
-    const fiat_ok = fetchFiat(arena);
-    const gold_ok = fetchBajusGold(arena);
+pub fn sync(arena: std.mem.Allocator, io: std.Io) !void {
+    const client: Client = .{ .arena = arena, .io = io };
+    const fiat_ok = client.fetchFiat();
+    const gold_ok = client.fetchGold();
     if (!fiat_ok and !gold_ok) return error.FetchFailed;
 }
 
-pub fn listRates(arena: std.mem.Allocator) ![]const Rate {
+pub fn rates(arena: std.mem.Allocator) ![]const Rate {
     return try zx.db.rows(arena, Rate,
         \\SELECT currency, rate, as_of, fetched_at FROM fx_rates
         \\ORDER BY
@@ -35,18 +40,19 @@ pub fn listRates(arena: std.mem.Allocator) ![]const Rate {
     , .{});
 }
 
-pub fn listCurrencies(arena: std.mem.Allocator) ![]const []const u8 {
-    const rates = try listRates(arena);
-    const out = try arena.alloc([]const u8, rates.len);
-    for (rates, 0..) |r, i| out[i] = r.currency;
+pub fn currencies(arena: std.mem.Allocator) ![]const []const u8 {
+    const all = try rates(arena);
+    const out = try arena.alloc([]const u8, all.len);
+    for (all, 0..) |r, i| out[i] = r.currency;
     return out;
 }
 
-pub fn usdBdtRate(arena: std.mem.Allocator) f64 {
+pub fn usdBdt(arena: std.mem.Allocator) f64 {
     const row = zx.db.row(arena, struct { rate: f64 },
         \\SELECT rate FROM fx_rates WHERE currency = 'BDT' LIMIT 1
-    , .{}) catch return 122;
-    return if (row) |r| if (r.rate > 0) r.rate else 122 else 122;
+    , .{}) catch return fallback_usd_bdt;
+    const r = row orelse return fallback_usd_bdt;
+    return if (r.rate > 0) r.rate else fallback_usd_bdt;
 }
 
 pub fn fetchedAt(arena: std.mem.Allocator) ?i64 {
@@ -69,110 +75,114 @@ pub fn isMetal(currency: []const u8) bool {
     return std.ascii.eqlIgnoreCase(currency, "XAU") or std.ascii.eqlIgnoreCase(currency, "XAG");
 }
 
+// Metals display as BDT per gram; everything else as stored.
 pub fn displayRate(arena: std.mem.Allocator, currency: []const u8, stored: f64) f64 {
     if (!isMetal(currency) or stored <= 0) return stored;
-    return usdBdtRate(arena) / stored;
+    return usdBdt(arena) / stored;
 }
 
-pub fn setFiatRate(arena: std.mem.Allocator, currency: []const u8, units_per_usd: f64) !void {
+pub fn setRate(arena: std.mem.Allocator, io: std.Io, currency: []const u8, units_per_usd: f64) !void {
     if (isMetal(currency)) return error.InvalidCurrency;
     if (units_per_usd <= 0) return error.InvalidRate;
     if (std.ascii.eqlIgnoreCase(currency, "USD")) return error.InvalidCurrency;
-    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
+    const now = std.Io.Timestamp.now(io, .real).toSeconds();
     try upsert(try std.ascii.allocUpperString(arena, currency), units_per_usd, "manual", now);
 }
 
-fn cacheFresh(arena: std.mem.Allocator, gold_only: bool) bool {
-    const Fresh = struct { fetched_at: i64, n: i64 };
-    const row: ?Fresh = if (gold_only)
-        (zx.db.row(arena, Fresh,
-            \\SELECT MAX(fetched_at) AS fetched_at, COUNT(*) AS n
-            \\FROM fx_rates WHERE currency = 'XAU' AND fetched_at > 0 AND as_of != 'seed'
-        , .{}) catch return false)
-    else
-        (zx.db.row(arena, Fresh,
-            \\SELECT MAX(fetched_at) AS fetched_at, COUNT(*) AS n
-            \\FROM fx_rates
-            \\WHERE currency NOT IN ('USD', 'XAU', 'XAG')
-            \\  AND fetched_at > 0 AND as_of != 'seed'
-        , .{}) catch return false);
-    const r = row orelse return false;
-    if (!gold_only and r.n < 3) return false;
-    if (gold_only and r.n < 1) return false;
-    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
-    return now - r.fetched_at < cache_ttl_secs;
-}
+const Client = struct {
+    arena: std.mem.Allocator,
+    io: std.Io,
 
-fn fetchFiat(arena: std.mem.Allocator) bool {
-    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = arena };
-    defer client.deinit();
-    const response = client.fetch(.{
-        .url = rates_url,
-        .headers = &.{.{ .name = "User-Agent", .value = "nurulhudaapon.com" }},
-        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(12_000), .clock = .awake } },
-    }) catch return false;
-    defer response.deinit(arena);
-    if (response.status.class() != .success) return false;
-    const body = response.body;
+    const Kind = enum { fiat, gold };
 
-    const parsed = std.json.parseFromSlice([]RateRow, arena, body, .{
-        .ignore_unknown_fields = true,
-        .allocate = .alloc_always,
-    }) catch return false;
-
-    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
-    upsert("USD", 1, "live", now) catch {};
-
-    var stored: usize = 0;
-    for (parsed.value) |row| {
-        if (!std.ascii.eqlIgnoreCase(row.base, "USD")) continue;
-        if (row.quote.len != 3 or row.rate <= 0) continue;
-        const quote = std.ascii.allocUpperString(arena, row.quote) catch continue;
-        if (isMetal(quote)) continue;
-        const as_of = if (row.date.len > 0) row.date else "live";
-        upsert(quote, row.rate, as_of, now) catch continue;
-        stored += 1;
+    fn isFresh(c: Client, kind: Kind) bool {
+        const Fresh = struct { fetched_at: i64, n: i64 };
+        const row: ?Fresh = switch (kind) {
+            .gold => zx.db.row(c.arena, Fresh,
+                \\SELECT MAX(fetched_at) AS fetched_at, COUNT(*) AS n
+                \\FROM fx_rates WHERE currency = 'XAU' AND fetched_at > 0 AND as_of != 'seed'
+            , .{}) catch return false,
+            .fiat => zx.db.row(c.arena, Fresh,
+                \\SELECT MAX(fetched_at) AS fetched_at, COUNT(*) AS n
+                \\FROM fx_rates
+                \\WHERE currency NOT IN ('USD', 'XAU', 'XAG')
+                \\  AND fetched_at > 0 AND as_of != 'seed'
+            , .{}) catch return false,
+        };
+        const r = row orelse return false;
+        const min_rows: i64 = if (kind == .fiat) 3 else 1;
+        if (r.n < min_rows) return false;
+        return c.now() - r.fetched_at < cache_ttl_secs;
     }
-    return stored > 0;
-}
 
-fn fetchBajusGold(arena: std.mem.Allocator) bool {
-    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = arena };
-    defer client.deinit();
-    const response = client.fetch(.{
-        .url = bajus_url,
-        .headers = &.{.{ .name = "User-Agent", .value = "nurulhudaapon.com" }},
-        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(15_000), .clock = .awake } },
-    }) catch return false;
-    defer response.deinit(arena);
-    if (response.status.class() != .success) return false;
-    const body = response.body;
+    fn fetchFiat(c: Client) bool {
+        const body = c.get(rates_url, 12_000) orelse return false;
+        const parsed = std.json.parseFromSlice([]RateRow, c.arena, body, .{
+            .ignore_unknown_fields = true,
+            .allocate = .alloc_always,
+        }) catch return false;
 
-    const list_bdt = parseBajus22kBdtPerGram(body) orelse {
-        zx.log.warn("fx: could not parse 22K gold price from bajus.org", .{});
-        return false;
-    };
-    if (!cacheFresh(arena, false)) _ = fetchFiat(arena);
-    const bdt_per_usd = usdBdtRate(arena);
-    if (bdt_per_usd <= 0) return false;
+        const fetched_at = c.now();
+        upsert("USD", 1, "live", fetched_at) catch {};
 
-    const effective_bdt = list_bdt * bajus_22k_haircut;
-    const usd_per_g = effective_bdt / bdt_per_usd;
-    if (usd_per_g <= 0) return false;
+        var stored: usize = 0;
+        for (parsed.value) |row| {
+            if (!std.ascii.eqlIgnoreCase(row.base, "USD")) continue;
+            if (row.quote.len != 3 or row.rate <= 0) continue;
+            const quote = std.ascii.allocUpperString(c.arena, row.quote) catch continue;
+            if (isMetal(quote)) continue;
+            const as_of = if (row.date.len > 0) row.date else "live";
+            upsert(quote, row.rate, as_of, fetched_at) catch continue;
+            stored += 1;
+        }
+        return stored > 0;
+    }
 
-    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
-    const as_of = arena.print("bajus-{d:.0}", .{list_bdt}) catch "bajus";
-    upsert("XAU", 1.0 / usd_per_g, as_of, now) catch return false;
-    return true;
-}
+    // Gold is priced in BDT, so it needs a current USD/BDT rate first.
+    fn fetchGold(c: Client) bool {
+        const body = c.get(bajus_url, 15_000) orelse return false;
+        const list_bdt = parseBajus22k(body) orelse {
+            zx.log.warn("fx: could not parse 22K gold price from bajus.org", .{});
+            return false;
+        };
+        if (!c.isFresh(.fiat)) _ = c.fetchFiat();
+        const bdt_per_usd = usdBdt(c.arena);
+        if (bdt_per_usd <= 0) return false;
 
-fn parseBajus22kBdtPerGram(html: []const u8) ?f64 {
+        const usd_per_g = list_bdt * bajus_22k_haircut / bdt_per_usd;
+        if (usd_per_g <= 0) return false;
+
+        const as_of = c.arena.print("bajus-{d:.0}", .{list_bdt}) catch "bajus";
+        upsert("XAU", 1.0 / usd_per_g, as_of, c.now()) catch return false;
+        return true;
+    }
+
+    fn get(c: Client, url: []const u8, timeout_ms: i64) ?[]const u8 {
+        var http: zx.http.Client = .{ .io = c.io, .allocator = c.arena };
+        defer http.deinit();
+        const response = http.fetch(.{
+            .url = url,
+            .headers = &.{.{ .name = "User-Agent", .value = "nurulhudaapon.com" }},
+            .timeout = .{ .duration = .{ .raw = .fromMilliseconds(timeout_ms), .clock = .awake } },
+        }) catch return null;
+        defer response.deinit(c.arena);
+        if (response.status.class() != .success) return null;
+        return c.arena.dupe(u8, response.body) catch null;
+    }
+
+    fn now(c: Client) i64 {
+        return std.Io.Timestamp.now(c.io, .real).toSeconds();
+    }
+};
+
+// BDT per gram from the "22 KARAT Gold" row of the BAJUS price table.
+fn parseBajus22k(html: []const u8) ?f64 {
     const table = sliceAfter(html, "gold-table") orelse return null;
     const row = sliceAfter(table, "22 KARAT Gold") orelse return null;
     const price_open = sliceAfter(row, "class=\"price\">") orelse
         sliceAfter(row, "class='price'>") orelse return null;
     const price_end = std.mem.indexOf(u8, price_open, "<") orelse return null;
-    return parseBdtAmount(price_open[0..price_end]);
+    return parseAmount(price_open[0..price_end]);
 }
 
 fn sliceAfter(hay: []const u8, needle: []const u8) ?[]const u8 {
@@ -180,15 +190,12 @@ fn sliceAfter(hay: []const u8, needle: []const u8) ?[]const u8 {
     return hay[i + needle.len ..];
 }
 
-fn parseBdtAmount(raw: []const u8) ?f64 {
+// Keeps digits and decimal points, dropping grouping commas and units.
+fn parseAmount(raw: []const u8) ?f64 {
     var buf: [32]u8 = undefined;
     var n: usize = 0;
     for (raw) |c| {
-        if (c >= '0' and c <= '9') {
-            if (n >= buf.len) return null;
-            buf[n] = c;
-            n += 1;
-        } else if (c == '.' and n > 0) {
+        if ((c >= '0' and c <= '9') or (c == '.' and n > 0)) {
             if (n >= buf.len) return null;
             buf[n] = c;
             n += 1;
@@ -224,5 +231,5 @@ test "parse bajus 22k price" {
         \\<td><span class="price">18,935 BDT/GRAM</span></td></tr>
         \\</tbody></table>
     ;
-    try std.testing.expectEqual(@as(f64, 18935), parseBajus22kBdtPerGram(html).?);
+    try std.testing.expectEqual(@as(f64, 18935), parseBajus22k(html).?);
 }

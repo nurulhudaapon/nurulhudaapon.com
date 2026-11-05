@@ -1,0 +1,283 @@
+const Tab = enum { allocation, trend };
+
+const preview_len = 4;
+const change_days = 30;
+
+const State = struct {
+    tab: Tab = .allocation,
+    expanded: bool = false,
+    loading: bool = false,
+    loaded: bool = false,
+    failed: bool = false,
+    points: []const trend.Point = &.{},
+    totals: []const u8 = "",
+    change: []const u8 = "",
+};
+
+// Render inline like `AccountsPanel`: the trend tab's server event is only
+// registered when this card renders.
+pub fn AllocationCard(ctx: *zx.ComponentCtx(struct { allocations: []const finance.allocations.Actual })) zx.Component {
+    const card = ctx.state(State, .{});
+    const alloc = ctx.allocator;
+    const state = card.get();
+    const allocations = ctx.props.allocations;
+    const on_trend = state.tab == .trend;
+    const hidden = allocations.len -| preview_len;
+    const shown = if (state.expanded) allocations else allocations[0..@min(allocations.len, preview_len)];
+
+    return (
+        <section @allocator={alloc} class="adm-card adm-alloc">
+            <div class="adm-section-head">
+                <div class="adm-card-tabs" role="tablist">
+                    <button
+                        type="button"
+                        role="tab"
+                        class="adm-card-tab"
+                        aria-selected={ariaBool(!on_trend)}
+                        onclick={ctx.bind(showAllocation)}
+                    >Allocation</button>
+                    <button
+                        type="button"
+                        role="tab"
+                        class="adm-card-tab"
+                        aria-selected={ariaBool(on_trend)}
+                        onpointerdown={ctx.bind(openTrend)}
+                        onkeydown={ctx.bind(openTrendKey)}
+                        onclick={ctx.bind(showTrend)}
+                    >Net worth</button>
+                </div>
+                {if (on_trend and state.loading) (
+                    <span class="adm-skel" style="width:9rem"></span>
+                ) else if (on_trend) (
+                    <span class="adm-hint">{state.totals}</span>
+                ) else (
+                    <a class="adm-hint" href="/admin/finance/allocation">Edit targets</a>
+                )}
+            </div>
+            <div class="adm-tab-panes">
+                <div class="adm-card-pad adm-trend-pane" aria-hidden={ariaBool(!on_trend)}>
+                    <p class="adm-trend-change">
+                        {if (state.loading) (
+                            <span class="adm-skel" style="width:14rem"></span>
+                        ) else (
+                            <span class="adm-fade">{state.change}</span>
+                        )}
+                    </p>
+                    <trend.TrendChart
+                        points={state.points}
+                        currency="USD"
+                        loading={state.loading}
+                        empty={if (state.failed) "Couldn't load the trend. Try again." else "The trend fills in as balances are recorded."}
+                    />
+                </div>
+                {if (allocations.len == 0) (
+                    <div class="adm-alloc-body adm-alloc-empty" aria-hidden={ariaBool(on_trend)}>
+                        <ui.Empty text="No balances yet. Add accounts or sync IBKR." />
+                    </div>
+                ) else (
+                    <div class="adm-alloc-body" aria-hidden={ariaBool(on_trend)}>
+                        <div class="adm-donut">
+                            <svg viewBox="0 0 120 120" aria-hidden="true">
+                                {for (donutSlices(alloc, allocations)) |slice| (
+                                    <circle
+                                        class="adm-donut-seg"
+                                        cx="60"
+                                        cy="60"
+                                        r="42"
+                                        stroke={slice.color}
+                                        stroke-dasharray={slice.dash}
+                                        stroke-dashoffset={slice.offset}
+                                        transform="rotate(-90 60 60)"
+                                    ></circle>
+                                )}
+                            </svg>
+                            <div class="adm-donut-mid">
+                                <span class="adm-label">Drift</span>
+                                <span class="adm-donut-val">{finance.format.pct(alloc, drift(allocations))}</span>
+                            </div>
+                        </div>
+                        <div class="adm-alloc-list">
+                            {for (shown, 0..) |a, i| (
+                                <div class="adm-alloc-row">
+                                    <div class="adm-alloc-meta">
+                                        <span class="adm-swatch" style={alloc.print("background:{s}", .{color(i)}) catch ""}></span>
+                                        <div>
+                                            <span class="adm-table-title">{a.name}</span>
+                                            <span class="adm-hint">{finance.format.money(alloc, a.actual_value, "USD")}</span>
+                                        </div>
+                                    </div>
+                                    <div class="adm-bars">
+                                        <div class="adm-bar" title="Actual">
+                                            <span class="adm-fill" style={shared.barWidth(alloc, a.actual_pct)}></span>
+                                        </div>
+                                        {if (a.target_pct > 0) (
+                                            <div class="adm-bar adm-bar-tgt" title="Target">
+                                                <span class="adm-fill adm-fill-tgt" style={shared.barWidth(alloc, a.target_pct)}></span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div class="adm-pcts">
+                                        <span>{finance.format.pct(alloc, a.actual_pct)}</span>
+                                        {if (a.target_pct > 0) (
+                                            <span class="adm-hint">{driftLabel(alloc, a)}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                            {if (hidden > 0) (
+                                <button
+                                    type="button"
+                                    class="adm-alloc-more"
+                                    aria-expanded={ariaBool(state.expanded)}
+                                    aria-label={if (state.expanded) "Show fewer" else alloc.print("Show {d} more", .{hidden}) catch "Show more"}
+                                    title={if (state.expanded) "Show fewer" else "Show all"}
+                                    onclick={ctx.bind(toggleExpanded)}
+                                >
+                                    {if (!state.expanded) (
+                                        <span>{alloc.print("+{d}", .{hidden}) catch ""}</span>
+                                    )}
+                                    {ui.icon(alloc, .chevron_right)}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </section>
+    );
+}
+
+fn ariaBool(value: bool) []const u8 {
+    return if (value) "true" else "false";
+}
+
+fn toggleExpanded(e: *zx.client.Event.Stateful) void {
+    const card = e.state(State);
+    var next = card.get();
+    next.expanded = !next.expanded;
+    card.set(next);
+}
+
+fn showAllocation(e: *zx.client.Event.Stateful) void {
+    const card = e.state(State);
+    var next = card.get();
+    next.tab = .allocation;
+    card.set(next);
+}
+
+// Switches tabs before the server event goes out; spins until the first load lands.
+fn openTrend(e: *zx.client.Event.Stateful) void {
+    const card = e.state(State);
+    var next = card.get();
+    next.tab = .trend;
+    next.expanded = false;
+    next.loading = !next.loaded;
+    card.set(next);
+}
+
+fn openTrendKey(e: *zx.client.Event.Stateful) void {
+    if (shared.isActivationKey(e)) openTrend(e);
+}
+
+// Ziex keeps handlers bound from the first render, so this runs on every click
+// and only queries the first time.
+fn showTrend(e: *zx.server.Event.Stateful) void {
+    const card = e.state(State);
+    const arena = e.inner.arena;
+    var next = card.get();
+    next.tab = .trend;
+    next.expanded = false;
+    next.loading = false;
+    if (next.loaded) return card.set(next);
+
+    const history = finance.history.netWorth(arena, change_days) catch |err| {
+        zx.log.err("admin: load net worth trend failed: {any}", .{err});
+        next.failed = true;
+        return card.set(next);
+    };
+    const points = arena.alloc(trend.Point, history.len) catch {
+        next.failed = true;
+        return card.set(next);
+    };
+    var base: ?finance.history.NetWorthPoint = null;
+    for (history, points) |h, *p| {
+        p.* = .{ .t = h.t, .date = h.date, .value = h.net_worth };
+        if (h.past) base = h;
+    }
+    if (history.len > 0) {
+        const latest = history[history.len - 1];
+        next.totals = totalsLabel(arena, latest);
+        next.change = changeLabel(arena, latest, base);
+    }
+    next.points = points;
+    next.loaded = true;
+    next.failed = false;
+    card.set(next);
+}
+
+fn totalsLabel(arena: zx.Allocator, p: finance.history.NetWorthPoint) []const u8 {
+    const assets = finance.format.money(arena, p.assets, "USD");
+    if (p.liabilities < 0.005) return arena.print("Assets {s}", .{assets}) catch "";
+    return arena.print("Assets {s} · Debts {s}", .{ assets, finance.format.money(arena, p.liabilities, "USD") }) catch "";
+}
+
+fn changeLabel(arena: zx.Allocator, latest: finance.history.NetWorthPoint, before: ?finance.history.NetWorthPoint) []const u8 {
+    const b = before orelse return "No snapshot from 30+ days ago yet.";
+    const delta = latest.net_worth - b.net_worth;
+    const pct: []const u8 = if (@abs(b.net_worth) > 0.005)
+        arena.print(" ({s})", .{shared.signedPct(arena, delta * 100.0 / @abs(b.net_worth))}) catch ""
+    else
+        "";
+    return arena.print("{s}{s} since {s}", .{ shared.signedMoney(arena, delta, "USD"), pct, b.date }) catch "";
+}
+
+const colors = [_][]const u8{ "#f6821f", "#2563eb", "#15803d", "#a16207", "#71717a", "#db2777", "#0d9488" };
+
+fn color(i: usize) []const u8 {
+    return colors[i % colors.len];
+}
+
+const Slice = struct { color: []const u8, dash: []const u8, offset: []const u8 };
+
+fn donutSlices(arena: zx.Allocator, allocations: []const finance.allocations.Actual) []const Slice {
+    const circumference: f64 = 2.0 * std.math.pi * 42.0;
+    var total: f64 = 0;
+    for (allocations) |a| total += @max(0, a.actual_value);
+    if (total < 0.005) return &.{};
+
+    const out = arena.alloc(Slice, allocations.len) catch return &.{};
+    const gap: f64 = if (allocations.len > 1) 2 else 0;
+    var cursor: f64 = 0;
+    for (allocations, out, 0..) |a, *slice, i| {
+        const len = @max(0, a.actual_value) / total * circumference;
+        const visible = @max(0, len - gap);
+        slice.* = .{
+            .color = color(i),
+            .dash = arena.print("{d:.2} {d:.2}", .{ visible, circumference - visible }) catch "0 264",
+            .offset = arena.print("{d:.2}", .{-cursor}) catch "0",
+        };
+        cursor += len;
+    }
+    return out;
+}
+
+fn drift(allocations: []const finance.allocations.Actual) f64 {
+    var sum: f64 = 0;
+    for (allocations) |a| {
+        if (a.target_pct > 0) sum += @abs(a.actual_pct - a.target_pct);
+    }
+    return sum / 2.0;
+}
+
+fn driftLabel(arena: zx.Allocator, a: finance.allocations.Actual) []const u8 {
+    const d = a.actual_pct - a.target_pct;
+    if (@abs(d) < 0.05) return "on target";
+    return arena.print("{s} vs target", .{shared.signedPct(arena, d)}) catch "";
+}
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const finance = @import("../../finance.zig");
+const shared = @import("shared.zig");
+const trend = @import("trend.zx");

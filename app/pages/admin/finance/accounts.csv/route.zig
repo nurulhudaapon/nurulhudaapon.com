@@ -1,18 +1,14 @@
 pub fn GET(ctx: zx.RouteContext) !void {
-    const accounts = try finance.listAllAccounts(ctx.arena);
+    const accounts = try finance.accounts.listAll(ctx.arena);
 
     var aw = std.Io.Writer.Allocating.init(ctx.arena);
     const w = &aw.writer;
     try w.writeAll("id,name,type,institution,broker,group,asset_class,currency,balance,cash,value_usd,weight_pct,liability,stale,opened_on,updated_at,notes\r\n");
     for (accounts) |a| {
         try w.print("{d},", .{a.id});
-        try writeText(w, a.name);
-        try writeText(w, a.type_label);
-        try writeText(w, a.institution);
-        try writeText(w, a.broker);
-        try writeText(w, a.group_name);
-        try writeText(w, a.asset_class);
-        try writeText(w, a.currency);
+        for ([_][]const u8{ a.name, a.type_label, a.institution, a.broker, a.group_name, a.asset_class, a.currency }) |text| {
+            try writeColumn(w, text);
+        }
         try w.print("{d:.2},{d:.2},{d:.2},{d:.2},{d},{d},", .{
             a.net_liquidation,
             a.cash,
@@ -21,8 +17,8 @@ pub fn GET(ctx: zx.RouteContext) !void {
             a.liability,
             a.stale,
         });
-        try writeText(w, a.opened_on orelse "");
-        try writeText(w, if (a.synced_at) |at| isoTime(ctx.arena, at) else "");
+        try writeColumn(w, a.opened_on orelse "");
+        try writeColumn(w, if (a.synced_at) |at| isoTime(ctx.arena, at) else "");
         try writeField(w, a.notes orelse "");
         try w.writeAll("\r\n");
     }
@@ -33,7 +29,7 @@ pub fn GET(ctx: zx.RouteContext) !void {
     ctx.response.text(aw.written());
 }
 
-fn writeText(w: *std.Io.Writer, value: []const u8) !void {
+fn writeColumn(w: *std.Io.Writer, value: []const u8) !void {
     try writeField(w, value);
     try w.writeByte(',');
 }
@@ -72,4 +68,4 @@ pub const options: zx.RouteOptions = .{ .rendering = .request };
 
 const std = @import("std");
 const zx = @import("zx");
-const finance = @import("../../../finance/db.zig");
+const finance = @import("../../../finance.zig");

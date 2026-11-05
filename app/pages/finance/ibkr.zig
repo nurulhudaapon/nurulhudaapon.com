@@ -2,7 +2,8 @@ const std = @import("std");
 const zx = @import("zx");
 const xml = @import("xml");
 const credentials = @import("../../db/credentials.zig");
-const db = @import("db.zig");
+const classes = @import("classes.zig");
+const history = @import("history.zig");
 
 const send_url = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest";
 const statement_url = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement";
@@ -15,84 +16,131 @@ pub const Result = struct {
     saw_equity_summary: bool = false,
 };
 
-pub const sync_cache_secs: i64 = 10 * 60;
-
-pub fn sync(arena: std.mem.Allocator) !Result {
-    const creds = credentials.loadIbkr(arena) orelse return error.NotConfigured;
-    const reference = try sendRequest(arena, creds.token, creds.query_id);
-    const body = try getStatement(arena, creds.token, reference);
-    return try applyReport(arena, body);
+pub fn sync(arena: std.mem.Allocator, io: std.Io) !Result {
+    const creds = credentials.Ibkr.load(arena) orelse return error.NotConfigured;
+    const flex: Flex = .{ .arena = arena, .io = io, .token = creds.token };
+    const reference = try flex.send(creds.query_id);
+    const body = try flex.statement(reference);
+    var report = try Report.parse(arena, body);
+    const synced_at = try arena.print("{d}", .{std.Io.Timestamp.now(io, .real).toSeconds()});
+    return try report.store(arena, synced_at);
 }
 
-pub fn syncIfStale(arena: std.mem.Allocator) !?Result {
-    if (credentials.loadIbkr(arena) == null) return null;
-    if (lastSyncedSecs(arena)) |at| {
-        const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
-        if (now - at < sync_cache_secs) return null;
+// Flex Web Service: SendRequest queues a statement, GetStatement polls for it.
+const Flex = struct {
+    arena: std.mem.Allocator,
+    io: std.Io,
+    token: []const u8,
+
+    fn send(f: Flex, query_id: []const u8) ![]const u8 {
+        const url = try f.arena.print("{s}?t={s}&q={s}&v=3", .{ send_url, f.token, query_id });
+        const body = try f.get(url);
+        const meta = try Meta.parse(f.arena, body);
+        if (!std.ascii.eqlIgnoreCase(meta.status orelse "", "Success")) {
+            zx.log.warn("ibkr: SendRequest status={s} error={s}", .{ meta.status orelse "", meta.error_message orelse "" });
+            return error.SendFailed;
+        }
+        return meta.reference orelse error.SendFailed;
     }
-    return try sync(arena);
-}
 
-fn lastSyncedSecs(arena: std.mem.Allocator) ?i64 {
-    const row = zx.db.row(arena, struct { synced_at: ?[]const u8 },
-        \\SELECT MAX(synced_at) AS synced_at FROM accounts WHERE broker = 'ibkr'
-    , .{}) catch return null;
-    const raw = if (row) |r| r.synced_at else null;
-    const s = raw orelse return null;
-    return std.fmt.parseInt(i64, s, 10) catch null;
-}
+    fn statement(f: Flex, reference: []const u8) ![]const u8 {
+        const url = try f.arena.print("{s}?t={s}&q={s}&v=3", .{ statement_url, f.token, reference });
+        for (0..8) |attempt| {
+            if (attempt > 0) f.io.sleep(.fromMilliseconds(800), .awake) catch {};
+            const body = try f.get(url);
+            if (containsElement(body, "FlexQueryResponse") or containsElement(body, "OpenPosition") or containsElement(body, "FlexStatement"))
+                return body;
 
-fn sendRequest(arena: std.mem.Allocator, token: []const u8, query_id: []const u8) ![]const u8 {
-    const url = try arena.print("{s}?t={s}&q={s}&v=3", .{ send_url, token, query_id });
-    const body = try fetchText(arena, url);
-    const meta = try parseFlexMeta(arena, body);
-    if (!std.ascii.eqlIgnoreCase(meta.status orelse "", "Success")) {
-        zx.log.warn("ibkr: SendRequest status={s} error={s}", .{ meta.status orelse "", meta.error_message orelse "" });
-        return error.SendFailed;
-    }
-    return meta.reference orelse error.SendFailed;
-}
-
-fn getStatement(arena: std.mem.Allocator, token: []const u8, reference: []const u8) ![]const u8 {
-    const url = try arena.print("{s}?t={s}&q={s}&v=3", .{ statement_url, token, reference });
-    var attempt: usize = 0;
-    while (attempt < 8) : (attempt += 1) {
-        if (attempt > 0) zx.Io.default().sleep(.fromMilliseconds(800), .awake) catch {};
-        const body = try fetchText(arena, url);
-        if (containsElement(body, "FlexQueryResponse") or containsElement(body, "OpenPosition") or containsElement(body, "FlexStatement"))
-            return body;
-
-        const meta = parseFlexMeta(arena, body) catch continue;
-        if (meta.status) |status| {
-            if (std.ascii.eqlIgnoreCase(status, "Warn") and
-                std.mem.indexOf(u8, meta.error_code orelse "", "1018") != null)
-                continue;
-            if (std.ascii.eqlIgnoreCase(status, "Fail") or std.ascii.eqlIgnoreCase(status, "Error")) {
-                zx.log.warn("ibkr: GetStatement status={s} error={s}", .{ status, meta.error_message orelse "" });
-                return error.StatementFailed;
+            const meta = Meta.parse(f.arena, body) catch continue;
+            if (meta.status) |status| {
+                // 1018: the statement is still being generated.
+                if (std.ascii.eqlIgnoreCase(status, "Warn") and
+                    std.mem.indexOf(u8, meta.error_code orelse "", "1018") != null)
+                    continue;
+                if (std.ascii.eqlIgnoreCase(status, "Fail") or std.ascii.eqlIgnoreCase(status, "Error")) {
+                    zx.log.warn("ibkr: GetStatement status={s} error={s}", .{ status, meta.error_message orelse "" });
+                    return error.StatementFailed;
+                }
             }
         }
+        return error.StatementPending;
     }
-    return error.StatementPending;
-}
 
-fn fetchText(arena: std.mem.Allocator, url: []const u8) ![]const u8 {
-    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = arena };
-    defer client.deinit();
-    const response = try client.fetch(.{
-        .url = url,
-        .headers = &.{.{ .name = "User-Agent", .value = "nurulhudaapon.com" }},
-        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(30_000), .clock = .awake } },
-    });
-    defer response.deinit(arena);
-    if (response.status.class() != .success) {
-        zx.log.warn("ibkr: GET failed status={d}", .{@backingInt(response.status)});
-        return error.NetworkError;
+    fn get(f: Flex, url: []const u8) ![]const u8 {
+        var client: zx.http.Client = .{ .io = f.io, .allocator = f.arena };
+        defer client.deinit();
+        const response = try client.fetch(.{
+            .url = url,
+            .headers = &.{.{ .name = "User-Agent", .value = "nurulhudaapon.com" }},
+            .timeout = .{ .duration = .{ .raw = .fromMilliseconds(30_000), .clock = .awake } },
+        });
+        defer response.deinit(f.arena);
+        if (response.status.class() != .success) {
+            zx.log.warn("ibkr: GET failed status={d}", .{@backingInt(response.status)});
+            return error.NetworkError;
+        }
+        return try f.arena.dupe(u8, response.body);
     }
-    return try arena.dupe(u8, response.body);
-}
+};
 
-const AccountAcc = struct {
+const Meta = struct {
+    status: ?[]const u8 = null,
+    reference: ?[]const u8 = null,
+    error_message: ?[]const u8 = null,
+    error_code: ?[]const u8 = null,
+
+    fn parse(arena: std.mem.Allocator, body: []const u8) !Meta {
+        var parser: xml.Reader.Static = .init(arena, body, .{ .namespace_aware = false });
+        defer parser.deinit();
+        const reader = &parser.interface;
+
+        var meta: Meta = .{};
+        var current: ?[]const u8 = null;
+        var text: std.ArrayList(u8) = .empty;
+
+        while (true) {
+            const node = reader.read() catch |err| switch (err) {
+                error.MalformedXml => return meta,
+                else => |e| return e,
+            };
+            switch (node) {
+                .eof => break,
+                .element_start => {
+                    const name = reader.elementName();
+                    if (eqlAny(name, &.{ "Status", "ReferenceCode", "ErrorMessage", "ErrorCode" })) {
+                        current = try arena.dupe(u8, name);
+                        text.clearRetainingCapacity();
+                    } else current = null;
+                },
+                .text, .cdata => {
+                    if (current == null) continue;
+                    const chunk = if (node == .text) try reader.text() else try reader.cdata();
+                    try text.appendSlice(arena, chunk);
+                },
+                .character_reference => {
+                    if (current == null) continue;
+                    var buf: [4]u8 = undefined;
+                    const len = std.unicode.utf8Encode(reader.characterReferenceChar(), &buf) catch continue;
+                    try text.appendSlice(arena, buf[0..len]);
+                },
+                .element_end => {
+                    const name = current orelse continue;
+                    const value = try arena.dupe(u8, std.mem.trim(u8, text.items, " \t\r\n"));
+                    if (std.mem.eql(u8, name, "Status")) meta.status = value;
+                    if (std.mem.eql(u8, name, "ReferenceCode")) meta.reference = value;
+                    if (std.mem.eql(u8, name, "ErrorMessage")) meta.error_message = value;
+                    if (std.mem.eql(u8, name, "ErrorCode")) meta.error_code = value;
+                    current = null;
+                    text.clearRetainingCapacity();
+                },
+                else => {},
+            }
+        }
+        return meta;
+    }
+};
+
+const Account = struct {
     external_id: []const u8,
     name: []const u8,
     currency: []const u8,
@@ -103,10 +151,10 @@ const AccountAcc = struct {
     nlv_from_equity: bool = false,
     opened_on: ?[]const u8 = null,
     // Daily NAV from dated equity summary rows; the newest also sets the fields above.
-    history: std.ArrayList(db.DatedBalance) = .empty,
+    history: std.ArrayList(history.DatedBalance) = .empty,
     equity_date: []const u8 = "",
 
-    fn cash(self: AccountAcc) f64 {
+    fn cash(self: Account) f64 {
         if (self.settled_cash) |v| {
             if (@abs(v) > 0.005) return v;
         }
@@ -118,7 +166,7 @@ const AccountAcc = struct {
     }
 };
 
-const HoldingAcc = struct {
+const Position = struct {
     account_id: []const u8,
     symbol: []const u8,
     description: []const u8,
@@ -135,7 +183,7 @@ const HoldingAcc = struct {
     exchange: []const u8,
 };
 
-const CashAcc = struct {
+const Cash = struct {
     account_id: []const u8,
     currency: []const u8,
     amount: f64,
@@ -143,185 +191,354 @@ const CashAcc = struct {
     amount_base: f64,
 };
 
-const ParsedReport = struct {
-    accounts: std.StringHashMapUnmanaged(AccountAcc),
-    holdings: std.ArrayList(HoldingAcc),
-    cash: std.ArrayList(CashAcc) = .empty,
+const Report = struct {
+    accounts: std.StringHashMapUnmanaged(Account) = .empty,
+    holdings: std.ArrayList(Position) = .empty,
+    cash: std.ArrayList(Cash) = .empty,
     saw_cash_report: bool = false,
     saw_equity_summary: bool = false,
-};
 
-const FlexMeta = struct {
-    status: ?[]const u8 = null,
-    reference: ?[]const u8 = null,
-    error_message: ?[]const u8 = null,
-    error_code: ?[]const u8 = null,
-};
+    fn parse(arena: std.mem.Allocator, body: []const u8) !Report {
+        var report: Report = .{};
+        var parser: xml.Reader.Static = .init(arena, body, .{ .namespace_aware = false });
+        defer parser.deinit();
+        const reader = &parser.interface;
 
-fn applyReport(arena: std.mem.Allocator, body: []const u8) !Result {
-    var parsed = try parseReport(arena, body);
-    if (parsed.accounts.count() == 0 and parsed.holdings.items.len == 0) return error.EmptyReport;
-
-    var cash_total: f64 = 0;
-    var it = parsed.accounts.iterator();
-    while (it.next()) |kv| {
-        var holdings_sum: f64 = 0;
-        for (parsed.holdings.items) |h| {
-            if (std.mem.eql(u8, h.account_id, kv.key_ptr.*)) holdings_sum += h.market_value_base;
-        }
-        var cash = kv.value_ptr.*.cash();
-        if (kv.value_ptr.*.nlv_from_equity) {
-            const residual = kv.value_ptr.*.net_liquidation - holdings_sum;
-            if (residual > 0.005 and residual > cash + 0.005) {
-                cash = residual;
-                kv.value_ptr.*.settled_cash = residual;
-            } else if (@abs(cash) < 0.005 and residual > 0.005) {
-                cash = residual;
-                kv.value_ptr.*.settled_cash = residual;
+        while (true) {
+            const node = reader.read() catch |err| switch (err) {
+                error.MalformedXml => {
+                    zx.log.warn("ibkr: malformed flex xml at {f}: {s}", .{ reader.errorLocation(), @tagName(reader.errorCode()) });
+                    return error.EmptyReport;
+                },
+                else => |e| return e,
+            };
+            switch (node) {
+                .eof => break,
+                .element_start => {
+                    const name = reader.elementName();
+                    if (eqlAny(name, &.{ "FlexStatement", "AccountInformation" })) {
+                        try report.addAccountInfo(arena, reader);
+                    } else if (eqlAny(name, &.{ "EquitySummaryInBase", "EquitySummaryByReportDateInBase" })) {
+                        report.saw_equity_summary = true;
+                        try report.addEquity(arena, reader);
+                    } else if (eqlAny(name, &.{ "CashReportCurrency", "CashReport" })) {
+                        report.saw_cash_report = true;
+                        try report.addCashReport(arena, reader);
+                    } else if (std.mem.eql(u8, name, "OpenPosition")) {
+                        try report.addPosition(arena, reader);
+                    }
+                },
+                else => {},
             }
         }
-        if (!kv.value_ptr.*.nlv_from_equity and kv.value_ptr.*.net_liquidation == 0) {
-            kv.value_ptr.*.net_liquidation = cash + holdings_sum;
-        } else if (kv.value_ptr.*.nlv_from_equity and cash > 0.005) {
-            const floor = cash + holdings_sum;
-            if (kv.value_ptr.*.net_liquidation + 0.005 < floor)
-                kv.value_ptr.*.net_liquidation = floor;
+        return report;
+    }
+
+    fn account(r: *Report, arena: std.mem.Allocator, id: []const u8) !*Account {
+        const entry = try r.accounts.getOrPut(arena, id);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = .{ .external_id = id, .name = id, .currency = "USD" };
         }
-        cash_total += cash;
+        return entry.value_ptr;
     }
 
-    const synced_at = try nowSecs(arena);
-    const aliases = try db.classAliases(arena);
-    var overrides = try db.categoryOverrides(arena);
-    try db.clearIbkrHoldings();
-
-    var account_ids: std.StringHashMapUnmanaged(i64) = .empty;
-    var acc_it = parsed.accounts.iterator();
-    var account_count: usize = 0;
-    while (acc_it.next()) |kv| {
-        const a = kv.value_ptr.*;
-        const cash = a.cash();
-        const id = try db.upsertAccount(arena, .{
-            .external_id = a.external_id,
-            .name = a.name,
-            .currency = a.currency,
-            .cash = cash,
-            .net_liquidation = a.net_liquidation,
-            .synced_at = synced_at,
-        });
-        try account_ids.put(arena, a.external_id, id);
-        try db.importHistory(id, a.opened_on, a.history.items);
-        account_count += 1;
+    fn addAccountInfo(r: *Report, arena: std.mem.Allocator, reader: *xml.Reader) !void {
+        const account_id = try dupAttr(arena, reader, "accountId") orelse return;
+        const entry = try r.account(arena, account_id);
+        if (try dupAttr(arena, reader, "acctAlias")) |alias| {
+            if (alias.len > 0) entry.name = alias;
+        }
+        if (try dupAttr(arena, reader, "currency")) |cur| {
+            if (cur.len > 0) entry.currency = cur;
+        }
+        if (try isoDate(arena, attrRaw(reader, "dateOpened"))) |d| entry.opened_on = d;
     }
 
-    for (parsed.holdings.items) |h| {
-        const account_id = account_ids.get(h.account_id) orelse continue;
-        const key = try arena.print("{s}\x00{s}", .{ h.account_id, h.symbol });
-        try db.insertHolding(.{
+    fn addEquity(r: *Report, arena: std.mem.Allocator, reader: *xml.Reader) !void {
+        const account_id = try dupAttr(arena, reader, "accountId") orelse return;
+        const entry = try r.account(arena, account_id);
+        const total = attrFloat(reader, "total");
+        if (try isoDate(arena, attrRaw(reader, "reportDate"))) |date| {
+            if (total) |t| try entry.history.append(arena, .{ .date = date, .balance = t });
+            if (std.mem.order(u8, date, entry.equity_date) == .lt) return;
+            entry.equity_date = date;
+            entry.equity_cash = null;
+        }
+        if (total) |t| {
+            entry.net_liquidation = t;
+            entry.nlv_from_equity = true;
+        }
+        if (attrFloat(reader, "cash")) |v| entry.equity_cash = v;
+        if (entry.equity_cash == null) {
+            if (attrFloat(reader, "cashLong")) |v| entry.equity_cash = v;
+        }
+        if (entry.equity_cash == null) {
+            if (attrFloat(reader, "brokerCash")) |v| entry.equity_cash = v;
+        }
+    }
+
+    fn addCashReport(r: *Report, arena: std.mem.Allocator, reader: *xml.Reader) !void {
+        const account_id = try dupAttr(arena, reader, "accountId") orelse return;
+        if (attrRaw(reader, "levelOfDetail")) |lod| {
+            if (std.ascii.eqlIgnoreCase(lod, "LOT") or std.ascii.eqlIgnoreCase(lod, "INTERNAL")) return;
+        }
+        const currency = try dupAttr(arena, reader, "currency") orelse return;
+        const settled = firstAttrFloat(reader, &.{
+            "endingSettledCash",
+            "settledCash",
+            "endingCash",
+            "cashBalance",
+            "startingCash",
+        }) orelse return;
+
+        const entry = try r.account(arena, account_id);
+        const is_base = std.mem.eql(u8, currency, "BASE_SUMMARY") or std.ascii.eqlIgnoreCase(currency, "BASE");
+        if (is_base) {
+            if (@abs(settled) > 0.005) entry.settled_cash = settled;
+            return;
+        }
+        const raw_rate = attrFloat(reader, "fxRateToBase") orelse 1;
+        const rate = if (raw_rate == 0) 1 else raw_rate;
+        const ending = attrFloat(reader, "endingCash") orelse settled;
+        if (@abs(ending) >= 0.005 or @abs(settled) >= 0.005)
+            try r.putCash(arena, .{
+                .account_id = account_id,
+                .currency = currency,
+                .amount = ending,
+                .settled = settled,
+                .amount_base = ending * rate,
+            });
+        if (@abs(settled) < 0.005) return;
+
+        entry.settled_cash_sum += settled * rate;
+    }
+
+    fn addPosition(r: *Report, arena: std.mem.Allocator, reader: *xml.Reader) !void {
+        if (attrRaw(reader, "levelOfDetail")) |lod| {
+            if (std.ascii.eqlIgnoreCase(lod, "LOT")) return;
+        }
+        const account_id = try dupAttr(arena, reader, "accountId") orelse return;
+        const symbol = try dupAttr(arena, reader, "symbol") orelse return;
+        const qty = attrFloat(reader, "position") orelse 0;
+        if (qty == 0) return;
+
+        const value = attrFloat(reader, "positionValue") orelse 0;
+        const fx_rate = attrFloat(reader, "fxRateToBase") orelse 1;
+        const value_base = attrFloat(reader, "positionValueInBase") orelse value * fx_rate;
+        const asset_class = try dupAttr(arena, reader, "assetCategory") orelse "STK";
+
+        const entry = try r.account(arena, account_id);
+        if (std.ascii.eqlIgnoreCase(asset_class, "CASH") or std.ascii.eqlIgnoreCase(symbol, "CASH")) {
+            if (@abs(value_base) > 0.005) entry.settled_cash_sum += value_base;
+            const currency = try dupAttr(arena, reader, "currency") orelse symbol;
+            if (@abs(value_base) > 0.005 and !r.hasCash(account_id, currency))
+                try r.cash.append(arena, .{
+                    .account_id = account_id,
+                    .currency = currency,
+                    .amount = value,
+                    .settled = value,
+                    .amount_base = value_base,
+                });
+            return;
+        }
+
+        try r.holdings.append(arena, .{
             .account_id = account_id,
-            .symbol = h.symbol,
-            .description = h.description,
-            .asset_class = h.asset_class,
-            .category = overrides.get(key) orelse db.categoryForAssetClass(aliases, h.asset_class),
-            .currency = h.currency,
-            .quantity = h.quantity,
-            .market_price = h.market_price,
-            .market_value = h.market_value,
-            .market_value_base = h.market_value_base,
-            .conid = h.conid,
-            .synced_at = synced_at,
-            .cost_price = h.cost_price,
-            .cost_basis_base = h.cost_basis_base,
-            .unrealized_pnl_base = h.unrealized_pnl_base,
-            .exchange = h.exchange,
+            .symbol = symbol,
+            .description = try dupAttr(arena, reader, "description") orelse symbol,
+            .asset_class = asset_class,
+            .currency = try dupAttr(arena, reader, "currency") orelse "USD",
+            .quantity = qty,
+            .market_price = attrFloat(reader, "markPrice") orelse 0,
+            .market_value = value,
+            .market_value_base = value_base,
+            .conid = try dupAttr(arena, reader, "conid"),
+            .cost_price = attrFloat(reader, "costBasisPrice"),
+            .cost_basis_base = if (attrFloat(reader, "costBasisMoney")) |v| v * fx_rate else null,
+            .unrealized_pnl_base = if (attrFloat(reader, "fifoPnlUnrealized")) |v| v * fx_rate else null,
+            .exchange = try dupAttr(arena, reader, "listingExchange") orelse "",
         });
     }
 
-    for (parsed.cash.items) |c| {
-        const account_id = account_ids.get(c.account_id) orelse continue;
-        try db.insertCashBalance(.{
-            .account_id = account_id,
-            .currency = c.currency,
-            .amount = c.amount,
-            .settled = c.settled,
-            .amount_base = c.amount_base,
-            .synced_at = synced_at,
-        });
+    // The Cash Report wins over forex positions for the same currency.
+    fn putCash(r: *Report, arena: std.mem.Allocator, row: Cash) !void {
+        for (r.cash.items) |*c| {
+            if (std.mem.eql(u8, c.account_id, row.account_id) and std.mem.eql(u8, c.currency, row.currency)) {
+                c.* = row;
+                return;
+            }
+        }
+        try r.cash.append(arena, row);
     }
 
-    if (!parsed.saw_cash_report and !parsed.saw_equity_summary) {
-        zx.log.warn("ibkr: Flex XML had no CashReport or EquitySummary - enable both in the Flex Query to capture cash", .{});
-    } else if (cash_total < 0.005) {
-        zx.log.info("ibkr: synced with cash≈0 (cash_report={any} equity_summary={any})", .{ parsed.saw_cash_report, parsed.saw_equity_summary });
+    fn hasCash(r: *const Report, account_id: []const u8, currency: []const u8) bool {
+        for (r.cash.items) |c| {
+            if (std.mem.eql(u8, c.account_id, account_id) and std.mem.eql(u8, c.currency, currency)) return true;
+        }
+        return false;
     }
 
-    return .{
-        .accounts = account_count,
-        .holdings = parsed.holdings.items.len,
-        .cash_total = cash_total,
-        .saw_cash_report = parsed.saw_cash_report,
-        .saw_equity_summary = parsed.saw_equity_summary,
-    };
-}
+    // Replaces all IBKR holdings and cash with this report, keeping user-set categories.
+    fn store(r: *Report, arena: std.mem.Allocator, synced_at: []const u8) !Result {
+        if (r.accounts.count() == 0 and r.holdings.items.len == 0) return error.EmptyReport;
 
-fn parseReport(arena: std.mem.Allocator, body: []const u8) !ParsedReport {
-    var accounts: std.StringHashMapUnmanaged(AccountAcc) = .empty;
-    var holdings: std.ArrayList(HoldingAcc) = .empty;
-    var cash: std.ArrayList(CashAcc) = .empty;
-    var saw_cash_report = false;
-    var saw_equity_summary = false;
-
-    var parser: xml.Reader.Static = .init(arena, body, .{ .namespace_aware = false });
-    defer parser.deinit();
-    const reader = &parser.interface;
-
-    while (true) {
-        const node = reader.read() catch |err| switch (err) {
-            error.MalformedXml => {
-                zx.log.warn("ibkr: malformed flex xml at {f}: {s}", .{ reader.errorLocation(), @tagName(reader.errorCode()) });
-                return error.EmptyReport;
-            },
-            else => |e| return e,
-        };
-        switch (node) {
-            .eof => break,
-            .element_start => {
-                const name = reader.elementName();
-                if (eqlAny(name, &.{ "FlexStatement", "AccountInformation" })) {
-                    try ingestAccountInfo(arena, &accounts, reader);
-                } else if (eqlAny(name, &.{ "EquitySummaryInBase", "EquitySummaryByReportDateInBase" })) {
-                    saw_equity_summary = true;
-                    try ingestEquity(arena, &accounts, reader);
-                } else if (eqlAny(name, &.{ "CashReportCurrency", "CashReport" })) {
-                    saw_cash_report = true;
-                    try ingestCashReport(arena, &accounts, &cash, reader);
-                } else if (std.mem.eql(u8, name, "OpenPosition")) {
-                    try ingestPosition(arena, &accounts, &holdings, &cash, reader);
+        var cash_total: f64 = 0;
+        var it = r.accounts.valueIterator();
+        while (it.next()) |a| {
+            var holdings_sum: f64 = 0;
+            for (r.holdings.items) |h| {
+                if (std.mem.eql(u8, h.account_id, a.external_id)) holdings_sum += h.market_value_base;
+            }
+            var cash = a.cash();
+            if (a.nlv_from_equity) {
+                const residual = a.net_liquidation - holdings_sum;
+                if (residual > 0.005 and residual > cash + 0.005) {
+                    cash = residual;
+                    a.settled_cash = residual;
+                } else if (@abs(cash) < 0.005 and residual > 0.005) {
+                    cash = residual;
+                    a.settled_cash = residual;
                 }
-            },
-            else => {},
+            }
+            if (!a.nlv_from_equity and a.net_liquidation == 0) {
+                a.net_liquidation = cash + holdings_sum;
+            } else if (a.nlv_from_equity and cash > 0.005) {
+                const floor = cash + holdings_sum;
+                if (a.net_liquidation + 0.005 < floor) a.net_liquidation = floor;
+            }
+            cash_total += cash;
         }
-    }
 
-    return .{
-        .accounts = accounts,
-        .holdings = holdings,
-        .cash = cash,
-        .saw_cash_report = saw_cash_report,
-        .saw_equity_summary = saw_equity_summary,
-    };
+        const aliases = try classes.Aliases.load(arena);
+        const overrides = try categoryOverrides(arena, aliases);
+        try clearHoldings();
+
+        var account_ids: std.StringHashMapUnmanaged(i64) = .empty;
+        var acc_it = r.accounts.valueIterator();
+        while (acc_it.next()) |a| {
+            const id = try upsertAccount(arena, a.*, synced_at);
+            try account_ids.put(arena, a.external_id, id);
+            try history.importBalances(id, a.opened_on, a.history.items);
+        }
+
+        for (r.holdings.items) |h| {
+            const account_id = account_ids.get(h.account_id) orelse continue;
+            const key = try arena.print("{s}\x00{s}", .{ h.account_id, h.symbol });
+            try insertHolding(account_id, h, overrides.get(key) orelse aliases.resolve(h.asset_class), synced_at);
+        }
+
+        for (r.cash.items) |c| {
+            const account_id = account_ids.get(c.account_id) orelse continue;
+            try insertCash(account_id, c, synced_at);
+        }
+
+        if (!r.saw_cash_report and !r.saw_equity_summary) {
+            zx.log.warn("ibkr: Flex XML had no CashReport or EquitySummary - enable both in the Flex Query to capture cash", .{});
+        } else if (cash_total < 0.005) {
+            zx.log.info("ibkr: synced with cash≈0 (cash_report={any} equity_summary={any})", .{ r.saw_cash_report, r.saw_equity_summary });
+        }
+
+        return .{
+            .accounts = r.accounts.count(),
+            .holdings = r.holdings.items.len,
+            .cash_total = cash_total,
+            .saw_cash_report = r.saw_cash_report,
+            .saw_equity_summary = r.saw_equity_summary,
+        };
+    }
+};
+
+fn upsertAccount(arena: std.mem.Allocator, a: Account, synced_at: []const u8) !i64 {
+    _ = try zx.db.run(
+        \\INSERT INTO accounts
+        \\  (broker, external_id, name, currency, cash, net_liquidation, synced_at,
+        \\   institution, account_type, asset_class)
+        \\VALUES ('ibkr', ?1, ?2, ?3, ?4, ?5, ?6, 'Interactive Brokers', 'brokerage', 'Equities')
+        \\ON CONFLICT (broker, external_id) DO UPDATE SET
+        \\  name = excluded.name,
+        \\  currency = excluded.currency,
+        \\  cash = excluded.cash,
+        \\  net_liquidation = excluded.net_liquidation,
+        \\  synced_at = excluded.synced_at,
+        \\  institution = 'Interactive Brokers',
+        \\  account_type = 'brokerage'
+    , .{ a.external_id, a.name, a.currency, a.cash(), a.net_liquidation, synced_at });
+
+    const row = try zx.db.row(arena, struct { id: i64 },
+        \\SELECT id FROM accounts WHERE broker = 'ibkr' AND external_id = ?1
+    , .{a.external_id}) orelse return error.AccountMissing;
+    return row.id;
 }
 
-fn ingestAccountInfo(arena: std.mem.Allocator, accounts: *std.StringHashMapUnmanaged(AccountAcc), reader: *xml.Reader) !void {
-    const account_id = try dupAttr(arena, reader, "accountId") orelse return;
-    const entry = try ensureAccount(accounts, arena, account_id);
-    if (try dupAttr(arena, reader, "acctAlias")) |alias| {
-        if (alias.len > 0) entry.*.name = alias;
+fn clearHoldings() !void {
+    _ = try zx.db.run(
+        \\DELETE FROM holdings
+        \\WHERE account_id IN (SELECT id FROM accounts WHERE broker = 'ibkr')
+    , .{});
+    _ = try zx.db.run(
+        \\DELETE FROM cash_balances
+        \\WHERE account_id IN (SELECT id FROM accounts WHERE broker = 'ibkr')
+    , .{});
+}
+
+fn insertCash(account_id: i64, c: Cash, synced_at: []const u8) !void {
+    _ = try zx.db.run(
+        \\INSERT INTO cash_balances (account_id, currency, amount, settled, amount_base, synced_at)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        \\ON CONFLICT (account_id, currency) DO UPDATE SET
+        \\  amount = excluded.amount,
+        \\  settled = excluded.settled,
+        \\  amount_base = excluded.amount_base,
+        \\  synced_at = excluded.synced_at
+    , .{ account_id, c.currency, c.amount, c.settled, c.amount_base, synced_at });
+}
+
+fn insertHolding(account_id: i64, h: Position, category: []const u8, synced_at: []const u8) !void {
+    _ = try zx.db.run(
+        \\INSERT INTO holdings
+        \\  (account_id, symbol, description, asset_class, category, currency,
+        \\   quantity, market_price, market_value, market_value_base, conid, synced_at,
+        \\   cost_price, cost_basis_base, unrealized_pnl_base, exchange)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+    , .{
+        account_id,
+        h.symbol,
+        h.description,
+        h.asset_class,
+        category,
+        h.currency,
+        h.quantity,
+        h.market_price,
+        h.market_value,
+        h.market_value_base,
+        h.conid,
+        synced_at,
+        h.cost_price,
+        h.cost_basis_base,
+        h.unrealized_pnl_base,
+        h.exchange,
+    });
+}
+
+// Categories the user changed from the alias default, keyed by "external_id\x00symbol".
+fn categoryOverrides(arena: std.mem.Allocator, aliases: classes.Aliases) !std.StringHashMapUnmanaged([]const u8) {
+    var map: std.StringHashMapUnmanaged([]const u8) = .empty;
+    const rows = try zx.db.rows(arena, struct {
+        external_id: []const u8,
+        symbol: []const u8,
+        category: []const u8,
+        asset_class: []const u8,
+    },
+        \\SELECT a.external_id, h.symbol, h.category, h.asset_class
+        \\FROM holdings h
+        \\JOIN accounts a ON a.id = h.account_id
+        \\WHERE a.broker = 'ibkr'
+    , .{});
+    for (rows) |row| {
+        if (std.mem.eql(u8, row.category, aliases.resolve(row.asset_class))) continue;
+        try map.put(arena, try arena.print("{s}\x00{s}", .{ row.external_id, row.symbol }), row.category);
     }
-    if (try dupAttr(arena, reader, "currency")) |cur| {
-        if (cur.len > 0) entry.*.currency = cur;
-    }
-    if (try isoDate(arena, attrRaw(reader, "dateOpened"))) |d| entry.*.opened_on = d;
+    return map;
 }
 
 // Flex dates come as yyyyMMdd or yyyy-MM-dd depending on the query settings.
@@ -330,199 +547,6 @@ fn isoDate(arena: std.mem.Allocator, raw: ?[]const u8) !?[]const u8 {
     if (d.len == 10 and d[4] == '-') return try arena.dupe(u8, d);
     if (d.len == 8) return try arena.print("{s}-{s}-{s}", .{ d[0..4], d[4..6], d[6..8] });
     return null;
-}
-
-fn ingestEquity(arena: std.mem.Allocator, accounts: *std.StringHashMapUnmanaged(AccountAcc), reader: *xml.Reader) !void {
-    const account_id = try dupAttr(arena, reader, "accountId") orelse return;
-    const entry = try ensureAccount(accounts, arena, account_id);
-    const total = attrFloat(reader, "total");
-    if (try isoDate(arena, attrRaw(reader, "reportDate"))) |date| {
-        if (total) |t| try entry.*.history.append(arena, .{ .date = date, .balance = t });
-        if (std.mem.order(u8, date, entry.*.equity_date) == .lt) return;
-        entry.*.equity_date = date;
-        entry.*.equity_cash = null;
-    }
-    if (total) |t| {
-        entry.*.net_liquidation = t;
-        entry.*.nlv_from_equity = true;
-    }
-    if (attrFloat(reader, "cash")) |cash| entry.*.equity_cash = cash;
-    if (entry.*.equity_cash == null) {
-        if (attrFloat(reader, "cashLong")) |cash| entry.*.equity_cash = cash;
-    }
-    if (entry.*.equity_cash == null) {
-        if (attrFloat(reader, "brokerCash")) |cash| entry.*.equity_cash = cash;
-    }
-}
-
-fn ingestCashReport(
-    arena: std.mem.Allocator,
-    accounts: *std.StringHashMapUnmanaged(AccountAcc),
-    cash: *std.ArrayList(CashAcc),
-    reader: *xml.Reader,
-) !void {
-    const account_id = try dupAttr(arena, reader, "accountId") orelse return;
-    if (attrRaw(reader, "levelOfDetail")) |lod| {
-        if (std.ascii.eqlIgnoreCase(lod, "LOT") or std.ascii.eqlIgnoreCase(lod, "INTERNAL")) return;
-    }
-    const currency = try dupAttr(arena, reader, "currency") orelse return;
-    const settled = firstAttrFloat(reader, &.{
-        "endingSettledCash",
-        "settledCash",
-        "endingCash",
-        "cashBalance",
-        "startingCash",
-    }) orelse return;
-
-    const entry = try ensureAccount(accounts, arena, account_id);
-    const is_base = std.mem.eql(u8, currency, "BASE_SUMMARY") or std.ascii.eqlIgnoreCase(currency, "BASE");
-    if (is_base) {
-        if (@abs(settled) > 0.005) entry.*.settled_cash = settled;
-        return;
-    }
-    const raw_rate = attrFloat(reader, "fxRateToBase") orelse 1;
-    const rate = if (raw_rate == 0) 1 else raw_rate;
-    const ending = attrFloat(reader, "endingCash") orelse settled;
-    if (@abs(ending) >= 0.005 or @abs(settled) >= 0.005)
-        try putCash(cash, arena, .{
-            .account_id = account_id,
-            .currency = currency,
-            .amount = ending,
-            .settled = settled,
-            .amount_base = ending * rate,
-        });
-    if (@abs(settled) < 0.005) return;
-
-    entry.*.settled_cash_sum += settled * rate;
-}
-
-// The Cash Report wins over forex positions for the same currency.
-fn putCash(cash: *std.ArrayList(CashAcc), arena: std.mem.Allocator, row: CashAcc) !void {
-    for (cash.items) |*c| {
-        if (std.mem.eql(u8, c.account_id, row.account_id) and std.mem.eql(u8, c.currency, row.currency)) {
-            c.* = row;
-            return;
-        }
-    }
-    try cash.append(arena, row);
-}
-
-fn hasCash(cash: []const CashAcc, account_id: []const u8, currency: []const u8) bool {
-    for (cash) |c| {
-        if (std.mem.eql(u8, c.account_id, account_id) and std.mem.eql(u8, c.currency, currency)) return true;
-    }
-    return false;
-}
-
-fn ingestPosition(
-    arena: std.mem.Allocator,
-    accounts: *std.StringHashMapUnmanaged(AccountAcc),
-    holdings: *std.ArrayList(HoldingAcc),
-    cash: *std.ArrayList(CashAcc),
-    reader: *xml.Reader,
-) !void {
-    if (attrRaw(reader, "levelOfDetail")) |lod| {
-        if (std.ascii.eqlIgnoreCase(lod, "LOT")) return;
-    }
-    const account_id = try dupAttr(arena, reader, "accountId") orelse return;
-    const symbol = try dupAttr(arena, reader, "symbol") orelse return;
-    const qty = attrFloat(reader, "position") orelse 0;
-    if (qty == 0) return;
-
-    const value = attrFloat(reader, "positionValue") orelse 0;
-    const fx = attrFloat(reader, "fxRateToBase") orelse 1;
-    const value_base = attrFloat(reader, "positionValueInBase") orelse value * fx;
-    const asset_class = try dupAttr(arena, reader, "assetCategory") orelse "STK";
-
-    const entry = try ensureAccount(accounts, arena, account_id);
-    if (std.ascii.eqlIgnoreCase(asset_class, "CASH") or std.ascii.eqlIgnoreCase(symbol, "CASH")) {
-        if (@abs(value_base) > 0.005) entry.*.settled_cash_sum += value_base;
-        const currency = try dupAttr(arena, reader, "currency") orelse symbol;
-        if (@abs(value_base) > 0.005 and !hasCash(cash.items, account_id, currency))
-            try cash.append(arena, .{
-                .account_id = account_id,
-                .currency = currency,
-                .amount = value,
-                .settled = value,
-                .amount_base = value_base,
-            });
-        return;
-    }
-
-    try holdings.append(arena, .{
-        .account_id = account_id,
-        .symbol = symbol,
-        .description = try dupAttr(arena, reader, "description") orelse symbol,
-        .asset_class = asset_class,
-        .currency = try dupAttr(arena, reader, "currency") orelse "USD",
-        .quantity = qty,
-        .market_price = attrFloat(reader, "markPrice") orelse 0,
-        .market_value = value,
-        .market_value_base = value_base,
-        .conid = try dupAttr(arena, reader, "conid"),
-        .cost_price = attrFloat(reader, "costBasisPrice"),
-        .cost_basis_base = if (attrFloat(reader, "costBasisMoney")) |v| v * fx else null,
-        .unrealized_pnl_base = if (attrFloat(reader, "fifoPnlUnrealized")) |v| v * fx else null,
-        .exchange = try dupAttr(arena, reader, "listingExchange") orelse "",
-    });
-}
-
-fn ensureAccount(accounts: *std.StringHashMapUnmanaged(AccountAcc), arena: std.mem.Allocator, account_id: []const u8) !*AccountAcc {
-    const entry = try accounts.getOrPut(arena, account_id);
-    if (!entry.found_existing) {
-        entry.value_ptr.* = .{ .external_id = account_id, .name = account_id, .currency = "USD" };
-    }
-    return entry.value_ptr;
-}
-
-fn parseFlexMeta(arena: std.mem.Allocator, body: []const u8) !FlexMeta {
-    var parser: xml.Reader.Static = .init(arena, body, .{ .namespace_aware = false });
-    defer parser.deinit();
-    const reader = &parser.interface;
-
-    var meta: FlexMeta = .{};
-    var current: ?[]const u8 = null;
-    var text_buf: std.ArrayList(u8) = .empty;
-
-    while (true) {
-        const node = reader.read() catch |err| switch (err) {
-            error.MalformedXml => return meta,
-            else => |e| return e,
-        };
-        switch (node) {
-            .eof => break,
-            .element_start => {
-                const name = reader.elementName();
-                if (eqlAny(name, &.{ "Status", "ReferenceCode", "ErrorMessage", "ErrorCode" })) {
-                    current = try arena.dupe(u8, name);
-                    text_buf.clearRetainingCapacity();
-                } else current = null;
-            },
-            .text, .cdata => {
-                if (current == null) continue;
-                const chunk = if (node == .text) try reader.text() else try reader.cdata();
-                try text_buf.appendSlice(arena, chunk);
-            },
-            .character_reference => {
-                if (current == null) continue;
-                var buf: [4]u8 = undefined;
-                const len = std.unicode.utf8Encode(reader.characterReferenceChar(), &buf) catch continue;
-                try text_buf.appendSlice(arena, buf[0..len]);
-            },
-            .element_end => {
-                const name = current orelse continue;
-                const value = try arena.dupe(u8, std.mem.trim(u8, text_buf.items, " \t\r\n"));
-                if (std.mem.eql(u8, name, "Status")) meta.status = value;
-                if (std.mem.eql(u8, name, "ReferenceCode")) meta.reference = value;
-                if (std.mem.eql(u8, name, "ErrorMessage")) meta.error_message = value;
-                if (std.mem.eql(u8, name, "ErrorCode")) meta.error_code = value;
-                current = null;
-                text_buf.clearRetainingCapacity();
-            },
-            else => {},
-        }
-    }
-    return meta;
 }
 
 fn containsElement(body: []const u8, name: []const u8) bool {
@@ -560,16 +584,12 @@ fn eqlAny(value: []const u8, options: []const []const u8) bool {
     return false;
 }
 
-fn nowSecs(arena: std.mem.Allocator) ![]const u8 {
-    return try arena.print("{d}", .{std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds()});
-}
-
 test "parse flex meta and report cash" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const meta = try parseFlexMeta(arena,
+    const meta = try Meta.parse(arena,
         \\<?xml version="1.0"?>
         \\<FlexStatementResponse>
         \\  <Status>Success</Status>
@@ -579,7 +599,7 @@ test "parse flex meta and report cash" {
     try std.testing.expectEqualStrings("Success", meta.status.?);
     try std.testing.expectEqualStrings("123456", meta.reference.?);
 
-    var parsed = try parseReport(arena,
+    const parsed = try Report.parse(arena,
         \\<?xml version="1.0"?>
         \\<FlexQueryResponse>
         \\  <FlexStatement accountId="U1">
@@ -598,7 +618,7 @@ test "parse flex meta and report cash" {
     try std.testing.expectEqual(@as(?f64, null), parsed.holdings.items[0].cost_basis_base);
     try std.testing.expectEqual(@as(usize, 0), parsed.cash.items.len);
 
-    var parsed2 = try parseReport(arena,
+    const parsed2 = try Report.parse(arena,
         \\<?xml version="1.0"?>
         \\<FlexQueryResponse>
         \\  <FlexStatement accountId="U2">
@@ -611,7 +631,7 @@ test "parse flex meta and report cash" {
     );
     try std.testing.expectEqual(@as(f64, 100), parsed2.accounts.get("U2").?.cash());
 
-    const parsed4 = try parseReport(arena,
+    const parsed4 = try Report.parse(arena,
         \\<?xml version="1.0"?>
         \\<FlexQueryResponse>
         \\  <FlexStatement accountId="U4">
@@ -634,7 +654,7 @@ test "parse flex meta and report cash" {
     try std.testing.expectApproxEqAbs(@as(f64, 110), sap.unrealized_pnl_base.?, 1e-9);
     try std.testing.expectEqualStrings("IBIS", sap.exchange);
 
-    var parsed3 = try parseReport(arena,
+    const parsed3 = try Report.parse(arena,
         \\<?xml version="1.0"?>
         \\<FlexQueryResponse>
         \\  <FlexStatement accountId="U3">

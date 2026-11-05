@@ -73,14 +73,15 @@ pub fn isColor(s: []const u8) bool {
     return true;
 }
 
-fn nowText(arena: std.mem.Allocator) ![]const u8 {
-    return arena.print("{d}", .{std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds()});
+fn timestamp(arena: std.mem.Allocator, now: i64) ![]const u8 {
+    return arena.print("{d}", .{now});
 }
 
-pub fn syncIcloud(arena: std.mem.Allocator) !void {
-    const creds = (try caldav.loadCredentials(arena)) orelse return error.NotConfigured;
-    const found = try caldav.discoverCalendars(arena, creds, origin(creds.calendar_url));
-    const now = try nowText(arena);
+pub fn syncIcloud(arena: std.mem.Allocator, io: std.Io) !void {
+    const creds = (try caldav.credentials(arena)) orelse return error.NotConfigured;
+    const client: caldav.Client = .{ .arena = arena, .io = io, .creds = creds };
+    const found = try client.discover(origin(creds.calendar_url));
+    const now = try timestamp(arena, std.Io.Timestamp.now(io, .real).toSeconds());
 
     for (found) |cal| _ = try zx.db.run(
         \\INSERT INTO calendars (kind, name, url, color, synced_at) VALUES ('icloud', ?1, ?2, ?3, ?4)
@@ -94,7 +95,7 @@ pub fn syncIcloud(arena: std.mem.Allocator) !void {
     invalidate();
 }
 
-pub fn hasIcloudCalendars(arena: std.mem.Allocator) bool {
+pub fn hasIcloud(arena: std.mem.Allocator) bool {
     const row = zx.db.row(arena, struct { ok: i64 }, "SELECT 1 AS ok FROM calendars WHERE kind = 'icloud' LIMIT 1", .{}) catch return true;
     return row != null;
 }
@@ -105,17 +106,17 @@ fn origin(url: []const u8) []const u8 {
     return url[0 .. slash + 1];
 }
 
-pub fn normalizeFeedUrl(arena: std.mem.Allocator, raw: []const u8) ![]const u8 {
+fn normalizeUrl(arena: std.mem.Allocator, raw: []const u8) ![]const u8 {
     const url = std.mem.trim(u8, raw, " \t\r\n");
     if (std.ascii.startsWithIgnoreCase(url, "webcal://")) return arena.print("https://{s}", .{url["webcal://".len..]});
     if (!settings.isHttpUrl(url)) return error.InvalidUrl;
     return url;
 }
 
-pub fn addFeed(arena: std.mem.Allocator, raw_url: []const u8, raw_name: []const u8, color: []const u8) !void {
-    const url = try normalizeFeedUrl(arena, raw_url);
+pub fn addFeed(arena: std.mem.Allocator, io: std.Io, raw_url: []const u8, raw_name: []const u8, color: []const u8) !void {
+    const url = try normalizeUrl(arena, raw_url);
     if (try isOwnFeed(arena, url)) return error.OwnFeed;
-    const body = fetchFeed(arena, url) catch return error.InvalidFeed;
+    const body = fetchFeed(arena, io, url) catch return error.InvalidFeed;
     if (std.mem.indexOf(u8, body, "BEGIN:VCALENDAR") == null) return error.InvalidFeed;
 
     var name = std.mem.trim(u8, raw_name, " \t\r\n");
@@ -126,7 +127,7 @@ pub fn addFeed(arena: std.mem.Allocator, raw_url: []const u8, raw_name: []const 
     if (exists != null) return error.Duplicate;
     _ = try zx.db.run(
         \\INSERT INTO calendars (kind, name, url, color, synced_at) VALUES ('ics', ?1, ?2, ?3, ?4)
-    , .{ name, url, if (isColor(color)) color else "", try nowText(arena) });
+    , .{ name, url, if (isColor(color)) color else "", try timestamp(arena, std.Io.Timestamp.now(io, .real).toSeconds()) });
     invalidate();
 }
 
@@ -164,68 +165,60 @@ pub const Prefs = struct {
     pub fn staleSeconds(self: Prefs) i64 {
         return self.stale_minutes * std.time.s_per_min;
     }
+
+    pub fn load(arena: std.mem.Allocator) Prefs {
+        var prefs: Prefs = .{};
+        const rows = zx.db.rows(arena, struct { key: []const u8, val: []const u8 },
+            \\SELECT key, val FROM settings WHERE key IN ('calendar_stale_minutes', 'calendar_week_start')
+        , .{}) catch return prefs;
+        for (rows) |r| {
+            if (std.mem.eql(u8, r.key, "calendar_stale_minutes")) prefs.stale_minutes = std.fmt.parseInt(i64, r.val, 10) catch prefs.stale_minutes;
+            if (std.mem.eql(u8, r.key, "calendar_week_start")) prefs.week_start = std.meta.stringToEnum(slots.Weekday, r.val) orelse prefs.week_start;
+        }
+        return prefs;
+    }
+
+    pub fn save(self: Prefs, arena: std.mem.Allocator) !void {
+        if (self.stale_minutes < 1 or self.stale_minutes > 24 * 60) return error.InvalidPrefs;
+        const put =
+            \\INSERT INTO settings (key, val) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET val = excluded.val
+        ;
+        _ = try zx.db.run(put, .{ "calendar_stale_minutes", try arena.print("{d}", .{self.stale_minutes}) });
+        _ = try zx.db.run(put, .{ "calendar_week_start", @tagName(self.week_start) });
+        invalidate();
+    }
 };
 
-pub fn loadPrefs(arena: std.mem.Allocator) Prefs {
-    var prefs: Prefs = .{};
-    const rows = zx.db.rows(arena, struct { key: []const u8, val: []const u8 },
-        \\SELECT key, val FROM settings WHERE key IN ('calendar_stale_minutes', 'calendar_week_start')
-    , .{}) catch return prefs;
-    for (rows) |r| {
-        if (std.mem.eql(u8, r.key, "calendar_stale_minutes")) prefs.stale_minutes = std.fmt.parseInt(i64, r.val, 10) catch prefs.stale_minutes;
-        if (std.mem.eql(u8, r.key, "calendar_week_start")) prefs.week_start = std.meta.stringToEnum(slots.Weekday, r.val) orelse prefs.week_start;
-    }
-    return prefs;
-}
-
-pub fn savePrefs(arena: std.mem.Allocator, prefs: Prefs) !void {
-    if (prefs.stale_minutes < 1 or prefs.stale_minutes > 24 * 60) return error.InvalidPrefs;
-    const put =
-        \\INSERT INTO settings (key, val) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET val = excluded.val
-    ;
-    _ = try zx.db.run(put, .{ "calendar_stale_minutes", try arena.print("{d}", .{prefs.stale_minutes}) });
-    _ = try zx.db.run(put, .{ "calendar_week_start", @tagName(prefs.week_start) });
-    invalidate();
-}
-
-// One cached copy per calendar covers `window(now)`; every view reads from it, so
-// a feed is fetched and parsed once per refresh instead of once per range.
-// `max_age` null takes any cached copy, 0 always fetches. `at` is when the events
-// were fetched.
-const keep_s = 30 * std.time.s_per_day;
+// Each calendar is synced as one cached copy covering `window(now)`, months at a
+// time. Pages only read these copies; when one is missing or older than the
+// "refresh after" setting they ask for a sync (`requestSync`), which main.ts runs
+// on a Worker queue through /internal/calendar/sync. `at` is when it was fetched.
+const keep_s = 60 * std.time.s_per_day;
 
 pub fn window(now: i64) Interval {
-    const start = week.weekStart(now, .sun) - 5 * std.time.s_per_week;
-    return .{ .start = start, .end = start + 32 * std.time.s_per_week };
+    const start = week.start(now, .sun) - 9 * std.time.s_per_week;
+    return .{ .start = start, .end = start + 36 * std.time.s_per_week };
 }
 
-const Cached = struct { at: i64, window: Interval, events: []const ical.Event };
+const Copy = struct { at: i64, window: Interval, events: []const ical.Event };
 
-pub const Fetched = struct { events: []const ical.Event, at: i64, failed: bool = false };
+const Cached = struct { events: []const ical.Event, at: i64, stale: bool };
 
-pub fn events(arena: std.mem.Allocator, creds: ?caldav.Credentials, source: Source, range: Interval, max_age: ?i64) !Fetched {
-    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
-    const win = window(now);
-    // Weeks far from today aren't worth caching.
-    if (range.start < win.start or range.end > win.end)
-        return .{ .events = try fetchEvents(arena, creds, source.kind, source.url, range), .at = now };
+fn eventsKey(arena: std.mem.Allocator, id: i64) ![]const u8 {
+    return arena.print("events:{d}", .{id});
+}
 
-    const kv = zx.kv.scoped(.calendar);
-    const key = try arena.print("events:{d}", .{source.id});
-    const cached: ?Cached = if (try kv.get(arena, key)) |raw| zx.util.zxon.parse(Cached, arena, raw, .{}) catch null else null;
-    if (cached) |c| if (std.meta.eql(c.window, win) and (max_age == null or now - c.at <= max_age.?))
-        return .{ .events = try overlapping(arena, c.events, range), .at = c.at };
-
-    const found = fetchEvents(arena, creds, source.kind, source.url, win) catch |err| {
-        const c = cached orelse return err;
-        zx.log.warn("calendar: refreshing {s} failed, using the cached copy: {any}", .{ source.name, err });
-        return .{ .events = try overlapping(arena, c.events, range), .at = c.at, .failed = true };
+// Never fetches: a missing or outdated copy comes back empty or as is, with `stale` set.
+fn cached(arena: std.mem.Allocator, source: Source, range: Interval, prefs: Prefs, now: i64) !Cached {
+    const raw = try zx.kv.scoped(.calendar).get(arena, try eventsKey(arena, source.id)) orelse
+        return .{ .events = &.{}, .at = 0, .stale = true };
+    const c = zx.util.zxon.parse(Copy, arena, raw, .{}) catch
+        return .{ .events = &.{}, .at = 0, .stale = true };
+    return .{
+        .events = try overlapping(arena, c.events, range),
+        .at = c.at,
+        .stale = now - c.at > prefs.staleSeconds() or !std.meta.eql(c.window, window(now)),
     };
-    var encoded: std.Io.Writer.Allocating = .init(arena);
-    try zx.util.zxon.serialize(Cached{ .at = now, .window = win, .events = found }, &encoded.writer, .{});
-    kv.put(key, encoded.written(), .{ .ttl = .fromSeconds(keep_s) }) catch |err|
-        zx.log.warn("calendar: failed to cache events of {s}: {any}", .{ source.name, err });
-    return .{ .events = try overlapping(arena, found, range), .at = now };
 }
 
 fn overlapping(arena: std.mem.Allocator, all: []const ical.Event, range: Interval) ![]const ical.Event {
@@ -234,74 +227,130 @@ fn overlapping(arena: std.mem.Allocator, all: []const ical.Event, range: Interva
     return out.items;
 }
 
-fn fetchEvents(arena: std.mem.Allocator, creds: ?caldav.Credentials, kind: Kind, url: []const u8, range: Interval) ![]const ical.Event {
-    return switch (kind) {
-        .icloud => ical.events(arena, try caldav.eventsIn(arena, creds orelse return error.NotConfigured, url, range), range, .xml),
-        .ics => ical.events(arena, try fetchFeed(arena, url), range, .raw),
+fn fetchEvents(arena: std.mem.Allocator, io: std.Io, creds: ?caldav.Credentials, kind: Kind, url: []const u8, range: Interval) ![]const ical.Event {
+    switch (kind) {
+        .icloud => {
+            const client: caldav.Client = .{ .arena = arena, .io = io, .creds = creds orelse return error.NotConfigured };
+            return ical.events(arena, try client.events(url, range), range, .xml);
+        },
+        .ics => return ical.events(arena, try fetchFeed(arena, io, url), range, .raw),
+    }
+}
+
+// Fetches one calendar's window and caches it. Runs from the queue consumer.
+pub fn sync(arena: std.mem.Allocator, io: std.Io, id: i64) !void {
+    const row = try zx.db.row(arena, Row, select_cols ++ " WHERE id = ?1", .{id}) orelse return; // removed since
+    const source = fromRow(row);
+    const now = std.Io.Timestamp.now(io, .real).toSeconds();
+    const win = window(now);
+    const found = try fetchEvents(arena, io, caldav.credentials(arena) catch null, source.kind, source.url, win);
+
+    var encoded: std.Io.Writer.Allocating = .init(arena);
+    try zx.util.zxon.serialize(Copy{ .at = now, .window = win, .events = found }, &encoded.writer, .{});
+    try zx.kv.scoped(.calendar).put(try eventsKey(arena, id), encoded.written(), .{ .ttl = .fromSeconds(keep_s) });
+    invalidate();
+}
+
+fn syncAll(arena: std.mem.Allocator, io: std.Io) void {
+    const sources = list(arena) catch |err| return zx.log.err("calendar: sync failed to list calendars: {any}", .{err});
+    for (sources) |s| sync(arena, io, s.id) catch |err|
+        zx.log.err("calendar: syncing {s} failed: {any}", .{ s.name, err });
+}
+
+// main.ts turns this response header into one queue message per calendar id.
+pub const sync_header = "x-calendar-sync";
+const sync_key = "sync:requested";
+// Pages read often; one request per this long is plenty.
+const sync_cooldown_s = 120;
+
+// Returns when the sync was asked for, so a caller can wait for copies newer
+// than it. Repeats within the cooldown reuse the earlier request unless `force`.
+// Without the queue (`zig build dev`), syncs right here.
+pub fn requestSync(arena: std.mem.Allocator, io: std.Io, response: anytype, force: bool) i64 {
+    const now = std.Io.Timestamp.now(io, .real).toSeconds();
+    if (!zx.platform.isWasm()) {
+        syncAll(arena, io);
+        return now;
+    }
+    const kv = zx.kv.scoped(.calendar);
+    if (!force) if (kv.get(arena, sync_key) catch null) |raw| {
+        const at = std.fmt.parseInt(i64, raw, 10) catch 0;
+        if (now - at < sync_cooldown_s) return at;
     };
+    const sources = list(arena) catch return now;
+    var ids: std.ArrayList(u8) = .empty;
+    for (sources, 0..) |s, i| ids.print(arena, "{s}{d}", .{ if (i > 0) "," else "", s.id }) catch return now;
+    if (ids.items.len == 0) return now;
+
+    kv.put(sync_key, arena.print("{d}", .{now}) catch return now, .{ .ttl = .fromSeconds(sync_cooldown_s) }) catch {};
+    response.headers.append(sync_header, ids.items);
+    return now;
 }
 
 pub const Loaded = struct {
     source: Source,
     events: []const ical.Event,
-    failed: bool,
+    stale: bool,
     at: i64,
 };
 
-pub fn loadVisible(arena: std.mem.Allocator, range: Interval, max_age: ?i64) ![]const Loaded {
-    const creds = caldav.loadCredentials(arena) catch null;
+pub fn visible(arena: std.mem.Allocator, range: Interval, now: i64) ![]const Loaded {
+    const prefs: Prefs = .load(arena);
     var out: std.ArrayList(Loaded) = .empty;
     for (try list(arena)) |source| {
         if (!source.visible) continue;
-        const got = events(arena, creds, source, range, max_age) catch |err| blk: {
-            zx.log.warn("calendar: loading {s} failed: {any}", .{ source.name, err });
-            break :blk Fetched{ .events = &.{}, .at = 0, .failed = true };
-        };
-        try out.append(arena, .{ .source = source, .events = got.events, .failed = got.failed, .at = got.at });
+        const got = try cached(arena, source, range, prefs, now);
+        try out.append(arena, .{ .source = source, .events = got.events, .stale = got.stale, .at = got.at });
     }
     return out.toOwnedSlice(arena);
 }
 
 const busy_key = "busy";
 
-// Only the booking calendar must load; the others are best-effort.
-pub fn busy(arena: std.mem.Allocator, creds: caldav.Credentials, range: Interval, use_cache: bool) ![]const Interval {
+pub const Busy = struct { intervals: []const Interval, stale: bool };
+
+// Busy time on /schedule: calendars set to block booking, from the synced
+// copies, plus bookings made since the last sync. `live` (when booking) asks
+// iCloud for the booking calendar itself instead of trusting its copy.
+pub fn busy(arena: std.mem.Allocator, io: std.Io, creds: caldav.Credentials, range: Interval, live: bool) !Busy {
     const kv = zx.kv.scoped(.schedule);
-    if (use_cache) if (try kv.get(arena, busy_key)) |cached| {
-        if (zx.util.zxon.parse([]const Interval, arena, cached, .{})) |intervals| return intervals else |_| {}
+    if (!live) if (try kv.get(arena, busy_key)) |raw| {
+        if (zx.util.zxon.parse(Busy, arena, raw, .{})) |b| return b else |_| {}
     };
 
     var out: std.ArrayList(Interval) = .empty;
-    try appendBusy(arena, &out, try fetchEvents(arena, creds, .icloud, creds.calendar_url, range));
+    var stale = false;
+    if (live) try appendBusy(arena, &out, try fetchEvents(arena, io, creds, .icloud, creds.calendar_url, range));
 
-    const others = list(arena) catch |err| blk: {
-        zx.log.warn("schedule: failed to list calendars: {any}", .{err});
-        break :blk &.{};
-    };
-    const max_age: i64 = if (use_cache) loadPrefs(arena).staleSeconds() else 0;
-    for (others) |source| {
-        if (!source.blocks_booking or sameCalendar(source.url, creds.calendar_url)) continue;
-        const got = events(arena, creds, source, range, max_age) catch |err| {
-            zx.log.warn("schedule: busy times of {s} failed: {any}", .{ source.name, err });
-            continue;
-        };
+    const prefs: Prefs = .load(arena);
+    const now = std.Io.Timestamp.now(io, .real).toSeconds();
+    for (try list(arena)) |source| {
+        const booking_calendar = caldav.sameCalendar(source.url, creds.calendar_url);
+        if (!source.blocks_booking and !booking_calendar) continue;
+        if (live and booking_calendar) continue;
+        const got = try cached(arena, source, range, prefs, now);
+        stale = stale or got.stale;
         try appendBusy(arena, &out, got.events);
     }
 
-    var encoded: std.Io.Writer.Allocating = .init(arena);
-    try zx.util.zxon.serialize(out.items, &encoded.writer, .{});
-    kv.put(busy_key, encoded.written(), .{ .ttl = .fromSeconds(120) }) catch |err|
-        zx.log.warn("schedule: failed to cache busy times: {any}", .{err});
-    return out.items;
+    const booked = try zx.db.rows(arena, struct { starts_at: i64, ends_at: i64 },
+        \\SELECT starts_at, ends_at FROM bookings WHERE cancelled_at IS NULL AND ends_at > ?1 AND starts_at < ?2
+    , .{ range.start, range.end });
+    for (booked) |b| try out.append(arena, .{ .start = b.starts_at, .end = b.ends_at });
+
+    const result: Busy = .{ .intervals = out.items, .stale = stale };
+    if (!live) {
+        var encoded: std.Io.Writer.Allocating = .init(arena);
+        try zx.util.zxon.serialize(result, &encoded.writer, .{});
+        // Dropped on every sync and booking, so it can live as long as the copies.
+        kv.put(busy_key, encoded.written(), .{ .ttl = .fromSeconds(prefs.staleSeconds()) }) catch |err|
+            zx.log.warn("schedule: failed to cache busy times: {any}", .{err});
+    }
+    return result;
 }
 
 fn appendBusy(arena: std.mem.Allocator, out: *std.ArrayList(Interval), found: []const ical.Event) !void {
     for (found) |ev| if (ev.busy) try out.append(arena, .{ .start = ev.start, .end = ev.end });
-}
-
-// iCloud hands out the same calendar under different hosts (caldav. vs pNN-caldav.).
-fn sameCalendar(a: []const u8, b: []const u8) bool {
-    return std.mem.eql(u8, std.mem.trimEnd(u8, caldav.urlPath(a), "/"), std.mem.trimEnd(u8, caldav.urlPath(b), "/"));
 }
 
 pub fn invalidateBusy() void {
@@ -321,64 +370,64 @@ pub const Link = struct {
     detail: Detail,
     created_at: []const u8,
     last_used_at: ?[]const u8,
+
+    const Record = struct { id: i64, label: []const u8, detail: []const u8, created_at: []const u8, last_used_at: ?[]const u8 };
+
+    fn fromRecord(r: Record) Link {
+        return .{
+            .id = r.id,
+            .label = r.label,
+            .detail = std.meta.stringToEnum(Detail, r.detail) orelse .busy,
+            .created_at = r.created_at,
+            .last_used_at = r.last_used_at,
+        };
+    }
+
+    pub fn list(arena: std.mem.Allocator) ![]const Link {
+        const rows = try zx.db.rows(arena, Record,
+            \\SELECT id, label, detail, created_at, last_used_at FROM calendar_feeds ORDER BY id
+        , .{});
+        const out = try arena.alloc(Link, rows.len);
+        for (rows, out) |r, *l| l.* = fromRecord(r);
+        return out;
+    }
+
+    // Only the hash is stored, so the returned token can never be shown again.
+    pub fn create(arena: std.mem.Allocator, io: std.Io, raw_label: []const u8, detail: Detail) ![]const u8 {
+        const label = std.mem.trim(u8, raw_label, " \t\r\n");
+        if (label.len == 0 or label.len > 60) return error.InvalidName;
+
+        var random: [24]u8 = undefined;
+        io.random(&random);
+        const encoder = std.base64.url_safe_no_pad.Encoder;
+        const token = try arena.alloc(u8, encoder.calcSize(random.len));
+        _ = encoder.encode(token, &random);
+
+        var hash: [64]u8 = undefined;
+        _ = try zx.db.run(
+            \\INSERT INTO calendar_feeds (label, token_hash, detail) VALUES (?1, ?2, ?3)
+        , .{ label, hashToken(&hash, token), @tagName(detail) });
+        return token;
+    }
+
+    pub fn revoke(id: i64) !void {
+        _ = try zx.db.run("DELETE FROM calendar_feeds WHERE id = ?1", .{id});
+    }
+
+    pub fn find(arena: std.mem.Allocator, token: []const u8) !?Link {
+        if (token.len == 0 or token.len > 128) return null;
+        var hash: [64]u8 = undefined;
+        const row = try zx.db.row(arena, Record,
+            \\SELECT id, label, detail, created_at, last_used_at FROM calendar_feeds WHERE token_hash = ?1
+        , .{hashToken(&hash, token)}) orelse return null;
+        return fromRecord(row);
+    }
+
+    pub fn touch(self: Link, arena: std.mem.Allocator, now: i64) void {
+        _ = zx.db.run("UPDATE calendar_feeds SET last_used_at = ?2 WHERE id = ?1", .{ self.id, timestamp(arena, now) catch return }) catch |err|
+            zx.log.warn("calendar: failed to record feed use: {any}", .{err});
+    }
 };
-
-const LinkRow = struct { id: i64, label: []const u8, detail: []const u8, created_at: []const u8, last_used_at: ?[]const u8 };
-
-fn linkFromRow(r: LinkRow) Link {
-    return .{
-        .id = r.id,
-        .label = r.label,
-        .detail = std.meta.stringToEnum(Detail, r.detail) orelse .busy,
-        .created_at = r.created_at,
-        .last_used_at = r.last_used_at,
-    };
-}
-
-pub fn listLinks(arena: std.mem.Allocator) ![]const Link {
-    const rows = try zx.db.rows(arena, LinkRow,
-        \\SELECT id, label, detail, created_at, last_used_at FROM calendar_feeds ORDER BY id
-    , .{});
-    const out = try arena.alloc(Link, rows.len);
-    for (rows, out) |r, *l| l.* = linkFromRow(r);
-    return out;
-}
-
-// Only the hash is stored, so the returned token can never be shown again.
-pub fn createLink(arena: std.mem.Allocator, raw_label: []const u8, detail: Detail) ![]const u8 {
-    const label = std.mem.trim(u8, raw_label, " \t\r\n");
-    if (label.len == 0 or label.len > 60) return error.InvalidName;
-
-    var random: [24]u8 = undefined;
-    zx.Io.default().random(&random);
-    const encoder = std.base64.url_safe_no_pad.Encoder;
-    const token = try arena.alloc(u8, encoder.calcSize(random.len));
-    _ = encoder.encode(token, &random);
-
-    var hash: [64]u8 = undefined;
-    _ = try zx.db.run(
-        \\INSERT INTO calendar_feeds (label, token_hash, detail) VALUES (?1, ?2, ?3)
-    , .{ label, hashToken(&hash, token), @tagName(detail) });
-    return token;
-}
-
-pub fn revokeLink(id: i64) !void {
-    _ = try zx.db.run("DELETE FROM calendar_feeds WHERE id = ?1", .{id});
-}
-
-pub fn findLink(arena: std.mem.Allocator, token: []const u8) !?Link {
-    if (token.len == 0 or token.len > 128) return null;
-    var hash: [64]u8 = undefined;
-    const row = try zx.db.row(arena, LinkRow,
-        \\SELECT id, label, detail, created_at, last_used_at FROM calendar_feeds WHERE token_hash = ?1
-    , .{hashToken(&hash, token)}) orelse return null;
-    return linkFromRow(row);
-}
-
-pub fn touchLink(arena: std.mem.Allocator, id: i64) void {
-    _ = zx.db.run("UPDATE calendar_feeds SET last_used_at = ?2 WHERE id = ?1", .{ id, nowText(arena) catch return }) catch |err|
-        zx.log.warn("calendar: failed to record feed use: {any}", .{err});
-}
 
 fn hashToken(buf: *[64]u8, token: []const u8) []const u8 {
     var digest: [32]u8 = undefined;
@@ -394,32 +443,28 @@ fn isOwnFeed(arena: std.mem.Allocator, url: []const u8) !bool {
     var name = path[prefix.len..];
     name = name[0 .. std.mem.indexOfAny(u8, name, "?#") orelse name.len];
     if (std.mem.endsWith(u8, name, ".ics")) name = name[0 .. name.len - ".ics".len];
-    return (try findLink(arena, name)) != null;
+    return (try Link.find(arena, name)) != null;
 }
 
 const feed_key = "feed:";
-const feed_ttl_s = 600;
 
-// Cached only when every calendar loaded, so a hiccup doesn't stick around.
-pub fn renderFeed(arena: std.mem.Allocator, detail: Detail, now: i64) ![]const u8 {
+pub const Feed = struct { body: []const u8, stale: bool };
+
+// Cached only when every copy is current; any sync drops it.
+pub fn renderFeed(arena: std.mem.Allocator, detail: Detail, now: i64) !Feed {
     const kv = zx.kv.scoped(.calendar);
     const cache_key = try arena.print(feed_key ++ "{s}", .{@tagName(detail)});
-    if (try kv.get(arena, cache_key)) |cached| return cached;
+    if (try kv.get(arena, cache_key)) |body| return .{ .body = body, .stale = false };
 
-    const prefs = loadPrefs(arena);
+    const prefs: Prefs = .load(arena);
     const range = window(now);
-    const creds = caldav.loadCredentials(arena) catch null;
 
     var items: std.ArrayList(feed.Item) = .empty;
-    var complete = true;
+    var stale = false;
     for (try list(arena)) |source| {
         if (!source.in_feed) continue;
-        const got = events(arena, creds, source, range, prefs.staleSeconds()) catch |err| {
-            zx.log.warn("calendar: feed skipped {s}: {any}", .{ source.name, err });
-            complete = false;
-            continue;
-        };
-        if (got.failed) complete = false;
+        const got = try cached(arena, source, range, prefs, now);
+        stale = stale or got.stale;
         for (got.events) |ev| try items.append(arena, .{
             .uid = try occurrenceUid(arena, source.id, ev),
             .start = ev.start,
@@ -437,9 +482,9 @@ pub fn renderFeed(arena: std.mem.Allocator, detail: Detail, now: i64) ![]const u
         .busy => "Nurul Huda (Apon) - Busy",
     };
     try feed.write(&out.writer, name, items.items, detail, now);
-    if (complete) kv.put(cache_key, out.written(), .{ .ttl = .fromSeconds(feed_ttl_s) }) catch |err|
+    if (!stale) kv.put(cache_key, out.written(), .{ .ttl = .fromSeconds(prefs.staleSeconds()) }) catch |err|
         zx.log.warn("calendar: failed to cache feed: {any}", .{err});
-    return out.written();
+    return .{ .body = out.written(), .stale = stale };
 }
 
 // Opaque, so busy-only feeds don't leak event UIDs.
@@ -452,8 +497,8 @@ fn occurrenceUid(arena: std.mem.Allocator, source_id: i64, ev: ical.Event) ![]co
     return arena.print("{x}@nurulhudaapon.com", .{digest[0..16]});
 }
 
-fn fetchFeed(arena: std.mem.Allocator, url: []const u8) ![]const u8 {
-    var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = arena };
+fn fetchFeed(arena: std.mem.Allocator, io: std.Io, url: []const u8) ![]const u8 {
+    var client: zx.http.Client = .{ .io = io, .allocator = arena };
     defer client.deinit();
     const response = try client.fetch(.{
         .url = url,

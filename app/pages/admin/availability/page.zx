@@ -12,7 +12,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     }
 
     const rules = settings.load(ctx.arena);
-    const default_url = settings.defaultMeetingUrl(ctx.arena) orelse "";
+    const default_url = settings.meetingUrl(ctx.arena) orelse "";
     const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "saved", "Availability saved. /schedule shows the new times right away." },
         .{ "invalid", "Those hours don't fit. Check that the day is longer than one meeting and at least one day is open." },
@@ -46,9 +46,9 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     </div>
                     <div>
                         <div class="adm-inline-fields">
-                            <input class="adm-input" type="time" name="day_start" step="300" required value={settings.formatTimeOfDay(ctx.arena, rules.day_start)} />
+                            <input class="adm-input" type="time" name="day_start" step="300" required value={settings.formatTime(ctx.arena, rules.day_start)} />
                             <span class="adm-hint">to</span>
-                            <input class="adm-input" type="time" name="day_end" step="300" required value={settings.formatTimeOfDay(ctx.arena, rules.day_end)} />
+                            <input class="adm-input" type="time" name="day_end" step="300" required value={settings.formatTime(ctx.arena, rules.day_end)} />
                         </div>
                         <div class="adm-slot-preview" aria-label="Slots per day">
                             {for (slotStarts(ctx.arena, rules)) |label| (
@@ -111,8 +111,8 @@ fn save(ctx: zx.PageContext) ![]const u8 {
     const fd = ctx.request.formData();
     var rules: slots.Rules = .{
         .slot_minutes = try formInt(fd, "slot_minutes"),
-        .day_start = settings.parseTimeOfDay(fd.get("day_start") orelse "") orelse return error.InvalidRules,
-        .day_end = settings.parseTimeOfDay(fd.get("day_end") orelse "") orelse return error.InvalidRules,
+        .day_start = settings.parseTime(fd.get("day_start") orelse "") orelse return error.InvalidRules,
+        .day_end = settings.parseTime(fd.get("day_end") orelse "") orelse return error.InvalidRules,
         .horizon_days = try formInt(fd, "horizon_days"),
         .min_notice_hours = try formInt(fd, "min_notice_hours"),
         .open_days = .empty,
@@ -125,8 +125,8 @@ fn save(ctx: zx.PageContext) ![]const u8 {
     if (url.len > 0 and !settings.isHttpUrl(url)) return error.InvalidUrl;
 
     try settings.save(ctx.arena, rules);
-    try settings.setDefaultMeetingUrl(url);
-    caldav.invalidateBusy(); // cached for the old booking window
+    try settings.setMeetingUrl(url);
+    calendars.invalidateBusy(); // cached for the old booking window
     return "ok=saved";
 }
 
@@ -138,7 +138,7 @@ fn slotStarts(arena: zx.Allocator, rules: slots.Rules) []const []const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     var m = rules.day_start;
     while (m + rules.slot_minutes <= rules.day_end) : (m += rules.slot_minutes) {
-        out.append(arena, settings.formatTimeOfDay(arena, m)) catch break;
+        out.append(arena, settings.formatTime(arena, m)) catch break;
     }
     return out.items;
 }
@@ -157,4 +157,4 @@ const zx = @import("zx");
 const ui = @import("../ui.zx");
 const slots = @import("../../schedule/slots.zig");
 const settings = @import("../../schedule/settings.zig");
-const caldav = @import("../../schedule/caldav.zig");
+const calendars = @import("../../schedule/calendars.zig");

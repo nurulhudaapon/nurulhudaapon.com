@@ -10,7 +10,11 @@ pub const Question = struct {
     seen_at: ?[]const u8 = null,
 };
 
-pub fn insertQuestion(
+const select =
+    \\SELECT id, question, answer, visitor_id, created_at, seen_at FROM questions WHERE deleted = 0
+;
+
+pub fn insert(
     question: []const u8,
     visitor_id: []const u8,
     visitor_json: []const u8,
@@ -28,8 +32,8 @@ const max_daily_per_sender = 5;
 pub const Gate = enum { ok, limited, duplicate };
 
 // Looks at the last day, including deleted rows so deleting spam doesn't reset a limit.
-pub fn gate(allocator: std.mem.Allocator, visitor_id: []const u8, ip_hash: []const u8, question: []const u8) !Gate {
-    const row = try zx.db.row(allocator, struct { recent: i64, dupes: i64 },
+pub fn gate(arena: std.mem.Allocator, visitor_id: []const u8, ip_hash: []const u8, question: []const u8) !Gate {
+    const row = try zx.db.row(arena, struct { recent: i64, dupes: i64 },
         \\SELECT
         \\  (SELECT COUNT(*) FROM questions WHERE CAST(created_at AS INTEGER) > unixepoch() - 86400
         \\    AND (visitor_id = ?1 OR (?2 <> '' AND ip_hash = ?2))) AS recent,
@@ -54,25 +58,11 @@ pub fn softDelete(id: i64) !void {
     , .{id});
 }
 
-pub fn listForVisitor(allocator: std.mem.Allocator, visitor_id: []const u8) ![]const Question {
-    return try zx.db.rows(allocator, Question,
-        \\SELECT id, question, answer, visitor_id, created_at, seen_at
-        \\FROM questions
-        \\WHERE visitor_id = ?1 AND deleted = 0
-        \\ORDER BY id DESC
-    , .{visitor_id});
+pub fn forVisitor(arena: std.mem.Allocator, visitor_id: []const u8) ![]const Question {
+    return try zx.db.rows(arena, Question, select ++ " AND visitor_id = ?1 ORDER BY id DESC", .{visitor_id});
 }
 
-pub fn listAll(allocator: std.mem.Allocator) ![]const Question {
-    return try zx.db.rows(allocator, Question,
-        \\SELECT id, question, answer, visitor_id, created_at, seen_at
-        \\FROM questions
-        \\WHERE deleted = 0
-        \\ORDER BY id DESC
-    , .{});
-}
-
-pub fn markAnsweredSeen(visitor_id: []const u8) !void {
+pub fn markSeen(visitor_id: []const u8) !void {
     _ = try zx.db.run(
         \\UPDATE questions
         \\SET seen_at = CAST(unixepoch() AS TEXT)
@@ -82,21 +72,18 @@ pub fn markAnsweredSeen(visitor_id: []const u8) !void {
 
 pub const Filter = enum { unanswered, answered, all };
 
-pub fn listFiltered(allocator: std.mem.Allocator, filter: Filter) ![]const Question {
-    const select =
-        \\SELECT id, question, answer, visitor_id, created_at, seen_at FROM questions WHERE deleted = 0
-    ;
+pub fn list(arena: std.mem.Allocator, filter: Filter) ![]const Question {
     return switch (filter) {
-        .unanswered => zx.db.rows(allocator, Question, select ++ " AND answer IS NULL ORDER BY id DESC", .{}),
-        .answered => zx.db.rows(allocator, Question, select ++ " AND answer IS NOT NULL ORDER BY id DESC", .{}),
-        .all => listAll(allocator),
+        .unanswered => zx.db.rows(arena, Question, select ++ " AND answer IS NULL ORDER BY id DESC", .{}),
+        .answered => zx.db.rows(arena, Question, select ++ " AND answer IS NOT NULL ORDER BY id DESC", .{}),
+        .all => zx.db.rows(arena, Question, select ++ " ORDER BY id DESC", .{}),
     };
 }
 
 pub const Counts = struct { unanswered: i64 = 0, answered: i64 = 0, all: i64 = 0 };
 
-pub fn counts(allocator: std.mem.Allocator) Counts {
-    const row = zx.db.row(allocator, Counts,
+pub fn counts(arena: std.mem.Allocator) Counts {
+    const row = zx.db.row(arena, Counts,
         \\SELECT COALESCE(SUM(answer IS NULL), 0) AS unanswered,
         \\  COALESCE(SUM(answer IS NOT NULL), 0) AS answered, COUNT(*) AS "all"
         \\FROM questions WHERE deleted = 0

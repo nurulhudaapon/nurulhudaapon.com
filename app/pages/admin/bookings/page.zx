@@ -13,9 +13,10 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         return ui.redirect(ctx, try ctx.fmt("{s}&{s}", .{ back, flag }));
     }
 
-    booking.syncUpcoming(ctx.arena);
-    const records = try booking.list(ctx.arena, filter, 200);
-    const default_url = settings.defaultMeetingUrl(ctx.arena) orelse "";
+    booking.syncUpcoming(ctx.arena, ctx.io);
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
+    const records = try booking.list(ctx.arena, filter, 200, now);
+    const default_url = settings.meetingUrl(ctx.arena) orelse "";
     const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "link", "Meeting link updated. The /meet link in the invite now redirects there." },
         .{ "link_reset", "Meeting link reset to your default." },
@@ -24,7 +25,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         .{ "not_found", "That booking no longer exists or was already cancelled." },
         .{ "failed", "Something went wrong. Check the server logs." },
     });
-    const tabs = try ui.filterTabs(ctx.arena, "/admin/bookings", filter, booking.counts(ctx.arena));
+    const tabs = try ui.filterTabs(ctx.arena, "/admin/bookings", filter, booking.counts(ctx.arena, now));
 
     return (
         <div @allocator={ctx.arena}>
@@ -38,7 +39,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
             ) else (
                 <div class="adm-card adm-list">
                     {for (records) |r| (
-                        <BookingItem r={r} upcoming={filter == .upcoming} action={back} default_url={default_url} />
+                        <BookingItem r={r} now={now} upcoming={filter == .upcoming} action={back} default_url={default_url} />
                     )}
                 </div>
             )}
@@ -48,6 +49,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
 fn BookingItem(allocator: zx.Allocator, props: struct {
     r: booking.Record,
+    now: i64,
     upcoming: bool,
     action: []const u8,
     default_url: []const u8,
@@ -73,7 +75,7 @@ fn BookingItem(allocator: zx.Allocator, props: struct {
                         <span>{format.timeRange(allocator, r.starts_at, r.ends_at)}</span>
                         <a href={mailto}>{r.email}</a>
                         <span>{r.joins} {if (r.joins == 1) "join" else "joins"}</span>
-                        <span>Booked {format.ago(allocator, r.created_at)}</span>
+                        <span>Booked {format.ago(allocator, props.now, r.created_at)}</span>
                         <a href={page_url} target="_blank" rel="noopener">Meeting page</a>
                     </div>
                     {if (r.notes) |notes| (
@@ -90,9 +92,9 @@ fn BookingItem(allocator: zx.Allocator, props: struct {
                     )}
                 </div>
                 {if (r.cancelled_at) |at| (
-                    <span class="adm-badge adm-badge-err">Cancelled {format.ago(allocator, at)}</span>
+                    <span class="adm-badge adm-badge-err">Cancelled {format.ago(allocator, props.now, at)}</span>
                 ) else if (props.upcoming) (
-                    <span class="adm-badge adm-badge-ok">{format.until(allocator, r.starts_at)}</span>
+                    <span class="adm-badge adm-badge-ok">{format.until(allocator, props.now, r.starts_at)}</span>
                 )}
             </div>
             {if (props.upcoming) (
@@ -130,7 +132,8 @@ fn handle(ctx: zx.PageContext) ![]const u8 {
     const id = fd.get("id") orelse return error.NotFound;
     const action = fd.get("action") orelse "";
     if (std.mem.eql(u8, action, "cancel")) {
-        try booking.cancel(ctx.arena, id);
+        try booking.cancel(ctx.arena, ctx.io, id);
+        _ = calendars.requestSync(ctx.arena, ctx.io, ctx.response, true);
         return "ok=cancelled";
     }
     const url = std.mem.trim(u8, fd.get("meet_url") orelse "", " \t\r\n");
@@ -158,3 +161,4 @@ const format = @import("../format.zig");
 const booking = @import("../../schedule/booking.zig");
 const settings = @import("../../schedule/settings.zig");
 const slots = @import("../../schedule/slots.zig");
+const calendars = @import("../../schedule/calendars.zig");

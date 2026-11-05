@@ -1,11 +1,11 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
     ctx.data.set("title", "Ask Me Anything - Nurul Huda (Apon)");
     ctx.data.set("description", "Anonymously ask me anything. I'll answer on social media or when you revisit this page.");
-    const visitor_id = ensureVisitorId(ctx);
+    const visitor_id = visitorId(ctx);
     // List before marking seen so this visit still shows the "New Answer!" badge.
-    const questions = try db.listForVisitor(ctx.arena, visitor_id);
-    try db.markAnsweredSeen(visitor_id);
-    const proof = spam.formProof(visitor_id);
+    const questions = try db.forVisitor(ctx.arena, visitor_id);
+    try db.markSeen(visitor_id);
+    const proof = spam.proof(visitor_id, std.Io.Timestamp.now(ctx.io, .real).toSeconds());
 
     return (
         <main @allocator={ctx.arena} class="page-inner page-ask">
@@ -27,14 +27,12 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     );
 }
 
-fn ensureVisitorId(ctx: zx.PageContext) []const u8 {
-    if (ctx.request.cookies.get("visitor_id")) |existing| {
-        if (existing.len > 0) return existing;
-    }
+fn visitorId(ctx: zx.PageContext) []const u8 {
+    if (form.visitorCookie(ctx.request)) |id| return id;
     const seed: u64 = @intCast(@divTrunc(std.Io.Timestamp.now(ctx.io, .awake).nanoseconds, 1000));
     var prng = std.Random.DefaultPrng.init(seed);
     const id = ctx.fmt("{x}", .{prng.random().int(u64)}) catch "anon";
-    ctx.response.cookies.set("visitor_id", id, .{
+    ctx.response.cookies.set(form.visitor_cookie, id, .{
         .path = "/",
         .max_age = .fromSeconds(60 * 60 * 24 * 365),
         .http_only = true,
@@ -49,7 +47,8 @@ pub const options: zx.PageOptions = .{
 };
 
 const Navbar = @import("../component.zx").Navbar;
-pub const AskForm = @import("form.zx").AskForm;
+pub const AskForm = form.AskForm;
+const form = @import("form.zx");
 const db = @import("db.zig");
 const spam = @import("../spam.zig");
 

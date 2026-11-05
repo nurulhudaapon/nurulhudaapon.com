@@ -3,13 +3,7 @@ pub fn GtmHead(allocator: zx.Allocator) ?zx.Component {
 
     return (
         <script @allocator={allocator} @escaping={.none}>
-            {
-                \\(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-                \\new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-                \\j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-                \\'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-                \\})(window,document,'script','dataLayer','GTM-5GXWQSF9');
-            }
+            {gtm_script}
         </script>
     );
 }
@@ -19,7 +13,7 @@ pub fn GtmBody(allocator: zx.Allocator) ?zx.Component {
 
     return (
         <noscript @allocator={allocator}>
-            <iframe src=`https://www.googletagmanager.com/ns.html?id={GTM_ID}` height="0" width="0" style="display:none;visibility:hidden"> </iframe>
+            <iframe src=`https://www.googletagmanager.com/ns.html?id={gtm_id}` height="0" width="0" style="display:none;visibility:hidden"> </iframe>
         </noscript>
     );
 }
@@ -105,7 +99,14 @@ pub const icons = struct {
     }
 };
 
-const GTM_ID = "GTM-5GXWQSF9";
+const gtm_id = "GTM-5GXWQSF9";
+const gtm_script =
+    \\(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    \\new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    \\j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    \\'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    \\})(window,document,'script','dataLayer','
+    ++ gtm_id ++ "');";
 
 const zx = @import("zx");
 const builtin = @import("builtin");

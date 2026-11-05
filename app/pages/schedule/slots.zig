@@ -10,7 +10,7 @@ pub const config = struct {
 
 pub const Rules = struct {
     slot_minutes: i64 = 30,
-    /// Minutes after local midnight.
+    // Minutes after local midnight.
     day_start: i64 = 10 * 60,
     day_end: i64 = 18 * 60,
     open_days: std.EnumSet(Weekday) = .initMany(&.{ .sun, .mon, .tue, .wed, .thu }),

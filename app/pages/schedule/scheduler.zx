@@ -1,8 +1,8 @@
 const Props = struct { days: []const slots.Day, slot_minutes: i64 };
 
 const Result = struct {
-    booked_start: i64 = 0,
-    error_msg: []const u8 = "",
+    booked_at: i64 = 0,
+    err: []const u8 = "",
 };
 
 const BookInput = struct {
@@ -16,17 +16,16 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
     const day_idx = ctx.state(usize, firstOpenDay(ctx.props.days));
     const slot = ctx.state(i64, 0);
     const result = ctx.state(Result, .{});
-    const booking_action = ctx.action(book, .{});
-    const pending = booking_action.pending;
+    const book_action = ctx.action(book, .{});
+    const pending = book_action.pending;
     const alloc = ctx.allocator;
     const days = ctx.props.days;
 
-    if (result.get().booked_start != 0) {
-        const when = whenLabel(alloc, result.get().booked_start);
+    if (result.get().booked_at != 0) {
         return (
             <div @allocator={alloc} class="schedule-done">
                 <p class="ask-flash ask-flash-success">
-                    You're booked for {when}. A calendar invite with the meeting link is on its way to your email.
+                    You're booked for {viewer.when(alloc, result.get().booked_at)}. A calendar invite with the meeting link is on its way to your email.
                 </p>
                 <a class="schedule-back" href="/schedule">Book another time</a>
             </div>
@@ -38,15 +37,15 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
     }
 
     const day = days[@min(day_idx.get(), days.len - 1)];
-    const error_msg = result.get().error_msg;
+    const err = result.get().err;
     // Hidden rather than omitted: ziex registers server actions during the server render.
     const form_class = if (slot.get() == 0) "schedule-form schedule-form-hidden" else "schedule-form";
-    const zone = tzName(alloc);
+    const zone = viewer.zone(alloc);
 
     return (
         <div @allocator={alloc} class="schedule-picker">
-            {if (error_msg.len > 0) (
-                <p class="schedule-flash">{error_msg}</p>
+            {if (err.len > 0) (
+                <p class="schedule-flash">{err}</p>
             )}
             <div class="schedule-meta">
                 <p class="schedule-zone" title={zone}>
@@ -55,8 +54,8 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
                         <path d="M2 12h20" />
                         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                     </svg>
-                    <span class={localClass("")}>
-                        Times in <strong>{cityName(alloc, zone)}</strong> ({offsetLabel(alloc, anchorTime(days))})
+                    <span class={viewer.class("")}>
+                        Times in <strong>{cityName(alloc, zone)}</strong> ({viewer.offsetLabel(alloc, firstSlot(days))})
                     </span>
                 </p>
                 <p class="schedule-tz">{ctx.props.slot_minutes}-minute meetings</p>
@@ -90,12 +89,12 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
                         disabled={pending}
                         onclick={ctx.bind(pickSlot)}
                     >
-                        <span class={localClass("")}>{timeLabel(alloc, s.start)}</span>
+                        <span class={viewer.class("")}>{viewer.time(alloc, s.start)}</span>
                     </button>
                 )}
             </section>
-            <form class={form_class} action={booking_action}>
-                <p class="schedule-form-when">{if (slot.get() == 0) "" else whenLabel(alloc, slot.get())}</p>
+            <form class={form_class} action={book_action}>
+                <p class="schedule-form-when">{if (slot.get() == 0) "" else viewer.when(alloc, slot.get())}</p>
                 <label class="schedule-label">
                     Name
                     <input class="schedule-input" type="text" name="name" required maxlength="100" autocomplete="name" disabled={pending} />
@@ -119,11 +118,11 @@ pub fn Scheduler(ctx: *zx.ComponentCtx(Props)) zx.Component {
 
 pub fn MeetingTime(ctx: *zx.ComponentCtx(struct { start: i64, end: i64 })) zx.Component {
     const alloc = ctx.allocator;
-    const end = timeLabel(alloc, ctx.props.end);
+    const start = ctx.props.start;
     return (
         <p @allocator={alloc} class="meeting-when">
-            <span class={localClass("meeting-when-main")}>{whenLabel(alloc, ctx.props.start)}</span>
-            <span class={localClass("meeting-when-sub")}>Until {end}, {tzLabel(alloc, ctx.props.start)}</span>
+            <span class={viewer.class("meeting-when-main")}>{viewer.when(alloc, start)}</span>
+            <span class={viewer.class("meeting-when-sub")}>Until {viewer.time(alloc, ctx.props.end)}, {viewer.zoneLabel(alloc, start)}</span>
         </p>
     );
 }
@@ -135,20 +134,22 @@ fn pickDay(e: *zx.client.Event.Stateful) void {
     e.state(Result).set(.{});
 }
 
+// State handles are positional, so the day slot is taken and skipped.
 fn pickSlot(e: *zx.client.Event.Stateful) void {
     const start = std.fmt.parseInt(i64, e.value() orelse return, 10) catch return;
-    _ = e.state(usize); // state handles are positional
+    _ = e.state(usize);
     e.state(i64).set(start);
     e.state(Result).set(.{});
 }
 
 fn book(a: *zx.server.Action.Stateful) void {
-    _ = a.state(usize); // state handles are positional
+    _ = a.state(usize);
     const slot = a.state(i64);
     const result = a.state(Result);
     const input = a.data(BookInput);
+    const arena = a.inner.arena;
 
-    const outcome = booking.book(a.inner.arena, slot.get(), .{
+    const outcome = booking.book(arena, a.inner.io, slot.get(), .{
         .name = input.name,
         .email = input.email,
         .notes = input.notes,
@@ -157,25 +158,29 @@ fn book(a: *zx.server.Action.Stateful) void {
         .ip = a.inner.request.headers.get("cf-connecting-ip"),
     });
     switch (outcome) {
-        .booked => result.set(.{ .booked_start = slot.get() }),
-        .invalid => result.set(.{ .error_msg = "Please check your details and pick a valid time." }),
+        .booked => {
+            // /schedule already sees the booking; the sync brings it into the admin calendar.
+            _ = calendars.requestSync(arena, a.inner.io, a.inner.response, true);
+            result.set(.{ .booked_at = slot.get() });
+        },
+        .invalid => result.set(.{ .err = "Please check your details and pick a valid time." }),
         .taken => {
             slot.set(0);
-            result.set(.{ .error_msg = "Sorry, that time was just taken. Please pick another." });
+            result.set(.{ .err = "Sorry, that time was just taken. Please pick another." });
         },
-        .limited => result.set(.{ .error_msg = "You already have meetings booked. Email me at me@nurulhudaapon.com if you need another." }),
-        .failed => result.set(.{ .error_msg = "Something went wrong while booking. Please try again or email me." }),
+        .limited => result.set(.{ .err = "You already have meetings booked. Email me at me@nurulhudaapon.com if you need another." }),
+        .failed => result.set(.{ .err = "Something went wrong while booking. Please try again or email me." }),
     }
-}
-
-fn anchorTime(days: []const slots.Day) i64 {
-    const d = days[firstOpenDay(days)];
-    return if (d.slots.len > 0) d.slots[0].start else 0;
 }
 
 fn firstOpenDay(days: []const slots.Day) usize {
     for (days, 0..) |d, i| if (d.slots.len > 0) return i;
     return 0;
+}
+
+fn firstSlot(days: []const slots.Day) i64 {
+    const d = days[firstOpenDay(days)];
+    return if (d.slots.len > 0) d.slots[0].start else 0;
 }
 
 fn dayClass(d: slots.Day, selected: bool) []const u8 {
@@ -189,33 +194,6 @@ fn dayCount(alloc: zx.Allocator, d: slots.Day) []const u8 {
     return alloc.print("{d} open", .{d.slots.len}) catch "";
 }
 
-/// Server-rendered times are in Asia/Dhaka, so they hold their space hidden
-/// until the browser re-renders them in the viewer's zone.
-fn localClass(comptime base: []const u8) []const u8 {
-    const sep = if (base.len > 0) " " else "";
-    return if (zx.platform.role == .client) base else base ++ sep ++ "tz-pending";
-}
-
-fn displayOffset(unix: i64) i64 {
-    if (zx.platform.role != .client) return slots.config.utc_offset_s;
-    var buf: [64]u8 = undefined;
-    const code = std.fmt.bufPrint(&buf, "new Date({d}).getTimezoneOffset()", .{unix * 1000}) catch
-        return slots.config.utc_offset_s;
-    const minutes = zx.client.eval(f64, code) catch return slots.config.utc_offset_s;
-    return -@as(i64, @intFromFloat(minutes)) * 60;
-}
-
-fn tzLabel(alloc: zx.Allocator, unix: i64) []const u8 {
-    return alloc.print("{s} ({s})", .{ tzName(alloc), offsetLabel(alloc, unix) }) catch "";
-}
-
-fn tzName(alloc: zx.Allocator) []const u8 {
-    if (zx.platform.role != .client) return slots.config.timezone;
-    const js = zx.client.js;
-    return js.global.callAlloc(js.String, alloc, "eval", .{js.string("Intl.DateTimeFormat().resolvedOptions().timeZone")}) catch
-        "your local time";
-}
-
 fn cityName(alloc: zx.Allocator, zone: []const u8) []const u8 {
     const start = if (std.mem.lastIndexOfScalar(u8, zone, '/')) |i| i + 1 else 0;
     if (start == zone.len) return zone;
@@ -224,21 +202,61 @@ fn cityName(alloc: zx.Allocator, zone: []const u8) []const u8 {
     return city;
 }
 
-fn offsetLabel(alloc: zx.Allocator, unix: i64) []const u8 {
-    return slots.formatOffset(alloc, displayOffset(unix)) catch "";
-}
+// Times in the viewer's zone. The server renders them in Asia/Dhaka, so they
+// keep their space hidden until the browser re-renders them.
+const viewer = struct {
+    const js = zx.client.js;
+    const is_client = zx.platform.role == .client;
+    const fallback_offset = slots.config.utc_offset_s;
 
-fn timeLabel(alloc: zx.Allocator, unix: i64) []const u8 {
-    return slots.formatTime12(alloc, unix, displayOffset(unix)) catch "";
-}
+    fn class(comptime base: []const u8) []const u8 {
+        const sep = if (base.len > 0) " " else "";
+        return if (is_client) base else base ++ sep ++ "tz-pending";
+    }
 
-fn whenLabel(alloc: zx.Allocator, unix: i64) []const u8 {
-    const date = slots.formatDate(alloc, unix, displayOffset(unix)) catch "";
-    return alloc.print("{s} at {s} ({s})", .{ date, timeLabel(alloc, unix), offsetLabel(alloc, unix) }) catch "";
-}
+    fn offset(unix: i64) i64 {
+        if (!is_client) return fallback_offset;
+        const Date = js.global.get(js.Object, "Date") catch return fallback_offset;
+        defer Date.deinit();
+        const date = Date.new(.{unix * std.time.ms_per_s}) catch return fallback_offset;
+        defer date.deinit();
+        const minutes = date.call(f64, "getTimezoneOffset", .{}) catch return fallback_offset;
+        return -@as(i64, @intFromFloat(minutes)) * std.time.s_per_min;
+    }
+
+    fn zone(alloc: zx.Allocator) []const u8 {
+        if (!is_client) return slots.config.timezone;
+        const unknown = "your local time";
+        const intl = js.global.get(js.Object, "Intl") catch return unknown;
+        defer intl.deinit();
+        const format = intl.call(js.Object, "DateTimeFormat", .{}) catch return unknown;
+        defer format.deinit();
+        const resolved = format.call(js.Object, "resolvedOptions", .{}) catch return unknown;
+        defer resolved.deinit();
+        return resolved.getAlloc(js.String, alloc, "timeZone") catch unknown;
+    }
+
+    fn zoneLabel(alloc: zx.Allocator, unix: i64) []const u8 {
+        return alloc.print("{s} ({s})", .{ zone(alloc), offsetLabel(alloc, unix) }) catch "";
+    }
+
+    fn offsetLabel(alloc: zx.Allocator, unix: i64) []const u8 {
+        return slots.formatOffset(alloc, offset(unix)) catch "";
+    }
+
+    fn time(alloc: zx.Allocator, unix: i64) []const u8 {
+        return slots.formatTime12(alloc, unix, offset(unix)) catch "";
+    }
+
+    fn when(alloc: zx.Allocator, unix: i64) []const u8 {
+        const date = slots.formatDate(alloc, unix, offset(unix)) catch "";
+        return alloc.print("{s} at {s} ({s})", .{ date, time(alloc, unix), offsetLabel(alloc, unix) }) catch "";
+    }
+};
 
 const zx = @import("zx");
 const std = @import("std");
 const slots = @import("slots.zig");
 const booking = @import("booking.zig");
 const site = @import("../../site.zig");
+const calendars = @import("calendars.zig");

@@ -7,7 +7,7 @@ const Weekday = slots.Weekday;
 
 const int_fields = .{ "slot_minutes", "day_start", "day_end", "horizon_days", "min_notice_hours" };
 
-/// Missing or invalid settings fall back to defaults so /schedule never breaks.
+// Missing or invalid settings fall back to defaults so /schedule never breaks.
 pub fn load(arena: std.mem.Allocator) Rules {
     var rules: Rules = .{};
     const rows = zx.db.rows(arena, struct { key: []const u8, val: []const u8 },
@@ -68,8 +68,8 @@ fn parseDays(val: []const u8) std.EnumSet(Weekday) {
     return set;
 }
 
-/// `HH:MM` (from `<input type="time">`) to minutes after midnight.
-pub fn parseTimeOfDay(text: []const u8) ?i64 {
+// `HH:MM` (from `<input type="time">`) to minutes after midnight.
+pub fn parseTime(text: []const u8) ?i64 {
     var parts = std.mem.splitScalar(u8, text, ':');
     const h = std.fmt.parseInt(u8, parts.next() orelse return null, 10) catch return null;
     const m = std.fmt.parseInt(u8, parts.next() orelse return null, 10) catch return null;
@@ -77,20 +77,20 @@ pub fn parseTimeOfDay(text: []const u8) ?i64 {
     return @as(i64, h) * 60 + m;
 }
 
-pub fn formatTimeOfDay(arena: std.mem.Allocator, minutes: i64) []const u8 {
+pub fn formatTime(arena: std.mem.Allocator, minutes: i64) []const u8 {
     const m: u64 = @intCast(minutes);
     return arena.print("{d:0>2}:{d:0>2}", .{ m / 60, m % 60 }) catch "";
 }
 
-/// Where `/meet` redirects when a booking has no link of its own.
-pub fn defaultMeetingUrl(arena: std.mem.Allocator) ?[]const u8 {
+// Where `/meet` redirects when a booking has no link of its own.
+pub fn meetingUrl(arena: std.mem.Allocator) ?[]const u8 {
     const row = zx.db.row(arena, struct { val: []const u8 },
         \\SELECT val FROM credentials WHERE cat = 'caldav_meeting_url' LIMIT 1
     , .{}) catch return null;
     return if (row) |r| r.val else null;
 }
 
-pub fn setDefaultMeetingUrl(url: []const u8) !void {
+pub fn setMeetingUrl(url: []const u8) !void {
     _ = try zx.db.run("DELETE FROM credentials WHERE cat = 'caldav_meeting_url'", .{});
     if (url.len > 0) _ = try zx.db.run("INSERT INTO credentials (cat, val) VALUES ('caldav_meeting_url', ?1)", .{url});
 }

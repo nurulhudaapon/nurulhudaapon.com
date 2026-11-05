@@ -1,7 +1,6 @@
-// Standalone wasm for the admin post editor preview: the blog's markdown and
-// tree-sitter highlighting, loaded only on that page so other pages' client
-// bundle stays small. Driven by `public/post-preview.js`:
-// reset -> alloc + copy markdown -> render -> read title/html/minutes.
+// The admin post editor's preview renderer, a separate wasm so markdown and
+// tree-sitter stay out of every other page's client bundle.
+// Call order: reset, alloc + copy markdown, render, then read title/html/minutes.
 
 var arena: std.heap.ArenaAllocator = .init(std.heap.wasm_allocator);
 var result: posts.Preview = .{ .title = "", .html = "", .read_minutes = 0 };
@@ -17,7 +16,7 @@ export fn preview_alloc(len: usize) ?[*]u8 {
 }
 
 export fn preview_render(ptr: [*]const u8, len: usize) bool {
-    result = posts.renderPreview(arena.allocator(), ptr[0..len]) catch return false;
+    result = posts.preview(arena.allocator(), ptr[0..len]) catch return false;
     return true;
 }
 

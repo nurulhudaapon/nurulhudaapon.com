@@ -3,7 +3,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const snippet_html = (try highlight.html(alloc, "zx", ziex_snippet)).?;
 
     // Without GitHub data, hide everything derived from it rather than failing the page.
-    const repos = github.fetchPinned(alloc) catch |err| blk: {
+    const repos = github.Client.init(alloc, ctx.io).pinned() catch |err| blk: {
         zx.log.warn("dev: github repos unavailable: {s}", .{@errorName(err)});
         break :blk &.{};
     };
@@ -200,7 +200,6 @@ const repos_url = components.github_url ++ "?tab=repositories";
 const schedule_url = site.url ++ "/schedule";
 
 const ziex_snippet = @embedFile("ziex_snippet.zx");
-// const ziex_snippet_check = @import("ziex_snippet.zx");
 
 pub const RepoStats = live.RepoStats;
 pub const TotalStat = live.TotalStat;

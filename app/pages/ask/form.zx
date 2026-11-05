@@ -122,6 +122,7 @@ fn submit(a: *zx.server.Action.Stateful) void {
     const input = a.data(AskInput);
     const arena = a.inner.arena;
     const prev = form.get();
+    const now = std.Io.Timestamp.now(a.inner.io, .real).toSeconds();
 
     var thanks = prev.with(.ok, "Thanks! Your question was sent.");
     thanks.form_key +%= 1;
@@ -134,7 +135,7 @@ fn submit(a: *zx.server.Action.Stateful) void {
     // on render, so a request without one never loaded the form.
     const visitor_id = visitorCookie(a.inner.request) orelse return form.set(thanks);
     if (input.website.len > 0) return form.set(thanks);
-    if (!spam.validFormProof(visitor_id, prev.n))
+    if (!spam.validProof(visitor_id, prev.n, now))
         return form.set(prev.with(.err, "This page has expired. Please refresh and ask again."));
 
     const ip_hash = spam.ipHash(arena, a.inner.request.headers.get("cf-connecting-ip"));
@@ -150,12 +151,11 @@ fn submit(a: *zx.server.Action.Stateful) void {
 
     const ua = a.inner.request.headers.get("user-agent") orelse "unknown";
     const visitor_json = a.fmt("{{\"userAgent\":\"{s}\"}}", .{ua}) catch "{}";
-    const id = db.insertQuestion(question, visitor_id, visitor_json, ip_hash) catch |err| {
+    const id = db.insert(question, visitor_id, visitor_json, ip_hash) catch |err| {
         zx.log.err("Failed to insert question: {any}", .{err});
         return form.set(prev.with(.err, "Something went wrong. Please try again."));
     };
 
-    const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
     const asked = arena.alloc(db.Question, prev.asked.len + 1) catch return form.set(thanks);
     asked[0] = .{
         .id = id,
@@ -168,9 +168,11 @@ fn submit(a: *zx.server.Action.Stateful) void {
     form.set(thanks);
 }
 
-fn visitorCookie(request: zx.server.Request) ?[]const u8 {
-    const existing = request.cookies.get("visitor_id") orelse return null;
-    return if (existing.len > 0) existing else null;
+pub const visitor_cookie = "visitor_id";
+
+pub fn visitorCookie(request: zx.server.Request) ?[]const u8 {
+    const id = request.cookies.get(visitor_cookie) orelse return null;
+    return if (id.len > 0) id else null;
 }
 
 fn formatAsked(allocator: zx.Allocator, raw: []const u8) []const u8 {
@@ -183,13 +185,11 @@ fn formatAsked(allocator: zx.Allocator, raw: []const u8) []const u8 {
     const day_secs = epoch_secs.getDaySeconds();
     const year_day = epoch_day.calculateYearDay();
     const month_day = year_day.calculateMonthDay();
-    const month_name = monthName(month_day.month.numeric()) orelse
-        return allocator.print("Asked at {d}", .{ts}) catch raw;
 
     return allocator.print(
         "Asked at {s} {d}, {d} {d:0>2}:{d:0>2}",
         .{
-            month_name,
+            month_names[month_day.month.numeric() - 1],
             month_day.day_index + 1,
             year_day.year,
             day_secs.getHoursIntoDay(),
@@ -198,11 +198,7 @@ fn formatAsked(allocator: zx.Allocator, raw: []const u8) []const u8 {
     ) catch raw;
 }
 
-fn monthName(index: u8) ?[]const u8 {
-    const months = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-    if (index < 1 or index > 12) return null;
-    return months[index - 1];
-}
+const month_names = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
 const zx = @import("zx");
 const std = @import("std");

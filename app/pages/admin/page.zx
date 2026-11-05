@@ -1,7 +1,9 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
-    const unanswered = try questions_db.listFiltered(ctx.arena, .unanswered);
-    booking.syncUpcoming(ctx.arena);
-    const upcoming = try booking.list(ctx.arena, .upcoming, 5);
+    const unanswered = try questions.list(ctx.arena, .unanswered);
+    booking.syncUpcoming(ctx.arena, ctx.io);
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
+    const upcoming = try booking.list(ctx.arena, .upcoming, 5, now);
+    const counts = booking.counts(ctx.arena, now);
 
     return (
         <div @allocator={ctx.arena} class="adm-home">
@@ -16,7 +18,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 </a>
                 <a class="adm-glance" href="/admin/bookings">
                     <span class="adm-glance-label">Upcoming</span>
-                    <span class="adm-glance-value">{booking.counts(ctx.arena).upcoming}</span>
+                    <span class="adm-glance-value">{counts.upcoming}</span>
                     <span class="adm-glance-sub">Bookings on /schedule</span>
                 </a>
             </div>
@@ -36,7 +38,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                             {ui.icon(ctx.arena, .question)}
                             <span class="adm-row-main">
                                 <span class="adm-row-title">{q.question}</span>
-                                <span class="adm-row-sub">{format.ago(ctx.arena, q.created_at)}</span>
+                                <span class="adm-row-sub">{format.ago(ctx.arena, now, q.created_at)}</span>
                             </span>
                             {ui.icon(ctx.arena, .chevron_right)}
                         </a>
@@ -46,7 +48,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 <section class="adm-column">
                     <a class="adm-column-head" href="/admin/bookings">
                         <span>Upcoming</span>
-                        <span class="adm-pill">{booking.counts(ctx.arena).upcoming}</span>
+                        <span class="adm-pill">{counts.upcoming}</span>
                         {ui.icon(ctx.arena, .chevron_right)}
                     </a>
                     {if (upcoming.len == 0) (
@@ -59,7 +61,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                                 <span class="adm-row-title">{b.name}</span>
                                 <span class="adm-row-sub">{format.date(ctx.arena, b.starts_at)} · {format.timeRange(ctx.arena, b.starts_at, b.ends_at)}</span>
                             </span>
-                            <span class="adm-row-aside">{format.until(ctx.arena, b.starts_at)}</span>
+                            <span class="adm-row-aside">{format.until(ctx.arena, now, b.starts_at)}</span>
                         </a>
                     )}
                 </section>
@@ -69,36 +71,29 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     );
 }
 
-const reveal_ms: u32 = 4000;
-
-const PeekState = struct {
+const Peek = struct {
     amount: []const u8 = "",
     account_count: usize = 0,
     visible: bool = false,
 };
 
-var peek_state: ?*zx.State(PeekState) = null;
-var peek_pending: u32 = 0;
-
 pub fn NetWorthGlance(ctx: *zx.ComponentCtx(struct {})) zx.Component {
-    const peek = ctx.state(PeekState, .{});
-    peek_state = peek;
-    const load = ctx.action(loadNetWorth, .{ .on_settle = afterPeek });
-    const pending = load.pending;
+    const peek = ctx.state(Peek, .{});
+    autohide.target = peek;
+    const load = ctx.action(loadNetWorth, .{ .on_settle = autohide.schedule });
     const alloc = ctx.allocator;
-    const p = peek.get();
-    const shown = p.visible;
-    const has_amount = p.amount.len > 0;
+    const state = peek.get();
+    const has_amount = state.amount.len > 0;
 
     return (
         <div @allocator={alloc} class="adm-glance">
             <div class="adm-glance-label-row">
                 <span class="adm-glance-label">Net worth</span>
-                {if (shown) (
+                {if (state.visible) (
                     <button
                         type="button"
                         class="adm-glance-peek"
-                        onclick={ctx.bind(hideBalance)}
+                        onclick={ctx.bind(hide)}
                         title="Hide balance"
                         aria-label="Hide balance"
                         aria-pressed="true"
@@ -110,22 +105,22 @@ pub fn NetWorthGlance(ctx: *zx.ComponentCtx(struct {})) zx.Component {
                         <button
                             type="submit"
                             class="adm-glance-peek"
-                            disabled={pending}
+                            disabled={load.pending}
                             title="Show balance for a few seconds"
                             aria-label="Show balance for a few seconds"
                             aria-pressed="false"
                         >
-                            {ui.icon(alloc, if (pending) .refresh else .eye)}
+                            {ui.icon(alloc, if (load.pending) .refresh else .eye)}
                         </button>
                     </form>
                 )}
             </div>
-            <span class={if (shown) "adm-glance-value" else "adm-glance-value adm-glance-value-masked"}>
-                {if (shown and has_amount) p.amount else "••••••"}
+            <span class={if (state.visible) "adm-glance-value" else "adm-glance-value adm-glance-value-masked"}>
+                {if (state.visible and has_amount) state.amount else "••••••"}
             </span>
             <a class="adm-glance-sub" href="/admin/finance">
                 {if (has_amount) (
-                    <span>{p.account_count} accounts · Open portfolio</span>
+                    <span>{state.account_count} accounts · Open portfolio</span>
                 ) else (
                     <span>Open portfolio</span>
                 )}
@@ -135,51 +130,56 @@ pub fn NetWorthGlance(ctx: *zx.ComponentCtx(struct {})) zx.Component {
 }
 
 fn loadNetWorth(a: *zx.server.Action.Stateful) void {
-    const peek = a.state(PeekState);
-    const summary = finance.portfolioSummary(a.inner.arena) catch {
-        peek.set(.{});
-        return;
-    };
+    const peek = a.state(Peek);
+    const summary = finance.portfolio.summary(a.inner.arena) catch return peek.set(.{});
     peek.set(.{
-        .amount = finance.formatMoney(a.inner.arena, summary.net_worth, "USD"),
+        .amount = finance.format.money(a.inner.arena, summary.net_worth, "USD"),
         .account_count = summary.account_count,
         .visible = true,
     });
 }
 
-fn afterPeek(outcome: zx.ActionHandle.Outcome) void {
-    if (outcome != .ok) return;
-    peek_pending += 1;
-    _ = zx.client.setTimeout(autoHideBalance, .fromMilliseconds(reveal_ms));
-}
-
-fn hideBalance(e: *zx.client.Event.Stateful) void {
-    const peek = e.state(PeekState);
+fn hide(e: *zx.client.Event.Stateful) void {
+    const peek = e.state(Peek);
     var next = peek.get();
     next.visible = false;
     peek.set(next);
-    peek_pending = 0;
+    autohide.pending = 0;
 }
 
-fn autoHideBalance() void {
-    if (peek_pending > 0) peek_pending -= 1;
-    if (peek_pending != 0) return;
-    if (peek_state) |s| {
-        var next = s.get();
+// Each reveal starts a timer; only the last one still running hides the amount.
+const autohide = struct {
+    var target: ?*zx.State(Peek) = null;
+    var pending: u32 = 0;
+
+    const delay_ms = 4000;
+
+    fn schedule(outcome: zx.ActionHandle.Outcome) void {
+        if (outcome != .ok) return;
+        pending += 1;
+        _ = zx.client.setTimeout(run, .fromMilliseconds(delay_ms));
+    }
+
+    fn run() void {
+        pending -|= 1;
+        if (pending != 0) return;
+        const peek = target orelse return;
+        var next = peek.get();
         if (!next.visible) return;
         next.visible = false;
-        s.set(next);
+        peek.set(next);
     }
-}
+};
 
 pub const options: zx.PageOptions = .{
     .rendering = .request,
     .methods = &.{.POST},
 };
 
+const std = @import("std");
 const zx = @import("zx");
 const ui = @import("ui.zx");
 const format = @import("format.zig");
-const questions_db = @import("../ask/db.zig");
+const questions = @import("../ask/db.zig");
 const booking = @import("../schedule/booking.zig");
-const finance = @import("../finance/db.zig");
+const finance = @import("../finance.zig");

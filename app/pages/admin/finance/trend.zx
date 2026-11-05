@@ -1,0 +1,175 @@
+pub const Point = struct { t: i64, date: []const u8, value: f64 };
+
+const width: f64 = 640;
+const height: f64 = 160;
+const pad: f64 = 6;
+
+const Props = struct {
+    points: []const Point,
+    currency: []const u8,
+    empty: []const u8,
+    // Holds each value until the next point, for balances that change on a date rather than drift.
+    step: bool = false,
+    loading: bool = false,
+};
+
+pub fn TrendChart(allocator: zx.Allocator, props: Props) zx.Component {
+    const points = props.points;
+    if (props.loading) return (<Skeleton @allocator={allocator} />);
+    if (points.len < 2 or points[points.len - 1].t <= points[0].t) return (<Empty @allocator={allocator} text={props.empty} />);
+
+    const scale = Scale.fit(points);
+    const xs = allocator.alloc(f64, points.len) catch return (<Empty @allocator={allocator} text={props.empty} />);
+    for (points, xs) |p, *x| x.* = scale.x(p.t);
+
+    const line = linePath(allocator, points, xs, scale, props.step);
+    const area = allocator.print("{s} L{d:.1},{d:.1} L0,{d:.1} Z", .{ line, width, height, height }) catch "";
+    const last_y = scale.y(points[points.len - 1].value);
+
+    return (
+        <figure @allocator={allocator} class="adm-trend">
+            <div class="adm-trend-scale">
+                <span>{finance.format.money(allocator, scale.hi, props.currency)}</span>
+                <span>{finance.format.money(allocator, scale.lo, props.currency)}</span>
+            </div>
+            <svg class="adm-trend-svg" viewBox="0 0 640 160" role="img" aria-label="Value over time">
+                <line class="adm-trend-base" x1="0" y1="159.5" x2="640" y2="159.5"></line>
+                <path class="adm-trend-area" d={area}></path>
+                <path class="adm-trend-line" d={line}></path>
+                <circle class="adm-trend-end" cx="640" cy={coord(allocator, last_y)} r="4"></circle>
+                {for (hits(allocator, points, xs, scale, props.currency)) |h| (
+                    <g class="adm-trend-hit">
+                        <rect x={h.x} y="0" width={h.w} height="160"></rect>
+                        <line class="adm-trend-guide" x1={h.cx} y1="0" x2={h.cx} y2="160"></line>
+                        <circle class="adm-trend-dot" cx={h.cx} cy={h.cy} r="4"></circle>
+                        <text class="adm-trend-tip" x={h.tx} y="14" text-anchor={h.anchor}>
+                            <tspan class="adm-trend-tip-date">{h.date}</tspan>
+                            <tspan x={h.tx} dy="16">{h.value}</tspan>
+                        </text>
+                    </g>
+                )}
+            </svg>
+            <figcaption class="adm-trend-axis">
+                <span>{points[0].date}</span>
+                <span>{points[points.len - 1].date}</span>
+            </figcaption>
+        </figure>
+    );
+}
+
+const Scale = struct {
+    lo: f64,
+    hi: f64,
+    t0: f64,
+    x_per_t: f64,
+    y_per_value: f64,
+
+    fn fit(points: []const Point) Scale {
+        var lo = points[0].value;
+        var hi = points[0].value;
+        for (points) |p| {
+            lo = @min(lo, p.value);
+            hi = @max(hi, p.value);
+        }
+        if (hi - lo < 0.01) {
+            lo = @min(0, lo);
+            if (hi - lo < 0.01) hi = lo + 1;
+        }
+        const t0: f64 = @floatFromInt(points[0].t);
+        const t1: f64 = @floatFromInt(points[points.len - 1].t);
+        return .{
+            .lo = lo,
+            .hi = hi,
+            .t0 = t0,
+            .x_per_t = width / (t1 - t0),
+            .y_per_value = (height - 2 * pad) / (hi - lo),
+        };
+    }
+
+    fn x(self: Scale, t: i64) f64 {
+        return (@as(f64, @floatFromInt(t)) - self.t0) * self.x_per_t;
+    }
+
+    fn y(self: Scale, value: f64) f64 {
+        return height - pad - (value - self.lo) * self.y_per_value;
+    }
+};
+
+fn linePath(arena: zx.Allocator, points: []const Point, xs: []const f64, scale: Scale, step: bool) []const u8 {
+    var path: std.ArrayList(u8) = .empty;
+    for (points, xs, 0..) |p, x, i| {
+        const y = scale.y(p.value);
+        if (i == 0) {
+            path.print(arena, "M0,{d:.1}", .{y}) catch {};
+        } else if (step) {
+            path.print(arena, " H{d:.1} V{d:.1}", .{ x, y }) catch {};
+        } else {
+            path.print(arena, " L{d:.1},{d:.1}", .{ x, y }) catch {};
+        }
+    }
+    return path.items;
+}
+
+const Hit = struct {
+    x: []const u8,
+    w: []const u8,
+    cx: []const u8,
+    cy: []const u8,
+    tx: []const u8,
+    anchor: []const u8,
+    date: []const u8,
+    value: []const u8,
+};
+
+// Hover columns split the gaps between points; the readout flips left near the right edge.
+fn hits(arena: zx.Allocator, points: []const Point, xs: []const f64, scale: Scale, currency: []const u8) []const Hit {
+    const out = arena.alloc(Hit, points.len) catch return &.{};
+    for (points, xs, out, 0..) |p, x, *hit, i| {
+        const left = if (i == 0) 0 else (xs[i - 1] + x) / 2;
+        const right = if (i + 1 == points.len) width else (x + xs[i + 1]) / 2;
+        const flip = x > width * 0.6;
+        hit.* = .{
+            .x = coord(arena, left),
+            .w = coord(arena, right - left),
+            .cx = coord(arena, x),
+            .cy = coord(arena, scale.y(p.value)),
+            .tx = coord(arena, if (flip) x - 8 else x + 8),
+            .anchor = if (flip) "end" else "start",
+            .date = p.date,
+            .value = finance.format.money(arena, p.value, currency),
+        };
+    }
+    return out;
+}
+
+fn coord(arena: zx.Allocator, v: f64) []const u8 {
+    return arena.print("{d:.1}", .{v}) catch "0";
+}
+
+fn Empty(allocator: zx.Allocator, props: struct { text: []const u8 }) zx.Component {
+    return (<p @allocator={allocator} class="adm-hint adm-trend-empty">{props.text}</p>);
+}
+
+// Same box as a loaded chart so the data swaps in without moving anything.
+fn Skeleton(allocator: zx.Allocator) zx.Component {
+    return (
+        <figure @allocator={allocator} class="adm-trend" aria-busy="true">
+            <div class="adm-trend-scale">
+                <span class="adm-skel" style="width:5rem"></span>
+                <span class="adm-skel" style="width:4rem"></span>
+            </div>
+            <svg class="adm-trend-svg" viewBox="0 0 640 160" aria-hidden="true">
+                <line class="adm-trend-base" x1="0" y1="159.5" x2="640" y2="159.5"></line>
+                <path class="adm-trend-skel-line" d="M0,128 C90,124 150,104 230,106 S380,78 460,72 S590,52 640,48"></path>
+            </svg>
+            <div class="adm-trend-axis">
+                <span class="adm-skel" style="width:5rem"></span>
+                <span class="adm-skel" style="width:5rem"></span>
+            </div>
+        </figure>
+    );
+}
+
+const std = @import("std");
+const zx = @import("zx");
+const finance = @import("../../finance.zig");

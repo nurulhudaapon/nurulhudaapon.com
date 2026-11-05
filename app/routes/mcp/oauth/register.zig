@@ -22,16 +22,11 @@ pub fn handle(ctx: zx.RouteContext) !void {
         return fail(ctx, .bad_request, "invalid_redirect_uri", "redirect_uris must be non-empty");
     }
 
-    const client_name = if (obj.get("client_name")) |v| (if (v == .string) v.string else null) else null;
-    const auth_method = blk: {
-        if (obj.get("token_endpoint_auth_method")) |v| {
-            if (v == .string) break :blk v.string;
-        }
-        break :blk "none";
-    };
-    const scope = if (obj.get("scope")) |v| (if (v == .string) v.string else null) else null;
+    const client_name = string(obj, "client_name");
+    const auth_method = string(obj, "token_endpoint_auth_method") orelse "none";
+    const scope = string(obj, "scope");
 
-    const client = store.registerClient(ctx.arena, client_name, redirect_uris, auth_method, scope) catch |err| switch (err) {
+    const client = store.registerClient(ctx.arena, ctx.io, client_name, redirect_uris, auth_method, scope) catch |err| switch (err) {
         error.InvalidRedirectUris => return fail(ctx, .bad_request, "invalid_redirect_uri", "Only https or localhost http redirect URIs are allowed"),
         else => return fail(ctx, .internal_server_error, "server_error", "Failed to register client"),
     };
@@ -50,15 +45,20 @@ pub fn handle(ctx: zx.RouteContext) !void {
     ctx.response.text(response);
 }
 
+fn string(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
+    const v = obj.get(key) orelse return null;
+    return if (v == .string) v.string else null;
+}
+
 fn parseRedirectUris(arena: std.mem.Allocator, value: ?std.json.Value) !?[]const []const u8 {
     const v = value orelse return null;
     if (v != .array) return null;
-    var list: std.ArrayListUnmanaged([]const u8) = .empty;
-    for (v.array.items) |item| {
+    const uris = try arena.alloc([]const u8, v.array.items.len);
+    for (v.array.items, uris) |item, *uri| {
         if (item != .string) return null;
-        try list.append(arena, item.string);
+        uri.* = item.string;
     }
-    return try list.toOwnedSlice(arena);
+    return uris;
 }
 
 fn fail(ctx: zx.RouteContext, status: std.http.Status, code: []const u8, desc: []const u8) !void {

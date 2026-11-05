@@ -11,8 +11,9 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         return ui.redirect(ctx, try ctx.fmt("/admin/finance/rates?{s}", .{flag}));
     }
 
-    const rates = try fx.listRates(ctx.arena);
+    const rates = try fx.rates(ctx.arena);
     const fetched = fx.fetchedAt(ctx.arena);
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
     const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "synced", "Rates refreshed (Frankfurter fiat + BAJUS 22K gold)." },
         .{ "saved", "Rate saved." },
@@ -23,36 +24,29 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     return (
         <div @allocator={ctx.arena}>
-            <div class="adm-toolbar">
-                <div class="adm-toolbar-main">
-                    <h1 class="adm-page-title">Rates</h1>
-                    <div class="adm-page-actions">
-                        <div class="adm-finance-nav">
-                            <div class="adm-finance-lead">
-                                <form method="post" action="/admin/finance/rates" class="adm-inline">
-                                    <button
-                                        class="adm-btn adm-btn-ghost adm-btn-icon"
-                                        type="submit"
-                                        name="action"
-                                        value="sync"
-                                        title="Sync FX and gold rates"
-                                        aria-label="Sync FX and gold rates"
-                                    >
-                                        {ui.icon(ctx.arena, .refresh)}
-                                    </button>
-                                </form>
-                            </div>
-                            <ui.FinanceNav current={.rates} />
-                        </div>
-                    </div>
-                </div>
-                <p class="adm-page-desc">
-                    Fiat from Frankfurter; gold from <a href="https://www.bajus.org/gold-price" target="_blank" rel="noopener">BAJUS</a>.
-                    {if (fetched) |at| (
-                        <span> Last sync {format.ago(ctx.arena, try ctx.fmt("{d}", .{at}))}.</span>
-                    )}
-                </p>
-            </div>
+            <Header
+                title="Rates"
+                current={.rates}
+                lead={(
+                    <form method="post" action="/admin/finance/rates" class="adm-inline">
+                        <button
+                            class="adm-btn adm-btn-ghost adm-btn-icon"
+                            type="submit"
+                            name="action"
+                            value="sync"
+                            title="Sync FX and gold rates"
+                            aria-label="Sync FX and gold rates"
+                        >
+                            {ui.icon(ctx.arena, .refresh)}
+                        </button>
+                    </form>
+                )}
+            >
+                Fiat from Frankfurter; gold from <a href="https://www.bajus.org/gold-price" target="_blank" rel="noopener">BAJUS</a>.
+                {if (fetched) |at| (
+                    <span> Last sync {format.ago(ctx.arena, now, try ctx.fmt("{d}", .{at}))}.</span>
+                )}
+            </Header>
             <ui.FlashBanner flash={flash} />
 
             <section class="adm-card adm-settings">
@@ -91,13 +85,13 @@ fn handle(ctx: zx.PageContext) ![]const u8 {
     const fd = ctx.request.formData();
     const action = fd.get("action") orelse return error.InvalidRate;
     if (std.mem.eql(u8, action, "sync")) {
-        try fx.syncNow(ctx.arena);
+        try fx.sync(ctx.arena, ctx.io);
         return "ok=synced";
     }
     if (std.mem.eql(u8, action, "save")) {
         const currency = std.mem.trim(u8, fd.get("currency") orelse "", " \t\r\n");
         const rate = std.fmt.parseFloat(f64, fd.get("rate") orelse "") catch return error.InvalidRate;
-        try fx.setFiatRate(ctx.arena, currency, rate);
+        try fx.setRate(ctx.arena, ctx.io, currency, rate);
         return "ok=saved";
     }
     return error.InvalidRate;
@@ -132,3 +126,4 @@ const zx = @import("zx");
 const ui = @import("../../ui.zx");
 const format = @import("../../format.zig");
 const fx = @import("../../../finance/fx.zig");
+const Header = @import("../header.zx").Header;

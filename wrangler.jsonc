@@ -21,6 +21,22 @@
 			"database_id": "13f22d54-6d81-4a60-a1cc-aac07cde60dd"
 		}
 	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "CALENDAR_SYNC",
+				"queue": "calendar-sync"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "calendar-sync",
+				"max_batch_size": 1,
+				"max_batch_timeout": 1,
+				"max_retries": 3
+			}
+		]
+	},
 	"build": {
 		"watch_dir": "./app",
 		"command": "zig build zx -- build --target wasm32-wasi --release small --prerender",

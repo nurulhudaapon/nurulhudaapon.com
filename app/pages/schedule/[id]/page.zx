@@ -4,7 +4,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     ctx.response.headers.append("Cache-Control", "no-store");
 
     const id = ctx.request.params.get("id") orelse "";
-    const record = try booking.get(ctx.arena, id) orelse {
+    const record = try booking.get(ctx.arena, ctx.io, id) orelse {
         ctx.response.setStatus(.not_found);
         ctx.data.set("title", "Meeting not found - Nurul Huda (Apon)");
         return (
@@ -22,13 +22,14 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         );
     };
 
+    const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
     const title = try booking.title(ctx.arena, record.name);
-    const status = statusOf(record);
+    const status: Status = .of(record, now);
     const minutes = @divTrunc(record.ends_at - record.starts_at, std.time.s_per_min);
-    const has_call = record.meet_url != null or settings.defaultMeetingUrl(ctx.arena) != null;
+    const has_call = record.meet_url != null or settings.meetingUrl(ctx.arena) != null;
     const join_url = try ctx.fmt("/meet?id={s}", .{record.id});
-    ctx.data.set("title", title);
     const date = try slots.formatDate(ctx.arena, record.starts_at, slots.config.utc_offset_s);
+    ctx.data.set("title", title);
     ctx.data.set("description", try ctx.fmt("{s} · {d} minute meeting", .{ date, minutes }));
 
     return (
@@ -84,13 +85,13 @@ const Status = struct {
     kind: enum { upcoming, past, cancelled },
     label: []const u8,
     class: []const u8,
-};
 
-fn statusOf(r: booking.Record) Status {
-    if (r.cancelled_at != null) return .{ .kind = .cancelled, .label = "Cancelled", .class = "meeting-status meeting-status-cancelled" };
-    if (r.ends_at < booking.nowUnix()) return .{ .kind = .past, .label = "Ended", .class = "meeting-status" };
-    return .{ .kind = .upcoming, .label = "Confirmed", .class = "meeting-status meeting-status-confirmed" };
-}
+    fn of(r: booking.Record, now: i64) Status {
+        if (r.cancelled_at != null) return .{ .kind = .cancelled, .label = "Cancelled", .class = "meeting-status meeting-status-cancelled" };
+        if (r.ends_at < now) return .{ .kind = .past, .label = "Ended", .class = "meeting-status" };
+        return .{ .kind = .upcoming, .label = "Confirmed", .class = "meeting-status meeting-status-confirmed" };
+    }
+};
 
 pub const options: zx.PageOptions = .{ .rendering = .request };
 

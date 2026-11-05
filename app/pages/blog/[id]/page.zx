@@ -1,6 +1,6 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
     const slug = ctx.request.params.get("id") orelse return error.MissingParameter;
-    const post = try posts_mod.getPostBySlug(ctx.arena, slug, .html);
+    const post = try posts.get(ctx.arena, ctx.io, slug, .html);
     ctx.data.set("title", post.seo_title orelse post.title);
     ctx.data.set("description", post.seo_description orelse post.brief);
 
@@ -17,16 +17,13 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                 <article>
                     <header class="post-header">
                         <h1 class="post-title">{post.title}</h1>
-                        {if (post.coverImage) |coverImage| (
-                            <img src={coverImage} alt={post.title} class="post-cover" />
-                        )}
-                        {if (post.subtitle) |subtitle| (
-                            <p class="post-subtitle">{subtitle}</p>
+                        {if (post.cover) |cover| (
+                            <img src={cover} alt={post.title} class="post-cover" />
                         )}
                         <div class="post-meta">
-                            <span>{post.publishedAt}</span>
+                            <span>{post.date}</span>
                             <span>·</span>
-                            <span>{post.readTimeInMinutes} min read</span>
+                            <span>{post.read_minutes} min read</span>
                         </div>
                     </header>
                     <div class="post-content">
@@ -43,8 +40,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 }
 
 fn staticParams(ctx: *zx.StaticContext) !void {
-    const posts = try posts_mod.getPosts(ctx.arena);
-    for (posts) |post| {
+    for (try posts.list(ctx.arena, ctx.io)) |post| {
         try ctx.params.add(.{ .id = post.slug });
     }
 }
@@ -54,7 +50,7 @@ pub const options: zx.PageOptions = .{
     .static = staticParams,
 };
 
-const posts_mod = @import("../posts.zig");
+const posts = @import("../posts.zig");
 const zx = @import("zx");
 const Navbar = @import("../../component.zx").Navbar;
 const icons = @import("../../component.zx").icons;
