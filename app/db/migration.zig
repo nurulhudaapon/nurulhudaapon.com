@@ -16,6 +16,8 @@ const migrations = [_]Migration{
     .{ .name = "0011_auth_sessions.sql", .sql = @embedFile("migrations/0011_auth_sessions.sql") },
     .{ .name = "0012_auth_passkeys.sql", .sql = @embedFile("migrations/0012_auth_passkeys.sql") },
     .{ .name = "0013_finance_positions.sql", .sql = @embedFile("migrations/0013_finance_positions.sql") },
+    .{ .name = "0014_calendars.sql", .sql = @embedFile("migrations/0014_calendars.sql") },
+    .{ .name = "0015_calendar_feeds.sql", .sql = @embedFile("migrations/0015_calendar_feeds.sql") },
 };
 
 pub fn run() !void {

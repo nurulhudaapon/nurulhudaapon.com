@@ -1,0 +1,343 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    const now = booking.nowUnix();
+    const anchor = if (ctx.request.query.get("week")) |w| week.parseDate(w) orelse now else now;
+
+    // First visit after connecting iCloud: pull in every calendar of the account.
+    var sync_failed = false;
+    if (!calendars.hasIcloudCalendars(ctx.arena) and (caldav.loadCredentials(ctx.arena) catch null) != null) {
+        calendars.syncIcloud(ctx.arena) catch |err| {
+            zx.log.warn("admin: iCloud calendar sync failed: {any}", .{err});
+            sync_failed = true;
+        };
+    }
+
+    var initial = try view.load(ctx.arena, week.weekStart(anchor, calendars.loadPrefs(ctx.arena).week_start), null, false);
+    if (sync_failed) initial.err = "Couldn't list your iCloud calendars. Check the CalDAV credentials in Settings.";
+
+    return (
+        <div @allocator={ctx.arena} class="adm-page-fill">
+            <WeekView @client initial={initial} />
+        </div>
+    );
+}
+
+pub fn WeekView(ctx: *zx.ComponentCtx(struct { initial: WeekState })) zx.Component {
+    const cal = ctx.state(WeekState, ctx.props.initial);
+    const alloc = ctx.allocator;
+    const state = cal.get();
+    const v = state.view;
+    const syncing = state.sync != .idle;
+    if (comptime zx.platform.role == .client) {
+        syncUrl(state.href);
+        background.run(cal, state);
+    }
+    const flash: ?ui.Flash = if (state.err.len > 0) .{ .kind = .err, .text = state.err } else null;
+
+    return (
+        <div @allocator={alloc} class="adm-cal-page">
+            <div class="adm-cal-fit">
+                {if (flash != null) (
+                    <ui.FlashBanner flash={flash} />
+                )}
+                {if (!state.has_calendars) (
+                    <div class="adm-card adm-card-gap">
+                        <p class="adm-empty">No calendars yet. <a href="/admin/calendar/sources">Sync your iCloud calendars or add an iCal link</a>.</p>
+                    </div>
+                )}
+
+                <div class="adm-cal-body" aria-busy={if (state.loading) "true" else "false"}>
+                    <section class="adm-card adm-cal-bar">
+                        <div class="adm-cal-bar-row">
+                            <div class="adm-cal-nav">
+                                <button type="button" class="adm-btn adm-btn-ghost adm-btn-icon" title="Previous week" aria-label="Previous week" onpointerdown={ctx.bind(markLoading)} onkeydown={ctx.bind(markLoadingKey)} onclick={ctx.bind(goPrev)}>{ui.icon(alloc, .arrow_left)}</button>
+                                <button type="button" class="adm-btn adm-btn-ghost" onpointerdown={ctx.bind(markLoading)} onkeydown={ctx.bind(markLoadingKey)} onclick={ctx.bind(goToday)}>Today</button>
+                                <button type="button" class="adm-btn adm-btn-ghost adm-btn-icon" title="Next week" aria-label="Next week" onpointerdown={ctx.bind(markLoading)} onkeydown={ctx.bind(markLoadingKey)} onclick={ctx.bind(goNext)}>{ui.icon(alloc, .chevron_right)}</button>
+                                <span
+                                    class={if (syncing) "adm-cal-range adm-cal-syncing" else "adm-cal-range"}
+                                    title={alloc.print("{s} ({s}){s}", .{ slots.config.timezone, slots.config.timezone_label, if (syncing) " · updating from your calendars" else "" }) catch ""}
+                                >{v.title}</span>
+                            </div>
+                            <div class="adm-cal-stats">
+                                <span class="adm-cal-stat" title={v.busy_hint}>
+                                    <span class="adm-hint">Busy</span>
+                                    <strong>{v.busy_total}</strong>
+                                </span>
+                                <span class="adm-cal-stat" title={alloc.print("of {s} in working hours", .{v.capacity}) catch ""}>
+                                    <span class="adm-hint">Free</span>
+                                    <strong>{v.free_total}</strong>
+                                    <span class="adm-hint">of {v.capacity}</span>
+                                </span>
+                                <span class="adm-cal-stat" title={alloc.print("{s} busy inside working hours", .{v.busy_work}) catch ""}>
+                                    <span class="adm-hint">Booked</span>
+                                    <strong>{v.load_pct}</strong>
+                                </span>
+                            </div>
+                            <div class="adm-cal-tools">
+                                <button type="button" class={if (syncing) "adm-btn adm-btn-ghost adm-btn-icon adm-btn-busy" else "adm-btn adm-btn-ghost adm-btn-icon"} title="Reload events from your calendars" aria-label="Refresh" aria-busy={if (syncing) "true" else "false"} onclick={ctx.bind(refresh)}>{ui.icon(alloc, .refresh)}</button>
+                                <a class="adm-btn adm-btn-ghost adm-btn-icon" href="/admin/calendar/sources" title="Calendars" aria-label="Calendars">{ui.icon(alloc, .settings)}</a>
+                                <button
+                                    type="button"
+                                    class="adm-btn adm-btn-ghost adm-btn-icon adm-cal-expand"
+                                    title={if (state.alloc_open) "Hide time allocation" else "Show time allocation"}
+                                    aria-label="Time allocation"
+                                    aria-expanded={if (state.alloc_open) "true" else "false"}
+                                    onpointerdown={ctx.bind(openAlloc)}
+                                    onkeydown={ctx.bind(openAllocKey)}
+                                    onclick={ctx.bind(toggleAlloc)}
+                                >{ui.icon(alloc, .chevron_right)}</button>
+                            </div>
+                        </div>
+                        {if (state.alloc_open) (
+                            <div class="adm-cal-alloc">
+                                {if (state.alloc_loading) (
+                                    <span class="adm-skel" style="width:12rem"></span>
+                                ) else if (state.alloc.len == 0) (
+                                    <p class="adm-hint">No timed events this week.</p>
+                                ) else (
+                                    <div class="adm-cal-alloc-list">
+                                        {for (state.alloc) |r| (
+                                            <div class="adm-cal-alloc-row" title={r.count}>
+                                                <span class="adm-swatch" style={r.swatch}></span>
+                                                <span class="adm-cal-alloc-name">{r.name}</span>
+                                                <span class="adm-bar"><span class="adm-fill" style={r.bar}></span></span>
+                                                <strong>{r.hours}</strong>
+                                                <span class="adm-hint">{r.pct}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </section>
+
+                    <section class="adm-card adm-cal-card">
+                        <div class="adm-cal-scroll">
+                            <div class="adm-cal" style={v.grid_style}>
+                                <div class="adm-cal-corner"></div>
+                                {for (v.days) |d| (
+                                    <div class={d.head_class}>
+                                        <span class="adm-cal-dow">{d.weekday}</span>
+                                        <span class="adm-cal-date">{d.date}</span>
+                                        <span class="adm-cal-sum">{d.summary}</span>
+                                    </div>
+                                )}
+
+                                <div class="adm-cal-corner adm-cal-allday-label">all-day</div>
+                                {for (v.days) |d| (
+                                    <AllDay chips={d.all_day} />
+                                )}
+
+                                <div class="adm-cal-gutter">
+                                    {for (v.hours) |h| (
+                                        <span class="adm-cal-hour" style={h.style}>{h.label}</span>
+                                    )}
+                                </div>
+                                {for (v.days) |d| (
+                                    <DayColumn day={d} />
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+fn AllDay(allocator: zx.Allocator, props: struct { chips: []const view.Chip }) zx.Component {
+    return (
+        <div @{allocator} class="adm-cal-allday">
+            {for (props.chips) |c| (
+                <span class="adm-cal-chip" style={c.style} title={c.title}>{c.title}</span>
+            )}
+        </div>
+    );
+}
+
+fn DayColumn(allocator: zx.Allocator, props: struct { day: view.Day }) zx.Component {
+    const d = props.day;
+    return (
+        <div @{allocator} class="adm-cal-col">
+            {if (d.work_style) |s| (
+                <div class="adm-cal-work" style={s}></div>
+            )}
+            {for (d.blocks) |b| (
+                <div class={b.class} style={b.style} title={b.tooltip}>
+                    <span class="adm-cal-ev-title">{b.title}</span>
+                    <span class="adm-cal-ev-time">{b.time}</span>
+                </div>
+            )}
+            {if (d.now_style) |s| (
+                <div class="adm-cal-now" style={s}></div>
+            )}
+        </div>
+    );
+}
+
+// Dims the grid until the server event lands. Disabling the button here
+// instead would swallow its click.
+fn markLoading(e: *zx.client.Event.Stateful) void {
+    const cal = e.state(WeekState);
+    var next = cal.get();
+    next.loading = true;
+    cal.set(next);
+}
+
+fn markLoadingKey(e: *zx.client.Event.Stateful) void {
+    if (isActivation(e)) markLoading(e);
+}
+
+fn openAlloc(e: *zx.client.Event.Stateful) void {
+    const cal = e.state(WeekState);
+    var next = cal.get();
+    if (next.alloc_open) return;
+    next.alloc_open = true;
+    next.alloc_loading = true;
+    cal.set(next);
+}
+
+fn openAllocKey(e: *zx.client.Event.Stateful) void {
+    if (isActivation(e)) openAlloc(e);
+}
+
+fn isActivation(e: *zx.client.Event.Stateful) bool {
+    const key = e.key() orelse return false;
+    return std.mem.eql(u8, key, "Enter") or std.mem.eql(u8, key, " ");
+}
+
+// Loads the rows when `openAlloc` just opened the panel, otherwise closes it.
+fn toggleAlloc(e: *zx.server.Event.Stateful) void {
+    const cal = e.state(WeekState);
+    var next = cal.get();
+    if (!next.alloc_loading) {
+        next.alloc_open = false;
+        next.alloc = &.{};
+        return cal.set(next);
+    }
+    next.alloc_loading = false;
+    next.alloc = view.allocation(e.inner.arena, next.start) catch |err| blk: {
+        zx.log.err("admin: loading time allocation failed: {any}", .{err});
+        break :blk &.{};
+    };
+    cal.set(next);
+}
+
+fn refresh(e: *zx.client.Event.Stateful) void {
+    const cal = e.state(WeekState);
+    var next = cal.get();
+    next.sync = .forced;
+    cal.set(next);
+}
+
+// `e.state()` hands out slots in call order, so take the handle once.
+fn goPrev(e: *zx.server.Event.Stateful) void {
+    const cal = e.state(WeekState);
+    show(e, cal, cal.get().start - 7 * view.day_s);
+}
+
+fn goNext(e: *zx.server.Event.Stateful) void {
+    const cal = e.state(WeekState);
+    show(e, cal, cal.get().start + 7 * view.day_s);
+}
+
+fn goToday(e: *zx.server.Event.Stateful) void {
+    const first = calendars.loadPrefs(e.inner.arena).week_start;
+    show(e, e.state(WeekState), week.weekStart(booking.nowUnix(), first));
+}
+
+fn show(e: *zx.server.Event.Stateful, cal: anytype, start: i64) void {
+    var cur = cal.get();
+    const next = view.load(e.inner.arena, start, null, cur.alloc_open) catch |err| {
+        zx.log.err("admin: loading calendar week failed: {any}", .{err});
+        cur.loading = false;
+        cur.err = "Couldn't load that week. Try again.";
+        return cal.set(cur);
+    };
+    cal.set(next);
+}
+
+// Replacing rather than pushing keeps Back leaving the calendar.
+fn syncUrl(href: []const u8) void {
+    const js = zx.client.js;
+    const location = js.global.get(js.Object, "location") catch return;
+    defer location.deinit();
+    const path = location.getAlloc(js.String, zx.allocator, "pathname") catch return;
+    defer zx.allocator.free(path);
+    const search = location.getAlloc(js.String, zx.allocator, "search") catch return;
+    defer zx.allocator.free(search);
+    if (std.mem.startsWith(u8, href, path) and std.mem.eql(u8, href[path.len..], search)) return;
+
+    const history = js.global.get(js.Object, "history") catch return;
+    defer history.deinit();
+    history.call(void, "replaceState", .{ null, js.string(""), js.string(href) }) catch {};
+}
+
+// Refetches a week shown from cache. A plain fetch rather than a server event:
+// an event's response replaces the whole state, so a slow one would jump back
+// from a week navigated to meanwhile. The result only applies to its own week.
+const background = struct {
+    var target: ?*zx.State(WeekState) = null;
+    var pending: ?i64 = null;
+
+    fn run(cal: *zx.State(WeekState), state: WeekState) void {
+        target = cal;
+        if (state.sync == .idle or pending == state.start) return;
+        pending = state.start;
+        var buf: [80]u8 = undefined;
+        const url = std.fmt.bufPrint(&buf, "/admin/calendar/week?start={d}{s}{s}", .{
+            state.start,
+            if (state.sync == .forced) "&force=1" else "",
+            if (state.alloc_open) "&alloc=1" else "",
+        }) catch return;
+        var client: zx.http.Client = .{ .io = zx.Io.default(), .allocator = zx.allocator };
+        defer client.deinit();
+        client.fetchThen(.{ .url = url }, {}, onLoad);
+    }
+
+    fn onLoad(_: void, result: zx.http.Client.Error!zx.http.Client.Result) void {
+        const cal = target orelse return;
+        var cur = cal.get();
+        const fresh = parse(result) orelse {
+            if (pending == cur.start) {
+                pending = null;
+                cur.sync = .idle;
+                cur.err = "Couldn't refresh from your calendars. Showing what was saved.";
+                cal.set(cur);
+            }
+            return;
+        };
+        if (pending == fresh.start) pending = null;
+        if (fresh.start != cur.start) return;
+
+        var next = fresh;
+        next.loading = cur.loading;
+        if (next.alloc_open != cur.alloc_open) {
+            next.alloc_open = cur.alloc_open;
+            next.alloc_loading = cur.alloc_loading;
+            next.alloc = cur.alloc;
+        }
+        cal.set(next);
+    }
+
+    fn parse(result: zx.http.Client.Error!zx.http.Client.Result) ?WeekState {
+        const res = result catch return null;
+        if (res.status.class() != .success) return null;
+        return zx.util.zxon.parse(WeekState, zx.allocator, res.body, .{}) catch null;
+    }
+};
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .rendering = .request,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const view = @import("view.zig");
+const slots = @import("../../schedule/slots.zig");
+const week = @import("../../schedule/week.zig");
+const caldav = @import("../../schedule/caldav.zig");
+const booking = @import("../../schedule/booking.zig");
+const calendars = @import("../../schedule/calendars.zig");
+const WeekState = view.WeekState;

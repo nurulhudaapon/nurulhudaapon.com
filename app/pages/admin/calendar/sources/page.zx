@@ -1,0 +1,526 @@
+pub fn Page(ctx: zx.PageContext) !zx.Component {
+    ctx.response.headers.append("Cache-Control", "no-store");
+
+    const rows = try sourceRows(ctx.arena, try calendars.list(ctx.arena));
+    const links = try linkRows(ctx.arena, try calendars.listLinks(ctx.arena));
+    const icloud_ready = (caldav.loadCredentials(ctx.arena) catch null) != null;
+
+    return (
+        <div @allocator={ctx.arena}>
+            <a class="adm-back" href="/admin/calendar">{ui.icon(ctx.arena, .arrow_left)} Calendar</a>
+            <ui.PageHeader title="Calendars" description="Calendars shown on the admin calendar. Those set to block booking also count as busy time on /schedule; those in the feed are published through your subscription links." />
+            <PrefsCard @client prefs={calendars.loadPrefs(ctx.arena)} />
+            <SourcesCard @client rows={rows} icloud_ready={icloud_ready} />
+            <LinksCard @client links={links} />
+        </div>
+    );
+}
+
+const Tone = enum { none, ok, err };
+
+fn bannerFlash(tone: Tone, msg: []const u8) ?ui.Flash {
+    return switch (tone) {
+        .none => null,
+        .ok => .{ .kind = .ok, .text = msg },
+        .err => .{ .kind = .err, .text = msg },
+    };
+}
+
+fn errorText(err: anyerror) []const u8 {
+    return switch (err) {
+        error.NotConfigured => "Add your iCloud (CalDAV) credentials in Settings first.",
+        error.InvalidUrl => "Calendar links must start with https://, http:// or webcal://.",
+        error.InvalidFeed => "That link didn't return an iCal calendar. Check it opens as a .ics file.",
+        error.Duplicate => "That calendar is already added.",
+        error.OwnFeed => "That's one of this site's own subscription links; adding it would make the feed include itself.",
+        error.InvalidName, error.InvalidColor => "Name is required (up to 100 characters) and the color must be a hex value.",
+        else => blk: {
+            zx.log.err("admin: calendar action failed: {any}", .{err});
+            break :blk "Something went wrong. Check the server logs.";
+        },
+    };
+}
+
+const PrefsState = struct {
+    prefs: calendars.Prefs,
+    tone: Tone = .none,
+    msg: []const u8 = "",
+};
+
+pub fn PrefsCard(ctx: *zx.ComponentCtx(struct { prefs: calendars.Prefs })) zx.Component {
+    const card = ctx.state(PrefsState, .{ .prefs = ctx.props.prefs });
+    const save_action = ctx.action(savePrefs, .{});
+    const alloc = ctx.allocator;
+    const state = card.get();
+
+    return (
+        <section @allocator={alloc} class="adm-card adm-settings adm-card-gap">
+            <form action={save_action} class="adm-settings-row">
+                <div>
+                    <p class="adm-label">Calendar view</p>
+                    <p class="adm-hint">Saved events show instantly; once older than this they're refetched in the background. Also how long /schedule and your subscription links reuse them.</p>
+                </div>
+                <div class="adm-stack-fields">
+                    <div class="adm-inline-fields" style="align-items:flex-end">
+                        <div class="adm-field">
+                            <label class="adm-label" for="stale_minutes">Refresh after (minutes)</label>
+                            <input class="adm-input" id="stale_minutes" name="stale_minutes" type="number" min="1" max="1440" required value={alloc.print("{d}", .{state.prefs.stale_minutes}) catch ""} />
+                        </div>
+                        <div class="adm-field">
+                            <label class="adm-label" for="week_start">Week starts on</label>
+                            <select class="adm-select" id="week_start" name="week_start">
+                                {for (std.enums.values(slots.Weekday)) |day| (
+                                    <option value={@tagName(day)} selected={day == state.prefs.week_start}>{slots.weekday_names[@backingInt(day)]}</option>
+                                )}
+                            </select>
+                        </div>
+                        <button class="adm-btn adm-btn-primary" type="submit" disabled={save_action.pending}>
+                            {if (save_action.pending) "Saving…" else "Save"}
+                        </button>
+                    </div>
+                    {if (state.tone != .none) (
+                        <span class={if (state.tone == .ok) "adm-hint" else "adm-hint adm-text-err"} role="status">{state.msg}</span>
+                    )}
+                </div>
+            </form>
+        </section>
+    );
+}
+
+const PrefsInput = struct { stale_minutes: i64, week_start: []const u8 };
+
+fn savePrefs(a: *zx.server.Action.Stateful) void {
+    const card = a.state(PrefsState);
+    const input = a.data(PrefsInput);
+    var next = card.get();
+    const prefs: calendars.Prefs = .{
+        .stale_minutes = input.stale_minutes,
+        .week_start = std.meta.stringToEnum(slots.Weekday, input.week_start) orelse next.prefs.week_start,
+    };
+    calendars.savePrefs(a.inner.arena, prefs) catch |err| {
+        next.tone = .err;
+        next.msg = if (err == error.InvalidPrefs) "Refresh after must be between 1 and 1440 minutes." else errorText(err);
+        return card.set(next);
+    };
+    next = .{ .prefs = prefs, .tone = .ok, .msg = "Saved." };
+    card.set(next);
+}
+
+const Row = struct {
+    id: i64,
+    name: []const u8,
+    color: []const u8,
+    meta: []const u8,
+    visible: bool,
+    blocks_booking: bool,
+    in_feed: bool,
+    removable: bool,
+};
+
+// Bumping `add_key` clears the add form.
+const SourcesState = struct {
+    rows: []const Row = &.{},
+    tone: Tone = .none,
+    msg: []const u8 = "",
+    add_key: u32 = 0,
+    saved_id: i64 = 0,
+};
+
+pub fn SourcesCard(ctx: *zx.ComponentCtx(struct { rows: []const Row, icloud_ready: bool })) zx.Component {
+    const card = ctx.state(SourcesState, .{ .rows = ctx.props.rows });
+    const sync_action = ctx.action(syncCalendars, .{});
+    const add_action = ctx.action(addCalendar, .{});
+    const save_action = ctx.action(saveCalendar, .{});
+    const alloc = ctx.allocator;
+    const state = card.get();
+    const rows = state.rows;
+
+    return (
+        <div @allocator={alloc}>
+            <ui.FlashBanner flash={bannerFlash(state.tone, state.msg)} />
+
+            <section class="adm-card adm-settings adm-card-gap">
+                <div class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">iCloud</p>
+                        <p class="adm-hint">Every calendar in the iCloud account from <a href="/admin/settings">Settings</a>. Sync again after adding or renaming a calendar on your devices.</p>
+                    </div>
+                    {if (ctx.props.icloud_ready) (
+                        <form action={sync_action} class="adm-inline-fields">
+                            <button class={if (sync_action.pending) "adm-btn adm-btn-primary adm-btn-busy" else "adm-btn adm-btn-primary"} type="submit" disabled={sync_action.pending}>
+                                {ui.icon(alloc, .refresh)} {if (sync_action.pending) "Syncing…" else "Sync iCloud calendars"}
+                            </button>
+                        </form>
+                    ) else (
+                        <div class="adm-inline-fields">
+                            <a class="adm-btn" href="/admin/settings">Connect iCloud in Settings</a>
+                        </div>
+                    )}
+                </div>
+                <form key={state.add_key} action={add_action} class="adm-settings-row">
+                    <div>
+                        <p class="adm-label">Add an iCal link</p>
+                        <p class="adm-hint">Any .ics or webcal:// link, such as an iCloud public calendar, Google's "Secret address in iCal format" or Outlook's published ICS link. Add as many as you like.</p>
+                    </div>
+                    <div class="adm-stack-fields">
+                        <div class="adm-field">
+                            <label class="adm-label" for="feed_url">Link</label>
+                            <input class="adm-input" id="feed_url" name="url" required autocomplete="off" placeholder="webcal://… or https://….ics" />
+                        </div>
+                        <div class="adm-inline-fields" style="align-items:flex-end">
+                            <div class="adm-field" style="flex:1;min-width:10rem">
+                                <label class="adm-label" for="feed_name">Name</label>
+                                <input class="adm-input" id="feed_name" name="name" maxlength="100" placeholder="From the calendar if blank" />
+                            </div>
+                            <div class="adm-field">
+                                <label class="adm-label" for="feed_color">Color</label>
+                                <input class="adm-input adm-color" id="feed_color" type="color" name="color" value={calendars.palette[rows.len % calendars.palette.len]} />
+                            </div>
+                            <button class="adm-btn adm-btn-primary" type="submit" disabled={add_action.pending}>
+                                {if (add_action.pending) "Checking link…" else "Add calendar"}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </section>
+
+            <section class="adm-card adm-card-gap">
+                <div class="adm-section-head">
+                    <span>Your calendars</span>
+                    <span class="adm-hint">{rows.len}</span>
+                </div>
+                {if (rows.len == 0) (
+                    <ui.Empty text="No calendars yet. Sync iCloud or add an iCal link above." />
+                ) else (
+                    <div class="adm-list">
+                        {for (rows) |r| (
+                            <form key={r.id} action={save_action} class="adm-cal-source">
+                                <input type="hidden" name="id" value={alloc.print("{d}", .{r.id}) catch ""} />
+                                <input class="adm-input adm-color" type="color" name="color" value={r.color} aria-label="Color" />
+                                <div class="adm-cal-source-name">
+                                    <input class="adm-input" name="name" value={r.name} maxlength="100" required aria-label="Name" />
+                                    <span class="adm-hint">{if (state.saved_id == r.id) "Saved" else r.meta}</span>
+                                </div>
+                                <label class="adm-check">
+                                    <input type="checkbox" name="visible" value="on" checked={r.visible} />
+                                    <span>Show</span>
+                                </label>
+                                <label class="adm-check">
+                                    <input type="checkbox" name="blocks_booking" value="on" checked={r.blocks_booking} />
+                                    <span>Blocks /schedule</span>
+                                </label>
+                                <label class="adm-check">
+                                    <input type="checkbox" name="in_feed" value="on" checked={r.in_feed} />
+                                    <span>In feed</span>
+                                </label>
+                                <div class="adm-inline-fields">
+                                    <button class="adm-btn" type="submit" disabled={save_action.pending}>Save</button>
+                                    {if (r.removable) (
+                                        <button
+                                            class="adm-btn adm-btn-ghost adm-btn-danger"
+                                            type="button"
+                                            value={alloc.print("{d}", .{r.id}) catch ""}
+                                            onclick={ctx.bind(removeCalendar)}
+                                        >Remove</button>
+                                    )}
+                                </div>
+                            </form>
+                        )}
+                    </div>
+                )}
+            </section>
+        </div>
+    );
+}
+
+fn refreshed(arena: zx.Allocator, prev: SourcesState, tone: Tone, msg: []const u8) SourcesState {
+    var next = prev;
+    next.tone = tone;
+    next.msg = msg;
+    next.saved_id = 0;
+    const list = calendars.list(arena) catch |err| {
+        zx.log.err("admin: listing calendars failed: {any}", .{err});
+        return next;
+    };
+    next.rows = sourceRows(arena, list) catch prev.rows;
+    return next;
+}
+
+fn syncCalendars(a: *zx.server.Action.Stateful) void {
+    const card = a.state(SourcesState);
+    const arena = a.inner.arena;
+    calendars.syncIcloud(arena) catch |err| {
+        var next = card.get();
+        next.tone = .err;
+        next.msg = errorText(err);
+        return card.set(next);
+    };
+    card.set(refreshed(arena, card.get(), .ok, "iCloud calendars synced."));
+}
+
+const AddInput = struct { url: []const u8, name: []const u8, color: []const u8 };
+
+fn addCalendar(a: *zx.server.Action.Stateful) void {
+    const card = a.state(SourcesState);
+    const arena = a.inner.arena;
+    const input = a.data(AddInput);
+    calendars.addFeed(arena, input.url, input.name, input.color) catch |err| {
+        var next = card.get();
+        next.tone = .err;
+        next.msg = errorText(err);
+        return card.set(next);
+    };
+    var next = refreshed(arena, card.get(), .ok, "Calendar added.");
+    next.add_key +%= 1;
+    card.set(next);
+}
+
+const SaveInput = struct {
+    id: i64,
+    name: []const u8,
+    color: []const u8,
+    visible: bool,
+    blocks_booking: bool,
+    in_feed: bool,
+};
+
+fn saveCalendar(a: *zx.server.Action.Stateful) void {
+    const card = a.state(SourcesState);
+    const arena = a.inner.arena;
+    const input = a.data(SaveInput);
+    calendars.update(input.id, .{
+        .name = input.name,
+        .color = input.color,
+        .visible = input.visible,
+        .blocks_booking = input.blocks_booking,
+        .in_feed = input.in_feed,
+    }) catch |err| {
+        var next = card.get();
+        next.tone = .err;
+        next.msg = errorText(err);
+        return card.set(next);
+    };
+    var next = refreshed(arena, card.get(), .none, "");
+    next.saved_id = input.id;
+    card.set(next);
+}
+
+fn removeCalendar(e: *zx.server.Event.Stateful) void {
+    const card = e.state(SourcesState);
+    const arena = e.inner.arena;
+    const id = std.fmt.parseInt(i64, e.value() orelse "", 10) catch return;
+    calendars.removeFeed(id) catch |err| {
+        var next = card.get();
+        next.tone = .err;
+        next.msg = errorText(err);
+        return card.set(next);
+    };
+    card.set(refreshed(arena, card.get(), .ok, "Calendar removed."));
+}
+
+fn sourceRows(arena: zx.Allocator, sources: []const calendars.Source) ![]const Row {
+    const rows = try arena.alloc(Row, sources.len);
+    for (rows, sources) |*row, s| row.* = .{
+        .id = s.id,
+        .name = s.name,
+        .color = s.color,
+        .meta = try arena.print("{s} · {s}{s}{s}", .{
+            switch (s.kind) {
+                .icloud => "iCloud",
+                .ics => "iCal link",
+            },
+            s.host(),
+            if (s.synced_at != null) " · synced " else "",
+            if (s.synced_at) |at| format.ago(arena, at) else "",
+        }),
+        .visible = s.visible,
+        .blocks_booking = s.blocks_booking,
+        .in_feed = s.in_feed,
+        .removable = s.kind == .ics,
+    };
+    return rows;
+}
+
+const NewLink = struct { url: []const u8, webcal: []const u8, detail: []const u8 };
+const LinkRow = struct { id: i64, label: []const u8, meta: []const u8 };
+
+// The new token only ever lives here: only its hash is stored, and it never goes into a URL.
+const LinksState = struct {
+    links: []const LinkRow = &.{},
+    created: ?NewLink = null,
+    copied: bool = false,
+    tone: Tone = .none,
+    msg: []const u8 = "",
+    form_key: u32 = 0,
+};
+
+pub fn LinksCard(ctx: *zx.ComponentCtx(struct { links: []const LinkRow })) zx.Component {
+    const card = ctx.state(LinksState, .{ .links = ctx.props.links });
+    const create_action = ctx.action(createLink, .{});
+    const alloc = ctx.allocator;
+    const state = card.get();
+
+    return (
+        <section @allocator={alloc} class="adm-card adm-settings">
+            <div class="adm-section-head">
+                <span>Subscription links</span>
+                <span class="adm-hint">{state.links.len}</span>
+            </div>
+            <ui.FlashBanner flash={bannerFlash(state.tone, state.msg)} />
+            {if (state.created) |c| (
+                <div class="adm-settings-row adm-cal-new-link">
+                    <div>
+                        <p class="adm-label">New link · {c.detail}</p>
+                        <p class="adm-hint">Copy it now. Only a hash is stored, so it can't be shown again. Anyone with this link can read the calendar.</p>
+                    </div>
+                    <div class="adm-stack-fields">
+                        <input class="adm-input adm-mono" readonly value={c.url} aria-label="Subscription link" />
+                        <div class="adm-inline-fields">
+                            <button class="adm-btn" type="button" onclick={ctx.bind(copyLink)}>
+                                {ui.icon(alloc, if (state.copied) .check else .file)} {if (state.copied) "Copied" else "Copy"}
+                            </button>
+                            <a class="adm-btn adm-btn-primary" href={c.webcal}>{ui.icon(alloc, .calendar)} Open in Calendar app</a>
+                        </div>
+                        <span class="adm-hint">Google Calendar: Other calendars → From URL. Outlook: Add calendar → Subscribe from web.</span>
+                    </div>
+                </div>
+            )}
+            {for (state.links) |l| (
+                <div key={l.id} class="adm-cal-link">
+                    <div class="adm-cal-source-name">
+                        <span class="adm-item-title">{l.label}</span>
+                        <span class="adm-hint">{l.meta}</span>
+                    </div>
+                    <button
+                        class="adm-btn adm-btn-ghost adm-btn-danger"
+                        type="button"
+                        value={alloc.print("{d}", .{l.id}) catch ""}
+                        onclick={ctx.bind(revokeLink)}
+                    >Revoke</button>
+                </div>
+            )}
+            <form key={state.form_key} action={create_action} class="adm-settings-row">
+                <div>
+                    <p class="adm-label">New link</p>
+                    <p class="adm-hint">A private, read-only .ics link with every calendar marked "In feed", from a month back to six months ahead. Make one per device so you can revoke them separately. Skip devices already signed into iCloud, or events will show twice.</p>
+                </div>
+                <div class="adm-inline-fields" style="align-items:flex-end">
+                    <div class="adm-field" style="flex:1;min-width:10rem">
+                        <label class="adm-label" for="link_label">Name</label>
+                        <input class="adm-input" id="link_label" name="label" maxlength="60" required placeholder="e.g. Work laptop" />
+                    </div>
+                    <div class="adm-field">
+                        <label class="adm-label" for="link_detail">Shows</label>
+                        <select class="adm-select" id="link_detail" name="detail">
+                            <option value="busy">Busy only</option>
+                            <option value="full">Full details</option>
+                        </select>
+                    </div>
+                    <button class="adm-btn adm-btn-primary" type="submit" disabled={create_action.pending}>
+                        {if (create_action.pending) "Creating…" else "Create link"}
+                    </button>
+                </div>
+            </form>
+        </section>
+    );
+}
+
+fn reloadLinks(arena: zx.Allocator, prev: []const LinkRow) []const LinkRow {
+    const links = calendars.listLinks(arena) catch |err| {
+        zx.log.err("admin: listing calendar links failed: {any}", .{err});
+        return prev;
+    };
+    return linkRows(arena, links) catch prev;
+}
+
+const LinkInput = struct { label: []const u8, detail: []const u8 };
+
+fn createLink(a: *zx.server.Action.Stateful) void {
+    const card = a.state(LinksState);
+    const arena = a.inner.arena;
+    const input = a.data(LinkInput);
+    var next = card.get();
+    next.copied = false;
+
+    const detail = std.meta.stringToEnum(calendars.Detail, input.detail) orelse .busy;
+    const token = calendars.createLink(arena, input.label, detail) catch |err| {
+        next.tone = .err;
+        next.msg = if (err == error.InvalidName)
+            "Give the link a name (up to 60 characters), like the device it's for."
+        else
+            errorText(err);
+        return card.set(next);
+    };
+    const url = arena.print("{s}/calendar/{s}.ics", .{ site.origin(a.inner.request), token }) catch return;
+    const scheme = std.mem.indexOf(u8, url, "://") orelse 0;
+    next.created = .{
+        .url = url,
+        .webcal = arena.print("webcal{s}", .{url[scheme..]}) catch url,
+        .detail = detail.label(),
+    };
+    next.links = reloadLinks(arena, next.links);
+    next.tone = .none;
+    next.msg = "";
+    next.form_key +%= 1;
+    card.set(next);
+}
+
+fn revokeLink(e: *zx.server.Event.Stateful) void {
+    const card = e.state(LinksState);
+    const arena = e.inner.arena;
+    var next = card.get();
+    const id = std.fmt.parseInt(i64, e.value() orelse "", 10) catch return;
+    calendars.revokeLink(id) catch |err| {
+        next.tone = .err;
+        next.msg = errorText(err);
+        return card.set(next);
+    };
+    next.links = reloadLinks(arena, next.links);
+    next.tone = .ok;
+    next.msg = "Link revoked. Anything subscribed to it stops updating.";
+    card.set(next);
+}
+
+fn copyLink(e: *zx.client.Event.Stateful) void {
+    const card = e.state(LinksState);
+    var next = card.get();
+    const c = next.created orelse return;
+    const js = zx.client.js;
+    const navigator = js.global.get(js.Object, "navigator") catch return;
+    defer navigator.deinit();
+    const clipboard = navigator.get(js.Object, "clipboard") catch return;
+    defer clipboard.deinit();
+    const done = clipboard.call(js.Object, "writeText", .{js.string(c.url)}) catch return;
+    done.deinit();
+    next.copied = true;
+    card.set(next);
+}
+
+fn linkRows(arena: zx.Allocator, links: []const calendars.Link) ![]const LinkRow {
+    const rows = try arena.alloc(LinkRow, links.len);
+    for (rows, links) |*row, l| row.* = .{
+        .id = l.id,
+        .label = l.label,
+        .meta = try arena.print("{s} · created {s} · {s}{s}", .{
+            l.detail.label(),
+            format.ago(arena, l.created_at),
+            if (l.last_used_at != null) "last fetched " else "never fetched",
+            if (l.last_used_at) |at| format.ago(arena, at) else "",
+        }),
+    };
+    return rows;
+}
+
+pub const options: zx.PageOptions = .{
+    .methods = &.{ .GET, .POST },
+    .rendering = .request,
+};
+
+const std = @import("std");
+const zx = @import("zx");
+const ui = @import("../../ui.zx");
+const format = @import("../../format.zig");
+const caldav = @import("../../../schedule/caldav.zig");
+const slots = @import("../../../schedule/slots.zig");
+const calendars = @import("../../../schedule/calendars.zig");
+const site = @import("../../../../site.zig");

@@ -2040,3 +2040,428 @@ details.adm-disclosure[open] > summary {
     font: inherit;
     cursor: pointer;
 }
+
+/* --- Calendar ------------------------------------------------------------ */
+
+/* The week fills the content area: full width, and through .adm-page-fill
+   exactly the height left under the top bar, so the page never scrolls.
+   A window too short for the hours scrolls inside the calendar card. */
+.adm-content:has(.adm-cal-page) > * {
+    max-width: none;
+}
+
+.adm-cal-page,
+.adm-cal-fit {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.adm-cal-fit > .adm-cal-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* While a week loads, dim what will change. The buttons stay live: taking
+   pointer events away between pointerdown and click would drop the click. */
+.adm-cal-stats,
+.adm-cal-alloc,
+.adm-cal-card {
+    transition: opacity 0.15s ease;
+}
+
+.adm-cal-body[aria-busy="true"] :is(.adm-cal-stats, .adm-cal-alloc, .adm-cal-card) {
+    opacity: 0.5;
+}
+
+/* One bar: week navigation, totals, tools; time allocation expands below. */
+.adm-cal-bar {
+    flex: none;
+    margin-bottom: 0.75rem;
+}
+
+.adm-cal-bar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.5rem;
+    padding: 0.4rem 0.5rem;
+}
+
+.adm-cal-nav,
+.adm-cal-tools {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.adm-cal-range {
+    margin-left: 0.5rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.adm-cal-syncing {
+    color: var(--adm-muted);
+    transition: color 0.15s ease;
+}
+
+.adm-cal-stats {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.25rem 1.5rem;
+    min-width: 0;
+}
+
+.adm-cal-stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    white-space: nowrap;
+}
+
+.adm-cal-stat strong {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.adm-cal-tools {
+    margin-left: auto;
+}
+
+.adm-cal-expand .adm-icon {
+    transition: transform 0.15s ease;
+    transform: rotate(90deg);
+}
+
+.adm-cal-expand[aria-expanded="true"] .adm-icon {
+    transform: rotate(-90deg);
+}
+
+.adm-cal-alloc {
+    padding: 0.6rem 1rem 0.7rem;
+    border-top: 1px solid var(--adm-border);
+    max-height: 30vh;
+    overflow-y: auto;
+}
+
+.adm-cal-alloc-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+    gap: 0.4rem 2rem;
+}
+
+.adm-cal-alloc-row {
+    display: grid;
+    grid-template-columns: auto minmax(5rem, 9rem) 1fr 4.5rem 2.5rem;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.adm-cal-alloc-row .adm-swatch {
+    margin-top: 0;
+}
+
+.adm-cal-alloc-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.adm-cal-alloc-row strong {
+    font-weight: 600;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.adm-cal-alloc-row .adm-hint {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.adm-cal-card {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.adm-cal-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Hour rows stretch to the space left; below 16px an hour, the card scrolls. */
+.adm-cal {
+    display: grid;
+    grid-template-columns: 3.25rem repeat(7, minmax(0, 1fr));
+    grid-template-rows: auto auto minmax(calc(var(--cal-hours) * 16px), 1fr);
+    height: 100%;
+    min-width: 760px;
+}
+
+.adm-cal-corner {
+    border-bottom: 1px solid var(--adm-border);
+}
+
+.adm-cal-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    padding: 0.6rem 0.6rem 0.5rem;
+    border-left: 1px solid var(--adm-border);
+    border-bottom: 1px solid var(--adm-border);
+    min-width: 0;
+}
+
+.adm-cal-dow {
+    color: var(--adm-muted);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.adm-cal-date {
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.adm-cal-today .adm-cal-date {
+    color: var(--adm-accent);
+}
+
+.adm-cal-sum {
+    color: var(--adm-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.adm-cal-allday-label {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 0.4rem;
+    color: var(--adm-muted);
+    font-size: 10px;
+}
+
+.adm-cal-allday {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 1.75rem;
+    padding: 3px;
+    border-left: 1px solid var(--adm-border);
+    border-bottom: 1px solid var(--adm-border);
+    min-width: 0;
+}
+
+.adm-cal-chip {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--c) 22%, var(--adm-surface));
+    border-left: 3px solid var(--c);
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.adm-cal-gutter,
+.adm-cal-col {
+    position: relative;
+}
+
+.adm-cal-hour {
+    position: absolute;
+    right: 0.4rem;
+    transform: translateY(-50%);
+    color: var(--adm-muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+}
+
+.adm-cal-col {
+    /* A short event near midnight keeps its minimum height inside the day. */
+    overflow-x: visible;
+    overflow-y: clip;
+    border-left: 1px solid var(--adm-border);
+    background: var(--adm-bg);
+    min-width: 0;
+}
+
+.adm-cal-col::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: linear-gradient(to bottom, var(--adm-border) 1px, transparent 1px);
+    background-size: 100% calc(100% / var(--cal-hours));
+    opacity: 0.7;
+}
+
+.adm-cal-work {
+    position: absolute;
+    left: 0;
+    right: 0;
+    background: var(--adm-surface);
+}
+
+.adm-cal-ev {
+    position: absolute;
+    z-index: 1;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-height: 18px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    border-left: 3px solid var(--c);
+    background: color-mix(in srgb, var(--c) 18%, var(--adm-surface));
+    box-shadow: 0 0 0 1px var(--adm-surface);
+    font-size: 11px;
+    line-height: 1.3;
+    overflow: hidden;
+    cursor: default;
+}
+
+.adm-cal-ev:hover {
+    z-index: 3;
+    background: color-mix(in srgb, var(--c) 28%, var(--adm-surface));
+}
+
+.adm-cal-ev-free {
+    background: var(--adm-surface);
+    border: 1px dashed var(--c);
+    border-left: 3px solid var(--c);
+}
+
+/* Overflow clips the time, never the title, when an event is squeezed. */
+.adm-cal-ev > * {
+    flex-shrink: 0;
+}
+
+.adm-cal-ev-short {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.adm-cal-ev-title {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.adm-cal-ev-short .adm-cal-ev-title {
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.adm-cal-ev-time {
+    flex-shrink: 0;
+    color: var(--adm-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.adm-cal-now {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    height: 2px;
+    background: var(--adm-err);
+    pointer-events: none;
+}
+
+.adm-cal-now::before {
+    content: "";
+    position: absolute;
+    left: -4px;
+    top: -3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--adm-err);
+}
+
+.adm-color {
+    width: 2.5rem;
+    height: 32px;
+    padding: 2px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.adm-cal-source {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
+    align-items: center;
+    gap: 0.75rem 1rem;
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid var(--adm-border);
+}
+
+.adm-cal-source:last-child {
+    border-bottom: 0;
+}
+
+.adm-cal-source-name {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.adm-cal-source-name .adm-hint {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.adm-cal-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid var(--adm-border);
+}
+
+.adm-cal-new-link {
+    background: var(--adm-accent-soft);
+    border-bottom: 1px solid var(--adm-border);
+}
+
+.adm-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+}
+
+@media (max-width: 900px) {
+    .adm-cal-source {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .adm-cal-source > .adm-check,
+    .adm-cal-source > .adm-inline-fields {
+        grid-column: 2;
+    }
+}

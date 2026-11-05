@@ -4,28 +4,74 @@ const slots = @import("slots.zig");
 const Interval = slots.Interval;
 
 pub fn busyIntervals(allocator: std.mem.Allocator, multistatus: []const u8, range: Interval) ![]const Interval {
+    var arena_state: std.heap.ArenaAllocator = .init(allocator);
+    defer arena_state.deinit();
+    const all = try events(arena_state.allocator(), multistatus, range, .xml);
+
+    var out: std.ArrayList(Interval) = .empty;
+    errdefer out.deinit(allocator);
+    for (all) |ev| if (ev.busy) try out.append(allocator, .{ .start = ev.start, .end = ev.end });
+    return out.toOwnedSlice(allocator);
+}
+
+pub const Event = struct {
+    start: i64,
+    end: i64,
+    summary: []const u8,
+    all_day: bool,
+    busy: bool,
+    uid: []const u8 = "",
+    location: []const u8 = "",
+};
+
+pub const Encoding = enum { xml, raw };
+
+// Strings are allocated with `allocator` and never freed: use an arena.
+pub fn events(allocator: std.mem.Allocator, data: []const u8, range: Interval, encoding: Encoding) ![]const Event {
     var collector: Collector = .{ .allocator = allocator };
-    errdefer collector.list.deinit(allocator);
     const utc = c.icaltimezone_get_utc_timezone();
     const range_start = c.icaltime_from_timet_with_zone(range.start, 0, utc);
     const range_end = c.icaltime_from_timet_with_zone(range.end, 0, utc);
 
     const end_marker = "END:VCALENDAR";
-    var rest = multistatus;
+    var rest = data;
     while (std.mem.indexOf(u8, rest, "BEGIN:VCALENDAR")) |begin| {
         const end = (std.mem.indexOfPos(u8, rest, begin, end_marker) orelse break) + end_marker.len;
-        const text = try xmlUnescapeZ(allocator, rest[begin..end]);
+        const text = switch (encoding) {
+            .xml => try xmlUnescapeZ(allocator, rest[begin..end]),
+            .raw => try allocator.dupeSentinel(u8, rest[begin..end], 0),
+        };
         defer allocator.free(text);
         rest = rest[end..];
 
         const root = c.icalparser_parse_string(text.ptr) orelse continue;
         defer c.icalcomponent_free(root);
 
+        // Moved or edited occurrences of a series are separate VEVENTs with a
+        // RECURRENCE-ID; the series itself must skip the slot they replace.
+        collector.overrides.clearRetainingCapacity();
         var event = c.icalcomponent_get_first_component(root, c.ICAL_VEVENT_COMPONENT);
         while (event != null) : (event = c.icalcomponent_get_next_component(root, c.ICAL_VEVENT_COMPONENT)) {
-            if (!blocksTime(event)) continue;
-            // libical reads floating times and all-day dates as UTC; they mean local time.
-            collector.shift = if (c.icalcomponent_get_dtstart(event).zone == null) -slots.config.utc_offset_s else 0;
+            const recurrence_id = c.icalcomponent_get_recurrenceid(event);
+            if (c.icaltime_is_null_time(recurrence_id) != 0) continue;
+            try collector.overrides.append(allocator, .{ .uid = uidOf(event), .start = toUnix(recurrence_id) });
+        }
+
+        event = c.icalcomponent_get_first_component(root, c.ICAL_VEVENT_COMPONENT);
+        while (event != null) : (event = c.icalcomponent_get_next_component(root, c.ICAL_VEVENT_COMPONENT)) {
+            if (c.icalcomponent_get_status(event) == c.ICAL_STATUS_CANCELLED) continue;
+            const dtstart = c.icalcomponent_get_dtstart(event);
+            if (c.icaltime_is_null_time(dtstart) != 0) continue;
+            collector.current = .{
+                .uid = try allocator.dupe(u8, uidOf(event)),
+                .is_series = c.icaltime_is_null_time(c.icalcomponent_get_recurrenceid(event)) != 0,
+                .summary = try dupeText(allocator, c.icalcomponent_get_summary(event)),
+                .location = try dupeText(allocator, c.icalcomponent_get_location(event)),
+                .all_day = dtstart.is_date != 0,
+                .busy = blocksTime(event),
+                // libical reads floating times and all-day dates as UTC; they mean local time.
+                .shift = if (dtstart.zone == null) -slots.config.utc_offset_s else 0,
+            };
             c.icalcomponent_foreach_recurrence(event, range_start, range_end, Collector.onSpan, &collector);
             if (collector.failed) return error.OutOfMemory;
         }
@@ -33,24 +79,49 @@ pub fn busyIntervals(allocator: std.mem.Allocator, multistatus: []const u8, rang
     return collector.list.toOwnedSlice(allocator);
 }
 
+fn dupeText(allocator: std.mem.Allocator, text: [*c]const u8) ![]const u8 {
+    return if (text != null) allocator.dupe(u8, std.mem.span(text)) else "";
+}
+
+fn uidOf(event: ?*c.icalcomponent) []const u8 {
+    const uid = c.icalcomponent_get_uid(event);
+    return if (uid != null) std.mem.span(uid) else "";
+}
+
 const Collector = struct {
     allocator: std.mem.Allocator,
-    list: std.ArrayList(Interval) = .empty,
-    shift: i64 = 0,
+    list: std.ArrayList(Event) = .empty,
+    overrides: std.ArrayList(Override) = .empty,
+    current: Current = undefined,
     failed: bool = false,
+
+    const Override = struct { uid: []const u8, start: i64 };
+    const Current = struct { uid: []const u8, is_series: bool, summary: []const u8, location: []const u8, all_day: bool, busy: bool, shift: i64 };
 
     fn onSpan(_: ?*c.icalcomponent, span: [*c]c.icaltime_span, data: ?*anyopaque) callconv(.c) void {
         const self: *Collector = @ptrCast(@alignCast(data));
         const s = span.*;
-        if (s.is_busy == 0 or s.end <= s.start) return;
-        self.list.append(self.allocator, .{ .start = s.start + self.shift, .end = s.end + self.shift }) catch {
+        if (s.end <= s.start) return;
+        const cur = self.current;
+        const start = s.start + cur.shift;
+        if (cur.is_series) for (self.overrides.items) |o| {
+            if (o.start == start and std.mem.eql(u8, o.uid, cur.uid)) return;
+        };
+        self.list.append(self.allocator, .{
+            .start = start,
+            .end = s.end + cur.shift,
+            .summary = cur.summary,
+            .all_day = cur.all_day,
+            .busy = cur.busy,
+            .uid = cur.uid,
+            .location = cur.location,
+        }) catch {
             self.failed = true;
         };
     }
 };
 
 fn blocksTime(event: ?*c.icalcomponent) bool {
-    if (c.icalcomponent_get_status(event) == c.ICAL_STATUS_CANCELLED) return false;
     const transp = c.icalcomponent_get_first_property(event, c.ICAL_TRANSP_PROPERTY);
     return transp == null or c.icalproperty_get_transp(transp) != c.ICAL_TRANSP_TRANSPARENT;
 }
@@ -307,4 +378,42 @@ test "storedEvent reads an event moved in the calendar app" {
     const stored = (try storedEvent(std.testing.allocator, xml)).?;
     try std.testing.expectEqual(Interval{ .start = thu_oct22_3pm_dhaka, .end = thu_oct22_3pm_dhaka + 45 * std.time.s_per_min }, stored.span);
     try std.testing.expectEqual(null, try storedEvent(std.testing.allocator, "<response><status>HTTP/1.1 404 Not Found</status></response>"));
+}
+
+test "events from a raw feed: moved occurrences, free and all-day events" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const tue_oct20_11am_dhaka = 1792472400;
+    const day = std.time.s_per_day;
+    const ics =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:test\r\n" ++
+        "BEGIN:VEVENT\r\nUID:series\r\nDTSTAMP:20261001T000000Z\r\n" ++
+        "DTSTART:20261020T050000Z\r\nDTEND:20261020T060000Z\r\n" ++
+        "RRULE:FREQ=WEEKLY;COUNT=2\r\nSUMMARY:Gym & stretch\r\nLOCATION:Club\\, Dhaka\r\nEND:VEVENT\r\n" ++
+        "BEGIN:VEVENT\r\nUID:series\r\nDTSTAMP:20261001T000000Z\r\nRECURRENCE-ID:20261027T050000Z\r\n" ++
+        "DTSTART:20261028T050000Z\r\nDTEND:20261028T060000Z\r\nSUMMARY:Gym (moved)\r\nEND:VEVENT\r\n" ++
+        "BEGIN:VEVENT\r\nUID:free\r\nDTSTAMP:20261001T000000Z\r\n" ++
+        "DTSTART:20261022T040000Z\r\nDTEND:20261022T050000Z\r\nTRANSP:TRANSPARENT\r\nSUMMARY:Focus\r\nEND:VEVENT\r\n" ++
+        "BEGIN:VEVENT\r\nUID:holiday\r\nDTSTAMP:20261001T000000Z\r\n" ++
+        "DTSTART;VALUE=DATE:20261024\r\nDTEND;VALUE=DATE:20261025\r\nSUMMARY:Holiday\r\nEND:VEVENT\r\n" ++
+        "END:VCALENDAR\r\n";
+
+    const got = try events(arena.allocator(), ics, range_oct19_to_nov2, .raw);
+    try std.testing.expectEqual(4, got.len);
+
+    try std.testing.expectEqual(tue_oct20_11am_dhaka, got[0].start);
+    try std.testing.expectEqualStrings("Gym & stretch", got[0].summary);
+    try std.testing.expectEqualStrings("Club, Dhaka", got[0].location);
+    try std.testing.expectEqualStrings("series", got[0].uid);
+    try std.testing.expectEqual(tue_oct20_11am_dhaka + 8 * day, got[1].start);
+    try std.testing.expectEqualStrings("Gym (moved)", got[1].summary);
+
+    try std.testing.expectEqualStrings("Focus", got[2].summary);
+    try std.testing.expect(!got[2].busy);
+    try std.testing.expect(!got[2].all_day);
+
+    try std.testing.expect(got[3].all_day);
+    try std.testing.expect(got[3].busy);
+    try std.testing.expectEqual(1792778400, got[3].start);
+    try std.testing.expectEqual(1792778400 + day, got[3].end);
 }

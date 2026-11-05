@@ -1,7 +1,7 @@
 const std = @import("std");
 const zx = @import("zx");
 const slots = @import("slots.zig");
-const ical = @import("ical.zig");
+const sources = @import("calendars.zig");
 
 pub const Credentials = struct {
     username: []const u8,
@@ -37,27 +37,15 @@ pub fn loadCredentials(allocator: std.mem.Allocator) !?Credentials {
     };
 }
 
-const cache_key = "busy";
-
 pub fn busy(allocator: std.mem.Allocator, creds: Credentials, range: slots.Interval, use_cache: bool) ![]const slots.Interval {
-    const kv = zx.kv.scoped(.schedule);
-    if (use_cache) if (try kv.get(allocator, cache_key)) |cached| {
-        if (zx.util.zxon.parse([]const slots.Interval, allocator, cached, .{})) |intervals| return intervals else |_| {}
-    };
-
-    const intervals = try ical.busyIntervals(allocator, try report(allocator, creds, range), range);
-    var encoded: std.Io.Writer.Allocating = .init(allocator);
-    try zx.util.zxon.serialize(intervals, &encoded.writer, .{});
-    kv.put(cache_key, encoded.written(), .{ .ttl = .fromSeconds(120) }) catch |err|
-        zx.log.warn("schedule: failed to cache busy times: {any}", .{err});
-    return intervals;
+    return sources.busy(allocator, creds, range, use_cache);
 }
 
 pub fn invalidateBusy() void {
-    zx.kv.scoped(.schedule).delete(cache_key) catch {};
+    sources.invalidateBusy();
 }
 
-fn report(allocator: std.mem.Allocator, creds: Credentials, range: slots.Interval) ![]const u8 {
+pub fn eventsIn(allocator: std.mem.Allocator, creds: Credentials, calendar_url: []const u8, range: slots.Interval) ![]const u8 {
     var start_buf: [16]u8 = undefined;
     var end_buf: [16]u8 = undefined;
     const body = try allocator.print(
@@ -74,7 +62,7 @@ fn report(allocator: std.mem.Allocator, creds: Credentials, range: slots.Interva
         \\</C:calendar-query>
     , .{ formatUtc(&start_buf, range.start), formatUtc(&end_buf, range.end) });
 
-    return send(allocator, creds, creds.calendar_url, "REPORT", &.{
+    return send(allocator, creds, calendar_url, "REPORT", &.{
         .{ .name = "Depth", .value = "1" },
         .{ .name = "Content-Type", .value = "application/xml; charset=utf-8" },
     }, body);
@@ -120,7 +108,7 @@ pub fn getEvents(allocator: std.mem.Allocator, creds: Credentials, resources: []
     return out;
 }
 
-fn urlPath(url: []const u8) []const u8 {
+pub fn urlPath(url: []const u8) []const u8 {
     const scheme = std.mem.indexOf(u8, url, "://") orelse return url;
     const slash = std.mem.indexOfScalarPos(u8, url, scheme + 3, '/') orelse return "/";
     return url[slash..];
@@ -135,7 +123,11 @@ fn eventUrl(allocator: std.mem.Allocator, creds: Credentials, resource: []const 
     return allocator.print("{s}/{s}.ics", .{ std.mem.trimEnd(u8, creds.calendar_url, "/"), resource });
 }
 
-pub const Calendar = struct { name: []const u8, url: []const u8 };
+pub const Calendar = struct {
+    name: []const u8,
+    url: []const u8,
+    color: []const u8 = "",
+};
 
 /// Event calendars of the account: principal, then calendar home, then its calendars.
 pub fn discoverCalendars(allocator: std.mem.Allocator, creds: Credentials, server: []const u8) ![]const Calendar {
@@ -147,7 +139,7 @@ pub fn discoverCalendars(allocator: std.mem.Allocator, creds: Credentials, serve
     const home = try resolve(allocator, principal, elementText(afterTag(home_xml, "calendar-home-set"), "href") orelse
         return error.NoCalendarHome);
 
-    const list_xml = try propfind(allocator, creds, home, "1", "<D:displayname/><D:resourcetype/><C:supported-calendar-component-set/>");
+    const list_xml = try propfind(allocator, creds, home, "1", "<D:displayname/><D:resourcetype/><C:supported-calendar-component-set/><A:calendar-color xmlns:A=\"http://apple.com/ns/ical/\"/>");
     return parseCalendars(allocator, home, list_xml);
 }
 
@@ -161,9 +153,17 @@ fn parseCalendars(allocator: std.mem.Allocator, home: []const u8, xml: []const u
         try calendars.append(allocator, .{
             .name = elementText(piece, "displayname") orelse href,
             .url = try resolve(allocator, home, href),
+            .color = hexColor(elementText(piece, "calendar-color") orelse ""),
         });
     }
     return calendars.toOwnedSlice(allocator);
+}
+
+// Apple sends `#RRGGBBAA`.
+fn hexColor(raw: []const u8) []const u8 {
+    if ((raw.len != 7 and raw.len != 9) or raw[0] != '#') return "";
+    for (raw[1..]) |ch| if (!std.ascii.isHex(ch)) return "";
+    return raw[0..7];
 }
 
 fn propfind(allocator: std.mem.Allocator, creds: Credentials, url: []const u8, depth: []const u8, comptime props: []const u8) ![]const u8 {
@@ -213,6 +213,7 @@ test parseCalendars {
         \\<multistatus xmlns="DAV:"><response><href>/1/calendars/</href><propstat><prop>
         \\<resourcetype><collection/></resourcetype></prop></propstat></response>
         \\<response><href>/1/calendars/home/</href><propstat><prop><displayname>Home</displayname>
+        \\<calendar-color xmlns="http://apple.com/ns/ical/">#FF2968FF</calendar-color>
         \\<resourcetype><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
         \\<supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name="VEVENT"/></supported-calendar-component-set>
         \\</prop></propstat></response>
@@ -224,6 +225,7 @@ test parseCalendars {
     try std.testing.expectEqual(1, calendars.len);
     try std.testing.expectEqualStrings("Home", calendars[0].name);
     try std.testing.expectEqualStrings("https://p52-caldav.icloud.com/1/calendars/home/", calendars[0].url);
+    try std.testing.expectEqualStrings("#FF2968", calendars[0].color);
 
     try std.testing.expectEqualStrings("/1/principal/", elementText(afterTag(
         "<d:current-user-principal><d:href>/1/principal/</d:href></d:current-user-principal>",

@@ -17,6 +17,7 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component, _: void, signed_in:
                     <NavItem href="/admin/questions" label="Questions" kind={.question} active={isUnder(path, "/admin/questions")} badge={.unanswered} />
 
                     <p class="adm-nav-section">Schedule</p>
+                    <NavItem href="/admin/calendar" label="Calendar" kind={.calendar_days} active={isUnder(path, "/admin/calendar")} />
                     <NavItem href="/admin/bookings" label="Bookings" kind={.calendar} active={isUnder(path, "/admin/bookings")} badge={.upcoming} />
                     <NavItem href="/admin/availability" label="Availability" kind={.clock} active={isUnder(path, "/admin/availability")} />
 
@@ -136,6 +137,8 @@ fn isUnder(path: []const u8, prefix: []const u8) bool {
 
 fn crumb(path: []const u8) []const u8 {
     if (isUnder(path, "/admin/questions")) return "Inbox / Questions";
+    if (isUnder(path, "/admin/calendar/sources")) return "Schedule / Calendars";
+    if (isUnder(path, "/admin/calendar")) return "Schedule / Calendar";
     if (isUnder(path, "/admin/bookings")) return "Schedule / Bookings";
     if (isUnder(path, "/admin/availability")) return "Schedule / Availability";
     if (isUnder(path, "/admin/finance/accounts")) return "Finance / Accounts";
