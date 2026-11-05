@@ -28,5 +28,18 @@
 	"assets": {
 		"directory": "./zig-out/static",
 		"binding": "ASSETS"
-	}
+	},
+	  "observability": {
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true
+    },
+  },
 }

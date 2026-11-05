@@ -1,6 +1,6 @@
 pub fn Page(ctx: zx.PageContext) !zx.Component {
     const slug = ctx.request.params.get("id") orelse return error.MissingParameter;
-    const post = try posts_mod.getPostBySlug(ctx.arena, slug);
+    const post = try posts_mod.getPostBySlug(ctx.arena, slug, .html);
     ctx.data.set("title", post.seo_title orelse post.title);
     ctx.data.set("description", post.seo_description orelse post.brief);
 

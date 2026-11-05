@@ -152,7 +152,7 @@ fn getBlogPost(allocator: std.mem.Allocator, args: ?std.json.Value) anyerror!mcp
     const slug = argString(args, "slug") orelse {
         return mcp.ToolResult.err(allocator, "Missing required argument: slug");
     };
-    const post = posts.getPostBySlug(allocator, slug) catch |err| switch (err) {
+    const post = posts.getPostBySlug(allocator, slug, .markdown) catch |err| switch (err) {
         error.PostNotFound => return mcp.ToolResult.err(allocator, "Post not found"),
         else => return err,
     };

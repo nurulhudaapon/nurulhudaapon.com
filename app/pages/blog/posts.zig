@@ -63,7 +63,7 @@ pub fn getPosts(allocator: std.mem.Allocator) GetPostError![]Post {
         };
         if (isDraftFrontmatter(fm)) continue;
 
-        const post = parsePost(allocator, basename, entry.value_ptr.*, false) catch |err| {
+        const post = parsePost(allocator, basename, entry.value_ptr.*, .none) catch |err| {
             std.log.warn("Skipping {s}: {any}", .{ path, err });
             continue;
         };
@@ -75,7 +75,9 @@ pub fn getPosts(allocator: std.mem.Allocator) GetPostError![]Post {
     return slice;
 }
 
-pub fn getPostBySlug(allocator: std.mem.Allocator, slug: []const u8) GetPostError!Post {
+pub const Body = enum { none, markdown, html };
+
+pub fn getPostBySlug(allocator: std.mem.Allocator, slug: []const u8, comptime body: Body) GetPostError!Post {
     const archive = git.fetchDefaultArchive(allocator) catch |err| {
         std.log.err("Failed to fetch blog archive: {any}", .{err});
         return error.FailedToFetchPosts;
@@ -92,7 +94,7 @@ pub fn getPostBySlug(allocator: std.mem.Allocator, slug: []const u8) GetPostErro
         const file_slug = fm.slug orelse slugFromFilename(basename) orelse continue;
         if (!std.mem.eql(u8, file_slug, slug)) continue;
 
-        return parsePost(allocator, basename, entry.value_ptr.*, true) catch |err| {
+        return parsePost(allocator, basename, entry.value_ptr.*, body) catch |err| {
             std.log.err("Failed to parse post {s}: {any}", .{ path, err });
             return error.FailedToParsePosts;
         };
@@ -176,7 +178,7 @@ fn isDraftFrontmatter(fm: Frontmatter) bool {
     return false;
 }
 
-fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const u8, with_html: bool) !Post {
+fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const u8, comptime with: Body) !Post {
     const split = try splitFrontmatter(source);
     const fm = try parseFrontmatterFields(split.meta);
     if (isDraftFrontmatter(fm)) return error.FailedToParsePosts;
@@ -191,10 +193,11 @@ fn parsePost(allocator: std.mem.Allocator, filename: []const u8, source: []const
     else
         try makeBrief(allocator, body);
 
-    const content: ?[]const u8 = if (with_html)
-        try render.renderMarkdown(allocator, body)
-    else
-        null;
+    const content: ?[]const u8 = switch (with) {
+        .none => null,
+        .markdown => try allocator.dupe(u8, body),
+        .html => try render.renderMarkdown(allocator, body),
+    };
 
     return .{
         .id = try allocator.dupe(u8, slug),

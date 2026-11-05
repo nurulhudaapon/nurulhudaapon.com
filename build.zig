@@ -41,6 +41,12 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
+    // ziex turns on rdynamic for wasi, turning of to reduce binary size
+    if (target.result.os.tag == .wasi) {
+        app_exe.rdynamic = false;
+        app_exe.root_module.export_symbol_names = &.{ "__zx_serve", "__zx_cb", "__zx_alloc", "__zx_free" };
+    }
+
     ziex_b.addImport("lunasvg", b.dependency("lunasvg", .{
         .target = target,
         .optimize = optimize,

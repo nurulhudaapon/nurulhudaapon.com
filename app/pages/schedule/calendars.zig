@@ -188,32 +188,50 @@ pub fn savePrefs(arena: std.mem.Allocator, prefs: Prefs) !void {
     invalidate();
 }
 
-// Kept for a month so any week seen before shows instantly. `max_age` null
-// takes any cached copy, 0 always fetches. `at` is when the events were fetched.
+// One cached copy per calendar covers `window(now)`; every view reads from it, so
+// a feed is fetched and parsed once per refresh instead of once per range.
+// `max_age` null takes any cached copy, 0 always fetches. `at` is when the events
+// were fetched.
 const keep_s = 30 * std.time.s_per_day;
 
-const Cached = struct { at: i64, events: []const ical.Event };
+pub fn window(now: i64) Interval {
+    const start = week.weekStart(now, .sun) - 5 * std.time.s_per_week;
+    return .{ .start = start, .end = start + 32 * std.time.s_per_week };
+}
+
+const Cached = struct { at: i64, window: Interval, events: []const ical.Event };
 
 pub const Fetched = struct { events: []const ical.Event, at: i64, failed: bool = false };
 
 pub fn events(arena: std.mem.Allocator, creds: ?caldav.Credentials, source: Source, range: Interval, max_age: ?i64) !Fetched {
-    const kv = zx.kv.scoped(.calendar);
-    const key = try arena.print("events:{d}:{d}:{d}", .{ source.id, range.start, range.end });
     const now = std.Io.Timestamp.now(zx.Io.default(), .real).toSeconds();
-    const cached: ?Cached = if (try kv.get(arena, key)) |raw| zx.util.zxon.parse(Cached, arena, raw, .{}) catch null else null;
-    if (cached) |c| if (max_age == null or now - c.at <= max_age.?)
-        return .{ .events = c.events, .at = c.at };
+    const win = window(now);
+    // Weeks far from today aren't worth caching.
+    if (range.start < win.start or range.end > win.end)
+        return .{ .events = try fetchEvents(arena, creds, source.kind, source.url, range), .at = now };
 
-    const found = fetchEvents(arena, creds, source.kind, source.url, range) catch |err| {
+    const kv = zx.kv.scoped(.calendar);
+    const key = try arena.print("events:{d}", .{source.id});
+    const cached: ?Cached = if (try kv.get(arena, key)) |raw| zx.util.zxon.parse(Cached, arena, raw, .{}) catch null else null;
+    if (cached) |c| if (std.meta.eql(c.window, win) and (max_age == null or now - c.at <= max_age.?))
+        return .{ .events = try overlapping(arena, c.events, range), .at = c.at };
+
+    const found = fetchEvents(arena, creds, source.kind, source.url, win) catch |err| {
         const c = cached orelse return err;
         zx.log.warn("calendar: refreshing {s} failed, using the cached copy: {any}", .{ source.name, err });
-        return .{ .events = c.events, .at = c.at, .failed = true };
+        return .{ .events = try overlapping(arena, c.events, range), .at = c.at, .failed = true };
     };
     var encoded: std.Io.Writer.Allocating = .init(arena);
-    try zx.util.zxon.serialize(Cached{ .at = now, .events = found }, &encoded.writer, .{});
+    try zx.util.zxon.serialize(Cached{ .at = now, .window = win, .events = found }, &encoded.writer, .{});
     kv.put(key, encoded.written(), .{ .ttl = .fromSeconds(keep_s) }) catch |err|
         zx.log.warn("calendar: failed to cache events of {s}: {any}", .{ source.name, err });
-    return .{ .events = found, .at = now };
+    return .{ .events = try overlapping(arena, found, range), .at = now };
+}
+
+fn overlapping(arena: std.mem.Allocator, all: []const ical.Event, range: Interval) ![]const ical.Event {
+    var out: std.ArrayList(ical.Event) = .empty;
+    for (all) |ev| if (ev.end > range.start and ev.start < range.end) try out.append(arena, ev);
+    return out.items;
 }
 
 fn fetchEvents(arena: std.mem.Allocator, creds: ?caldav.Credentials, kind: Kind, url: []const u8, range: Interval) ![]const ical.Event {
@@ -388,10 +406,8 @@ pub fn renderFeed(arena: std.mem.Allocator, detail: Detail, now: i64) ![]const u
     const cache_key = try arena.print(feed_key ++ "{s}", .{@tagName(detail)});
     if (try kv.get(arena, cache_key)) |cached| return cached;
 
-    // Week-aligned so the per-calendar event caches are reused between refreshes.
     const prefs = loadPrefs(arena);
-    const start = week.weekStart(now, prefs.week_start) - 5 * std.time.s_per_week;
-    const range: Interval = .{ .start = start, .end = start + 32 * std.time.s_per_week };
+    const range = window(now);
     const creds = caldav.loadCredentials(arena) catch null;
 
     var items: std.ArrayList(feed.Item) = .empty;

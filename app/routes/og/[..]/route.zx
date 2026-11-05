@@ -66,7 +66,7 @@ fn getOgImageData(allocator: std.mem.Allocator, path: []const u8) !OgTemplatePro
 
     if (std.mem.startsWith(u8, path, "blog/")) {
         const slug = path["blog/".len..];
-        if (posts.getPostBySlug(allocator, slug)) |post| {
+        if (posts.getPostBySlug(allocator, slug, .none)) |post| {
             const title = try truncate(allocator, stripTrailingEmoji(post.title), 56);
             const title_size = blogTitleSize(title);
             const meta = try allocator.print("{s}  ·  {s}  ·  {d} min read", .{
