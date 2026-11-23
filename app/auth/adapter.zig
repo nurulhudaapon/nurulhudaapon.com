@@ -4,40 +4,30 @@
 
 const home = "/admin";
 
-const Host = struct { request: zx.server.Request, response: zx.server.Response, io: std.Io };
-
 pub fn of(ctx: anytype) !Auth {
-    const host = try ctx.arena.create(Host);
-    host.* = .{ .request = ctx.request, .response = ctx.response, .io = ctx.io };
-    return .{
-        .io = ctx.io,
-        .userdata = host,
-        .vtable = &vtable,
+    return .init(ctx, .{ .vtable = &store }, .{
         .origin = site.origin(ctx.request),
         .site_name = "nurulhudaapon.com",
         .home = home,
-        .providers = &.{Auth.OAuth.providers.github},
-    };
+        .providers = &.{Auth.Oauth.providers.github},
+    });
 }
 
 // Sign-in runs on the canonical origin: cookies are per host and providers allow one callback.
+pub fn loginPage(arena: std.mem.Allocator, request: zx.server.Request) []const u8 {
+    return arena.print("{s}/auth/login", .{site.origin(request)}) catch "/auth/login";
+}
+
 pub fn loginUrl(arena: std.mem.Allocator, request: zx.server.Request, next: []const u8) []const u8 {
     return withNext(arena, request, "/auth/login", next) catch "/auth/login";
 }
 
-pub fn startUrl(arena: std.mem.Allocator, request: zx.server.Request, p: Auth.OAuth.Provider, next: []const u8) ![]const u8 {
+pub fn startUrl(arena: std.mem.Allocator, request: zx.server.Request, p: Auth.Oauth.Provider, next: []const u8) ![]const u8 {
     return withNext(arena, request, try arena.print("/auth/start/{s}", .{p.id}), next);
 }
 
 pub fn withNext(arena: std.mem.Allocator, request: zx.server.Request, path: []const u8, next: []const u8) ![]const u8 {
-    var out: std.Io.Writer.Allocating = .init(arena);
-    try out.writer.print("{s}{s}?next=", .{ site.origin(request), path });
-    try std.Uri.Component.percentEncode(&out.writer, next, isPathChar);
-    return out.toOwnedSlice();
-}
-
-fn isPathChar(c: u8) bool {
-    return std.ascii.isAlphanumeric(c) or std.mem.indexOfScalar(u8, "-._~/", c) != null;
+    return Auth.withNext(arena, try arena.print("{s}{s}", .{ site.origin(request), path }), next);
 }
 
 pub fn hasPasskeys(arena: std.mem.Allocator) bool {
@@ -45,11 +35,8 @@ pub fn hasPasskeys(arena: std.mem.Allocator) bool {
     return found != null;
 }
 
-const vtable: Auth.VTable = .{
-    .cookie = cookie,
-    .setCookie = setCookie,
+const store: Auth.Store.VTable = .{
     .config = config,
-    .fetch = fetch,
     .authorize = authorize,
     .putSession = putSession,
     .getSession = getSession,
@@ -61,36 +48,16 @@ const vtable: Auth.VTable = .{
     .deletePasskey = deletePasskey,
 };
 
-fn hostOf(ud: ?*anyopaque) *Host {
-    return @ptrCast(@alignCast(ud));
-}
-
-fn cookie(ud: ?*anyopaque, name: []const u8) ?[]const u8 {
-    return hostOf(ud).request.cookies.get(name);
-}
-
-fn setCookie(ud: ?*anyopaque, c: Auth.Cookie) void {
-    hostOf(ud).response.cookies.set(c.name, c.value, .{
-        .path = c.path,
-        .secure = c.secure,
-        .http_only = c.http_only,
-        .same_site = switch (c.same_site) {
-            inline else => |s| @field(zx.server.Response.CookieOptions.SameSite, @tagName(s)),
-        },
-        .max_age = .fromSeconds(c.max_age_s),
-    });
-}
-
-fn config(_: ?*anyopaque, arena: std.mem.Allocator, provider: []const u8) ?Auth.OAuth.Config {
+fn config(_: ?*anyopaque, arena: std.mem.Allocator, provider: []const u8) ?Auth.Oauth.Config {
     const prefix = arena.print("oauth_{s}_", .{provider}) catch return null;
     const rows = zx.db.rows(arena, struct { cat: []const u8, val: []const u8 },
         \\SELECT cat, val FROM credentials
         \\WHERE cat IN (?1 || 'client_id', ?1 || 'client_secret')
     , .{prefix}) catch return null;
 
-    var cfg: Auth.OAuth.Config = .{ .client_id = "", .client_secret = "" };
+    var cfg: Auth.Oauth.Config = .{ .client_id = "", .client_secret = "" };
     for (rows) |r| {
-        const field = std.meta.stringToEnum(std.meta.FieldEnum(Auth.OAuth.Config), r.cat[prefix.len..]) orelse continue;
+        const field = std.meta.stringToEnum(std.meta.FieldEnum(Auth.Oauth.Config), r.cat[prefix.len..]) orelse continue;
         switch (field) {
             inline else => |f| @field(cfg, @tagName(f)) = r.val,
         }
@@ -104,28 +71,6 @@ fn authorize(_: ?*anyopaque, arena: std.mem.Allocator, owner: Auth.Account) anye
     var ids = std.mem.tokenizeAny(u8, allowed, ", \t\r\n");
     while (ids.next()) |id| if (std.mem.eql(u8, id, owner.id)) return true;
     return false;
-}
-
-fn fetch(ud: ?*anyopaque, arena: std.mem.Allocator, request: Auth.OAuth.Request) anyerror![]const u8 {
-    var headers: std.ArrayList(zx.http.Header) = .empty;
-    try headers.appendSlice(arena, request.headers);
-    try headers.append(arena, .{ .name = "User-Agent", .value = "nurulhudaapon.com" });
-
-    var client: zx.http.Client = .{ .io = hostOf(ud).io, .allocator = arena };
-    defer client.deinit();
-    const response = try client.fetch(.{
-        .url = request.url,
-        .method = request.method,
-        .headers = headers.items,
-        .payload = request.body,
-        .timeout = .{ .duration = .{ .raw = .fromMilliseconds(10_000), .clock = .awake } },
-    });
-    defer response.deinit(arena);
-    if (response.status.class() != .success) {
-        zx.log.warn("auth: {s} returned {d}", .{ request.url, @backingInt(response.status) });
-        return error.ProviderError;
-    }
-    return arena.dupe(u8, response.body);
 }
 
 fn putSession(_: ?*anyopaque, token_hash: []const u8, owner: Auth.Account, max_age_s: i64) anyerror!void {
@@ -220,6 +165,6 @@ fn deletePasskey(_: ?*anyopaque, id: []const u8, owner: Auth.Account) anyerror!v
 
 const std = @import("std");
 const zx = @import("zx");
-const Auth = @import("auth");
+const Auth = zx.Auth;
 const credentials = @import("../db/credentials.zig");
 const site = @import("../site.zig");

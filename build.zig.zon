@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .ziex = .{
-            .url = "git+https://github.com/ziex-dev/ziex#f8387ea5715a2f8f914146a8ebc1fbf5c6c1472a",
-            .hash = "ziex-0.2.0-dev-Z3YcvZvGnQFXmuMG0jRxPtBSLepHyWQavOTeIqQVBB9K",
+            .url = "git+https://github.com/ziex-dev/ziex#d9bb6b95d6b51f8cc1815696a9fe2186dff0fa3f",
+            .hash = "ziex-0.2.0-dev-Z3YcvUmInwGBBqYTgW_vbo0fikigBid9QGmIzf7Rwu3g",
         },
         .markz = .{
             .url = "git+https://codeberg.org/nurulhudaapon/markz.git?ref=zig-0.17#19af600075fc60775e89a3430dadd94299b13e14",
@@ -29,9 +29,6 @@
         },
         .mcp = .{
             .path = "lib/mcp",
-        },
-        .auth = .{
-            .path = "lib/auth",
         },
         .xml = .{
             .url = "git+https://github.com/ianprime0509/zig-xml.git#4beab29d68ab308af4bd12a4fc4187c24fdad0d6",

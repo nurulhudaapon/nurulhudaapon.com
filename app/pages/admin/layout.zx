@@ -157,4 +157,4 @@ const std = @import("std");
 const zx = @import("zx");
 const ui = @import("ui.zx");
 const badges = @import("badges/route.zig");
-const Auth = @import("auth");
+const Auth = zx.Auth;

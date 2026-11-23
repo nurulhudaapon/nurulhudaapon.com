@@ -250,5 +250,5 @@ const credentials = @import("../../../db/credentials.zig");
 const settings = @import("../../../schedule.zig").settings;
 const format = @import("../format.zig");
 const adapter = @import("../../../auth/adapter.zig");
-const Auth = @import("auth");
+const Auth = zx.Auth;
 const passkey_ui = @import("../../auth/passkey.zx");
