@@ -6,10 +6,11 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
 
     var available: std.ArrayList(Option) = .empty;
     for (try auth.availableProviders(ctx.arena)) |p| {
-        try available.append(ctx.arena, .{ .name = p.name, .href = try adapter.startUrl(ctx.arena, ctx.request, p, next) });
+        try available.append(ctx.arena, .{ .name = p.name, .href = try auth.startUrl(ctx.arena, p.id, next) });
     }
     const has_passkeys = adapter.hasPasskeys(ctx.arena);
-    const passkey_verify = try adapter.withNext(ctx.arena, ctx.request, "/auth/passkey/login", next);
+    const passkey_options = try auth.url(ctx.arena, .@"passkey/login/options");
+    const passkey_verify = try Auth.withNext(ctx.arena, try auth.url(ctx.arena, .@"passkey/login"), next);
     const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "signed_out", "Signed out." },
         .{ "not_allowed", "That account isn't allowed to sign in here." },
@@ -40,7 +41,7 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                         type="button"
                         class="adm-btn adm-login-btn"
                         data-passkey="login"
-                        data-options="/auth/passkey/login/options"
+                        data-options={passkey_options}
                         data-verify={passkey_verify}
                         data-error="/auth/login?err=passkey"
                     >
@@ -61,4 +62,5 @@ const std = @import("std");
 const zx = @import("zx");
 const ui = @import("../../admin/ui.zx");
 const adapter = @import("../../../auth/adapter.zig");
+const Auth = zx.Auth;
 const passkey_ui = @import("../passkey.zx");

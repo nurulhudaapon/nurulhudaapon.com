@@ -44,7 +44,7 @@ pub fn Page(ctx: zx.PageContext, _: void, owner: ?Auth.Account) !zx.Component {
                         </div>
                         <div class="adm-stack-fields">
                             {for (keys) |k| (
-                                <form method="post" action="/auth/passkey/remove" class="adm-passkey">
+                                <form method="post" action={adapter.url(ctx, .@"passkey/remove")} class="adm-passkey">
                                     <div>
                                         <p class="adm-item-title">{k.name}</p>
                                         <p class="adm-hint">{k.meta}</p>
@@ -62,8 +62,8 @@ pub fn Page(ctx: zx.PageContext, _: void, owner: ?Auth.Account) !zx.Component {
                                     type="button"
                                     class="adm-btn adm-btn-primary"
                                     data-passkey="register"
-                                    data-options="/auth/passkey/register/options"
-                                    data-verify="/auth/passkey/register"
+                                    data-options={adapter.url(ctx, .@"passkey/register/options")}
+                                    data-verify={adapter.url(ctx, .@"passkey/register")}
                                     data-name="passkey_name"
                                     data-error="/admin/settings?err=passkey"
                                     data-exists="/admin/settings?err=passkey_exists"

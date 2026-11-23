@@ -9,25 +9,16 @@ pub fn of(ctx: anytype) !Auth {
         .origin = site.origin(ctx.request),
         .site_name = "nurulhudaapon.com",
         .home = home,
+        .account_path = "/admin/settings",
         .providers = &.{Auth.Oauth.providers.github},
     });
 }
 
-// Sign-in runs on the canonical origin: cookies are per host and providers allow one callback.
-pub fn loginPage(arena: std.mem.Allocator, request: zx.server.Request) []const u8 {
-    return arena.print("{s}/auth/login", .{site.origin(request)}) catch "/auth/login";
-}
-
-pub fn loginUrl(arena: std.mem.Allocator, request: zx.server.Request, next: []const u8) []const u8 {
-    return withNext(arena, request, "/auth/login", next) catch "/auth/login";
-}
-
-pub fn startUrl(arena: std.mem.Allocator, request: zx.server.Request, p: Auth.Oauth.Provider, next: []const u8) ![]const u8 {
-    return withNext(arena, request, try arena.print("/auth/start/{s}", .{p.id}), next);
-}
-
-pub fn withNext(arena: std.mem.Allocator, request: zx.server.Request, path: []const u8, next: []const u8) ![]const u8 {
-    return Auth.withNext(arena, try arena.print("{s}{s}", .{ site.origin(request), path }), next);
+// For templates, which can't fail: the endpoint URL, or its default path.
+pub fn url(ctx: anytype, comptime endpoint: Auth.Endpoint) []const u8 {
+    const fallback = "/auth/" ++ @tagName(endpoint);
+    const auth = of(ctx) catch return fallback;
+    return auth.url(ctx.arena, endpoint) catch fallback;
 }
 
 pub fn hasPasskeys(arena: std.mem.Allocator) bool {

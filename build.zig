@@ -54,7 +54,6 @@ pub fn build(b: *std.Build) !void {
 
     ziex_b.addImport("geist_fonts", addGeistFontsModule(b));
     ziex_b.addImport("highlight", b.dependency("highlight", .{ .target = target, .optimize = optimize }).module("highlight"));
-    ziex_b.addImport("mcp", b.dependency("mcp", .{ .target = target, .optimize = optimize }).module("mcp"));
     const xml_mod = b.dependency("xml", .{ .target = target, .optimize = optimize }).module("xml");
     ziex_b.addImport("xml", xml_mod);
 

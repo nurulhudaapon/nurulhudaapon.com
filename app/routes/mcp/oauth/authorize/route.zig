@@ -1,5 +1,0 @@
-const zx = @import("zx");
-
-pub const GET = @import("../../../../mcp/oauth/authorize.zig").handle;
-
-pub const options: zx.RouteOptions = .{ .rendering = .request };

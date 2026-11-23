@@ -50,7 +50,7 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component, _: void, signed_in:
                             {ui.icon(ctx.arena, .user)}
                         </span>
                         {if (signed_in != null) (
-                            <form method="post" action="/auth/logout" class="adm-inline">
+                            <form method="post" action={adapter.url(ctx, .logout)} class="adm-inline">
                                 <button class="adm-topbar-link adm-link-button" type="submit">Sign out</button>
                             </form>
                         )}
@@ -158,3 +158,4 @@ const zx = @import("zx");
 const ui = @import("ui.zx");
 const badges = @import("badges/route.zig");
 const Auth = zx.Auth;
+const adapter = @import("../../auth/adapter.zig");

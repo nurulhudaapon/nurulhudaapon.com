@@ -18,6 +18,7 @@ const migrations = [_]Migration{
     .{ .name = "0013_finance_positions.sql", .sql = @embedFile("migrations/0013_finance_positions.sql") },
     .{ .name = "0014_calendars.sql", .sql = @embedFile("migrations/0014_calendars.sql") },
     .{ .name = "0015_calendar_feeds.sql", .sql = @embedFile("migrations/0015_calendar_feeds.sql") },
+    .{ .name = "0016_mcp_hashed_tokens.sql", .sql = @embedFile("migrations/0016_mcp_hashed_tokens.sql") },
 };
 
 pub fn run() !void {

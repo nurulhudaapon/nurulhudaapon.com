@@ -4,7 +4,7 @@ pub fn Proxy(ctx: *zx.ProxyContext) void {
         ctx.response.setStatus(.internal_server_error);
         return ctx.abort();
     };
-    const owner = auth.guard(ctx, adapter.loginPage(ctx.arena, ctx.request)) orelse return;
+    const owner = auth.guard(ctx, auth.loginUrl(ctx.arena, null) catch "/auth/login") orelse return;
     ctx.state(@as(?Auth.Account, owner));
 }
 

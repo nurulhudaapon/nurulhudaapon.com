@@ -1,5 +1,7 @@
 const std = @import("std");
-const mcp = @import("mcp");
+const zx = @import("zx");
+const mcp = zx.mcp;
+const store = @import("store.zig");
 const posts = @import("../blog.zig").posts;
 const slots = @import("../schedule.zig").slots;
 const settings = @import("../schedule.zig").settings;
@@ -11,11 +13,11 @@ const finance = @import("../finance.zig");
 const fx = @import("../finance/fx.zig");
 const ask = @import("../ask.zig");
 
-pub fn handle(arena: std.mem.Allocator, io: std.Io, body: []const u8) ![]u8 {
-    var request: Request = .{ .arena = arena, .io = io };
-    var server = try create(arena);
+pub fn serve(ctx: zx.RouteContext) !void {
+    var request: Request = .{ .arena = ctx.arena, .io = ctx.io };
+    var server = try create(ctx.arena);
     defer server.deinit();
-    return server.handleMessage(arena, &request, body);
+    return store.endpoint(ctx).handle(ctx, &server, &request);
 }
 
 const Request = struct {
