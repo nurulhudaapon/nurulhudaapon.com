@@ -1471,6 +1471,44 @@ details.adm-disclosure[open] > summary {
     line-height: 1.25rem;
 }
 
+/* Portfolio: the hidable net worth card, then the streamed pair of KPIs. */
+.adm-kpis-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+}
+
+.adm-kpis-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    height: 100%;
+}
+
+.adm-kpis .adm-glance {
+    padding: 1.25rem;
+}
+
+.adm-kpis .adm-glance-value {
+    font-size: 1.75rem;
+    margin: 0.25rem 0;
+    line-height: 2.625rem;
+}
+
+/* Bulk cash balance update. */
+.adm-cash-input {
+    width: 10rem;
+    max-width: 100%;
+}
+
+.adm-cash-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--adm-border);
+}
+
 .adm-alloc {
     margin-bottom: 1rem;
 }
@@ -1727,6 +1765,7 @@ details.adm-disclosure[open] > summary {
 
 @media (max-width: 900px) {
     .adm-kpis,
+    .adm-kpis-pair,
     .adm-split,
     .adm-alloc-body,
     .adm-alloc-row,

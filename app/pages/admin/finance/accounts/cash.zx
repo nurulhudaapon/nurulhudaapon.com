@@ -1,0 +1,193 @@
+// Every manual cash account in one form, so a monthly balance refresh is one save.
+
+pub const Row = struct {
+    id: i64,
+    name: []const u8,
+    sub: []const u8,
+    currency: []const u8,
+    // The input's starting value, in the account's currency.
+    balance: []const u8,
+    needs_update: bool = false,
+    err: []const u8 = "",
+};
+
+const State = struct {
+    rows: []const Row = &.{},
+    err: []const u8 = "",
+    reload: bool = false,
+};
+
+// Manual, non-liability, still counted, and either typed or classed as cash.
+pub fn rows(arena: zx.Allocator, accounts: []const finance.accounts.Account, now: i64) []const Row {
+    var out: std.ArrayList(Row) = .empty;
+    for (accounts) |a| {
+        if (!isCash(a)) continue;
+        out.append(arena, .{
+            .id = a.id,
+            .name = a.name,
+            .sub = if (a.institution.len > 0) a.institution else a.type_label,
+            .currency = a.currency,
+            .balance = arena.print("{d}", .{a.net_liquidation}) catch "",
+            .needs_update = a.needsUpdate(now),
+        }) catch return out.items;
+    }
+    return out.items;
+}
+
+fn isCash(a: finance.accounts.Account) bool {
+    if (!std.mem.eql(u8, a.broker, "manual") or a.isLiability() or a.isStale()) return false;
+    return std.mem.eql(u8, a.account_type, "cash") or std.ascii.eqlIgnoreCase(a.asset_class, "Cash");
+}
+
+pub fn CashBalances(ctx: *zx.ComponentCtx(struct { rows: []const Row })) zx.Component {
+    const card = ctx.state(State, .{ .rows = ctx.props.rows });
+    if (comptime zx.platform.role == .client) reload.target = card;
+    const save = ctx.action(saveBalances, .{ .on_settle = reload.schedule });
+    const alloc = ctx.allocator;
+    const state = card.get();
+    const busy = save.pending or state.reload;
+
+    return (
+        <section @allocator={alloc} id="cash" class="adm-card adm-card-gap">
+            <div class="adm-section-head">
+                <span>Cash balances</span>
+                <span class="adm-hint">Saving stamps every row as updated today</span>
+            </div>
+            <form action={save}>
+                <div class="adm-table-wrap">
+                    <table class="adm-table">
+                        <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th>Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {for (state.rows) |r| (
+                                <tr>
+                                    <td>
+                                        <label class="adm-table-title" for={inputName(alloc, r.id)}>{r.name}</label>
+                                        {if (r.err.len > 0) (
+                                            <span class="adm-table-sub adm-text-err" role="status">{r.err}</span>
+                                        ) else (
+                                            <span class="adm-table-sub">
+                                                {r.sub}
+                                                {if (r.needs_update) (
+                                                    <span class="adm-pill adm-pill-warn" title="Manual balance not updated in 30+ days">Needs update</span>
+                                                )}
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td>
+                                        <div class="adm-inline-fields">
+                                            <input
+                                                class="adm-input adm-cash-input"
+                                                type="number"
+                                                id={inputName(alloc, r.id)}
+                                                name={inputName(alloc, r.id)}
+                                                value={r.balance}
+                                                min="0"
+                                                step="any"
+                                                inputmode="decimal"
+                                                disabled={busy}
+                                            />
+                                            <span class="adm-hint">{r.currency}</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="adm-cash-foot">
+                    {if (state.err.len > 0) (
+                        <span class="adm-hint adm-text-err" role="status">{state.err}</span>
+                    )}
+                    <button class="adm-btn adm-btn-primary" type="submit" disabled={busy}>
+                        {if (save.pending) "Saving…" else if (state.reload) "Saved" else "Save all"}
+                    </button>
+                </div>
+            </form>
+        </section>
+    );
+}
+
+fn inputName(arena: zx.Allocator, id: i64) []const u8 {
+    return arena.print("cash-{d}", .{id}) catch "";
+}
+
+// Blank inputs are left alone; the rest save independently so one bad value
+// doesn't block the others.
+pub fn saveBalances(a: *zx.server.Action.Stateful) void {
+    const card = a.state(State);
+    const arena = a.inner.arena;
+    const fd = a.inner.request.formData();
+    const current = card.get();
+
+    const next_rows = arena.alloc(Row, current.rows.len) catch return;
+    var failed: usize = 0;
+    var saved: usize = 0;
+    for (current.rows, next_rows) |r, *out| {
+        out.* = r;
+        out.err = "";
+        const raw = std.mem.trim(u8, fd.get(inputName(arena, r.id)) orelse "", " \t\r\n");
+        if (raw.len == 0) continue;
+        out.balance = raw;
+        const balance = std.fmt.parseFloat(f64, raw) catch {
+            out.err = "Enter a number.";
+            failed += 1;
+            continue;
+        };
+        finance.accounts.updateBalance(arena, a.inner.io, r.id, balance) catch |err| {
+            out.err = switch (err) {
+                error.InvalidAmount => "Enter a balance of zero or more.",
+                error.AccountMissing => "Account is gone or no longer manual.",
+                else => blk: {
+                    zx.log.err("admin: bulk cash update failed for {d}: {any}", .{ r.id, err });
+                    break :blk "Couldn't save. Check the server logs.";
+                },
+            };
+            failed += 1;
+            continue;
+        };
+        out.needs_update = false;
+        saved += 1;
+    }
+    if (saved > 0) shared.changed();
+
+    card.set(.{
+        .rows = next_rows,
+        .err = if (failed == 0) "" else a.fmt("{d} saved, {d} need a fix.", .{ saved, failed }) catch "",
+        .reload = failed == 0 and saved > 0,
+    });
+}
+
+// Totals, weights, and the accounts table above come from the server, so a
+// clean save reloads the page to pick them up.
+const reload = struct {
+    var target: ?*zx.State(State) = null;
+
+    const delay_ms = 500;
+    const to = "/admin/finance/accounts?ok=cash_saved";
+
+    fn schedule(outcome: zx.ActionHandle.Outcome) void {
+        if (outcome != .ok) return;
+        _ = zx.client.setTimeout(run, .fromMilliseconds(delay_ms));
+    }
+
+    fn run() void {
+        if (comptime zx.platform.role != .client) return;
+        if (!(target orelse return).get().reload) return;
+        const js = zx.client.js;
+        const location = js.global.get(js.Object, "location") catch return;
+        defer location.deinit();
+        location.call(void, "replace", .{js.string(to)}) catch {};
+    }
+};
+
+pub const saved_message = "Cash balances updated.";
+
+const std = @import("std");
+const zx = @import("zx");
+const finance = @import("../../../../finance.zig");
+const shared = @import("../view.zig");

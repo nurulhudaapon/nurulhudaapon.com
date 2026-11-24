@@ -1,26 +1,11 @@
+// Net worth lives in the hidable `NetWorthGlance` beside these.
 pub fn Kpis(ctx: *zx.ComponentCtx(struct { loading: bool })) zx.Component {
     const arena = ctx.allocator;
     const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
     const summary: ?finance.portfolio.Summary = if (ctx.props.loading) null else finance.portfolio.summary(arena) catch null;
 
     return (
-        <div @allocator={arena} class="adm-kpis">
-            <div class="adm-kpi">
-                <p class="adm-label">Net worth</p>
-                <p class="adm-kpi-lg">
-                    {if (summary) |s| finance.format.money(arena, s.net_worth, "USD") else "…"}
-                </p>
-                <p class="adm-hint">
-                    {if (summary) |s| (
-                        <span>
-                            {finance.format.money(arena, s.net_worth_bdt, "BDT")}
-                            · 1 USD = {finance.format.money(arena, s.usd_bdt_rate, "BDT")}
-                        </span>
-                    ) else (
-                        <span>… · …</span>
-                    )}
-                </p>
-            </div>
+        <div @allocator={arena} class="adm-kpis-pair">
             <div class="adm-kpi">
                 <p class="adm-label">Invested</p>
                 <p class="adm-kpi-val">

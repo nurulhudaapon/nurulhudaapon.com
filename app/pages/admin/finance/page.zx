@@ -14,11 +14,14 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
         <div @allocator={ctx.arena}>
             <Toolbar @client page={.portfolio} needs_ibkr={!ibkr.token_set or ibkr.query_id.len == 0} flash={flash} />
 
-            <div
-                @async={.stream}
-                @fallback={(<Kpis loading={true} />)}
-            >
-                <Kpis loading={false} @caching="15s:finance_kpis" />
+            <div class="adm-kpis adm-kpis-split">
+                <NetWorthGlance @client link={false} />
+                <div
+                    @async={.stream}
+                    @fallback={(<Kpis loading={true} />)}
+                >
+                    <Kpis loading={false} @caching="15s:finance_kpis" />
+                </div>
             </div>
 
             <AllocationCard @client allocations={finance.allocations.actuals(ctx.arena) catch &.{}} />
@@ -52,4 +55,5 @@ const Kpis = @import("kpis.zx").Kpis;
 const AccountsPanel = @import("accounts_panel.zx").AccountsPanel;
 const HoldingsPanel = @import("holdings_panel.zx").HoldingsPanel;
 pub const Toolbar = toolbar.Toolbar;
+pub const NetWorthGlance = @import("net_worth.zx").NetWorthGlance;
 pub const AllocationCard = @import("allocation_card.zx").AllocationCard;

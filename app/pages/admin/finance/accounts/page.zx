@@ -4,8 +4,11 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
     const groups = try finance.accounts.groups(ctx.arena);
     const usd_bdt_rate = finance.fx.usdBdt(ctx.arena);
     const now = std.Io.Timestamp.now(ctx.io, .real).toSeconds();
+    // Includes zero balances that `accounts` hides, so an emptied account can be topped up.
+    const cash_rows = cash.rows(ctx.arena, try finance.accounts.listAll(ctx.arena), now);
     const flash = ui.flashFrom(ctx.request.query, &.{
         .{ "synced_no_cash", toolbar.messages.synced_no_cash },
+        .{ "cash_saved", cash.saved_message },
     });
 
     return (
@@ -50,6 +53,10 @@ pub fn Page(ctx: zx.PageContext) !zx.Component {
                     </div>
                 )}
             </section>
+
+            {if (cash_rows.len > 0) (
+                <CashBalances @client rows={cash_rows} />
+            )}
 
             {if (groups.len > 0) (
                 <section id="groups" class="adm-card adm-card-gap">
@@ -315,4 +322,6 @@ const ui = @import("../../ui.zx");
 const finance = @import("../../../../finance.zig");
 const shared = @import("../view.zig");
 const toolbar = @import("../toolbar.zx");
+const cash = @import("cash.zx");
+pub const CashBalances = cash.CashBalances;
 pub const Toolbar = toolbar.Toolbar;

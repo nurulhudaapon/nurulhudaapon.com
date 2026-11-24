@@ -1,0 +1,122 @@
+// Net worth stays masked until asked for, then hides itself again after a few seconds.
+const Props = struct {
+    // Off on the portfolio itself: the sub line shows the BDT figure instead.
+    link: bool,
+};
+
+const Peek = struct {
+    amount: []const u8 = "",
+    amount_bdt: []const u8 = "",
+    account_count: usize = 0,
+    visible: bool = false,
+};
+
+pub fn NetWorthGlance(ctx: *zx.ComponentCtx(Props)) zx.Component {
+    const peek = ctx.state(Peek, .{});
+    autohide.target = peek;
+    const load = ctx.action(loadNetWorth, .{ .on_settle = autohide.schedule });
+    const alloc = ctx.allocator;
+    const state = peek.get();
+    const has_amount = state.amount.len > 0;
+    const shown = state.visible and has_amount;
+
+    return (
+        <div @allocator={alloc} class="adm-glance">
+            <div class="adm-glance-label-row">
+                <span class="adm-glance-label">Net worth</span>
+                {if (state.visible) (
+                    <button
+                        type="button"
+                        class="adm-glance-peek"
+                        onclick={ctx.bind(hide)}
+                        title="Hide balance"
+                        aria-label="Hide balance"
+                        aria-pressed="true"
+                    >
+                        {ui.icon(alloc, .eye_off)}
+                    </button>
+                ) else (
+                    <form action={load} class="adm-inline">
+                        <button
+                            type="submit"
+                            class="adm-glance-peek"
+                            disabled={load.pending}
+                            title="Show balance for a few seconds"
+                            aria-label="Show balance for a few seconds"
+                            aria-pressed="false"
+                        >
+                            {ui.icon(alloc, if (load.pending) .refresh else .eye)}
+                        </button>
+                    </form>
+                )}
+            </div>
+            <span class={if (state.visible) "adm-glance-value" else "adm-glance-value adm-glance-value-masked"}>
+                {if (shown) state.amount else "••••••"}
+            </span>
+            {if (ctx.props.link) (
+                <a class="adm-glance-sub" href="/admin/finance">
+                    {if (has_amount) (
+                        <span>{state.account_count} accounts · Open portfolio</span>
+                    ) else (
+                        <span>Open portfolio</span>
+                    )}
+                </a>
+            ) else (
+                <span class="adm-glance-sub">
+                    {if (shown) state.amount_bdt else "BDT ••••••"}
+                </span>
+            )}
+        </div>
+    );
+}
+
+pub fn loadNetWorth(a: *zx.server.Action.Stateful) void {
+    const peek = a.state(Peek);
+    const arena = a.inner.arena;
+    const summary = finance.portfolio.summary(arena) catch return peek.set(.{});
+    peek.set(.{
+        .amount = finance.format.money(arena, summary.net_worth, "USD"),
+        .amount_bdt = arena.print("{s} · 1 USD = {s}", .{
+            finance.format.money(arena, summary.net_worth_bdt, "BDT"),
+            finance.format.money(arena, summary.usd_bdt_rate, "BDT"),
+        }) catch "",
+        .account_count = summary.account_count,
+        .visible = true,
+    });
+}
+
+fn hide(e: *zx.client.Event.Stateful) void {
+    const peek = e.state(Peek);
+    var next = peek.get();
+    next.visible = false;
+    peek.set(next);
+    autohide.pending = 0;
+}
+
+// Each reveal starts a timer; only the last one still running hides the amount.
+const autohide = struct {
+    var target: ?*zx.State(Peek) = null;
+    var pending: u32 = 0;
+
+    const delay_ms = 4000;
+
+    fn schedule(outcome: zx.ActionHandle.Outcome) void {
+        if (outcome != .ok) return;
+        pending += 1;
+        _ = zx.client.setTimeout(run, .fromMilliseconds(delay_ms));
+    }
+
+    fn run() void {
+        pending -|= 1;
+        if (pending != 0) return;
+        const peek = target orelse return;
+        var next = peek.get();
+        if (!next.visible) return;
+        next.visible = false;
+        peek.set(next);
+    }
+};
+
+const zx = @import("zx");
+const ui = @import("../ui.zx");
+const finance = @import("../../../finance.zig");
