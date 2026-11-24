@@ -185,7 +185,7 @@ pub fn AccountItem(ctx: *zx.ComponentCtx(ItemProps)) zx.Component {
     );
 }
 
-fn setClass(a: *zx.server.Action.Stateful) void {
+pub fn setClass(a: *zx.server.Action.Stateful) void {
     const item = a.state(ItemState);
     const class = a.data(struct { asset_class: []const u8 }).asset_class;
     var next = item.get();
@@ -193,14 +193,14 @@ fn setClass(a: *zx.server.Action.Stateful) void {
     item.set(next);
 }
 
-fn toggleStale(a: *zx.server.Action.Stateful) void {
+pub fn toggleStale(a: *zx.server.Action.Stateful) void {
     const item = a.state(ItemState);
     var next = item.get();
     if (commit(&next, finance.accounts.setStale(next.id, !next.stale))) next.stale = !next.stale;
     item.set(next);
 }
 
-fn deleteAccount(a: *zx.server.Action.Stateful) void {
+pub fn deleteAccount(a: *zx.server.Action.Stateful) void {
     const item = a.state(ItemState);
     var next = item.get();
     if (commit(&next, finance.accounts.deleteManual(next.id))) next.deleted = true;
@@ -247,7 +247,7 @@ pub fn GroupItem(ctx: *zx.ComponentCtx(finance.accounts.GroupSummary)) zx.Compon
     );
 }
 
-fn renameGroup(a: *zx.server.Action.Stateful) void {
+pub fn renameGroup(a: *zx.server.Action.Stateful) void {
     const group = a.state(GroupState);
     var next = group.get();
     const name = std.mem.trim(u8, a.data(struct { name: []const u8 }).name, " \t\r\n");
@@ -259,7 +259,7 @@ fn renameGroup(a: *zx.server.Action.Stateful) void {
     group.set(next);
 }
 
-fn ungroup(a: *zx.server.Action.Stateful) void {
+pub fn ungroup(a: *zx.server.Action.Stateful) void {
     const group = a.state(GroupState);
     var next = group.get();
     if (commit(&next, finance.accounts.renameGroup(next.name, ""))) next.removed = true;

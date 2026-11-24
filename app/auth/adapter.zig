@@ -40,21 +40,12 @@ const store: Auth.Store.VTable = .{
 };
 
 fn config(_: ?*anyopaque, arena: std.mem.Allocator, provider: []const u8) ?Auth.Oauth.Config {
-    const prefix = arena.print("oauth_{s}_", .{provider}) catch return null;
-    const rows = zx.db.rows(arena, struct { cat: []const u8, val: []const u8 },
-        \\SELECT cat, val FROM credentials
-        \\WHERE cat IN (?1 || 'client_id', ?1 || 'client_secret')
-    , .{prefix}) catch return null;
-
-    var cfg: Auth.Oauth.Config = .{ .client_id = "", .client_secret = "" };
-    for (rows) |r| {
-        const field = std.meta.stringToEnum(std.meta.FieldEnum(Auth.Oauth.Config), r.cat[prefix.len..]) orelse continue;
-        switch (field) {
-            inline else => |f| @field(cfg, @tagName(f)) = r.val,
-        }
-    }
-    if (cfg.client_id.len == 0 or cfg.client_secret.len == 0) return null;
-    return cfg;
+    const id = arena.print("oauth_{s}_client_id", .{provider}) catch return null;
+    const secret = arena.print("oauth_{s}_client_secret", .{provider}) catch return null;
+    return .{
+        .client_id = credentials.get(arena, id) orelse return null,
+        .client_secret = credentials.get(arena, secret) orelse return null,
+    };
 }
 
 fn authorize(_: ?*anyopaque, arena: std.mem.Allocator, owner: Auth.Account) anyerror!bool {

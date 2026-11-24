@@ -1,10 +1,10 @@
-// Local only: fills `credentials` from `.env`, overridden by the process
-// environment. Without CALDAV_CALENDAR_URL the calendar is discovered, picked by
-// CALDAV_CALENDAR (name). Prod uses /admin/settings instead.
+// Local only: seeds non-secret config from `zx.secrets` (`.env` + process env).
+// CalDAV, IBKR, GitHub, MCP and OAuth secrets are read live by `db/credentials.zig`.
+// Without CALDAV_CALENDAR_URL the calendar is discovered, picked by CALDAV_CALENDAR
+// (name). Prod uses /admin/settings instead.
 const std = @import("std");
 const zx = @import("zx");
 const caldav = @import("schedule.zig").caldav;
-const github = @import("github.zig");
 const credentials = @import("db/credentials.zig");
 const put = credentials.put;
 
@@ -17,61 +17,26 @@ pub fn load(init: zx.Init) void {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const vars = read(arena, init) catch |err| {
-        zx.log.warn("env: failed to read .env: {any}", .{err});
-        return;
-    };
-    apply(arena, init.io, vars) catch |err| zx.log.err("env: failed to set up credentials: {any}", .{err});
+    apply(arena, init.io) catch |err| zx.log.err("env: failed to set up credentials: {any}", .{err});
 }
 
-const Vars = std.StringHashMapUnmanaged([]const u8);
-const names = .{ "CALDAV_USER", "CALDAV_PASS", "CALDAV_CALENDAR_URL", "CALDAV_CALENDAR", "CALDAV_ORGANIZER_EMAIL", "MEET_LINK", "GITHUB_TOKEN", "IBKR_FLEX_TOKEN", "IBKR_FLEX_QUERY_ID", "MCP_TOKEN", "OAUTH_GITHUB_CLIENT_ID", "OAUTH_GITHUB_CLIENT_SECRET", "OAUTH_GITHUB_ALLOWED" };
-
-fn read(arena: std.mem.Allocator, init: std.process.Init) !Vars {
-    var vars: Vars = .empty;
-    if (std.Io.Dir.cwd().readFileAlloc(init.io, ".env", arena, .limited(64 * 1024))) |text| {
-        var lines = std.mem.splitScalar(u8, text, '\n');
-        while (lines.next()) |raw| {
-            var line = std.mem.trim(u8, raw, " \t\r");
-            if (line.len == 0 or line[0] == '#') continue;
-            if (std.mem.startsWith(u8, line, "export ")) line = line["export ".len..];
-            const eq = std.mem.indexOfScalar(u8, line, '=') orelse continue;
-            var val = std.mem.trim(u8, line[eq + 1 ..], " \t");
-            if (val.len >= 2 and (val[0] == '"' or val[0] == '\'') and val[val.len - 1] == val[0]) val = val[1 .. val.len - 1];
-            if (val.len > 0) try vars.put(arena, std.mem.trim(u8, line[0..eq], " \t"), val);
-        }
-    } else |err| switch (err) {
-        error.FileNotFound => {},
-        else => return err,
-    }
-    inline for (names) |name| {
-        if (init.environ_map.get(name)) |val| if (val.len > 0) try vars.put(arena, name, val);
-    }
-    return vars;
+fn secret(arena: std.mem.Allocator, name: []const u8) ?[]const u8 {
+    const val = zx.secrets.get(arena, name) catch return null;
+    return if (val) |v| if (v.len > 0) v else null else null;
 }
 
-fn apply(arena: std.mem.Allocator, io: std.Io, vars: Vars) !void {
-    if (vars.get("GITHUB_TOKEN")) |token| {
-        try put("github_token", token);
-        try github.setToken(token);
-    }
-    if (vars.get("MCP_TOKEN")) |token| try put("mcp_token", token);
-    if (vars.get("MEET_LINK")) |url| try put("caldav_meeting_url", url);
-    if (vars.get("IBKR_FLEX_TOKEN")) |token| try put("ibkr_flex_token", token);
-    if (vars.get("IBKR_FLEX_QUERY_ID")) |id| try put("ibkr_flex_query_id", id);
-    if (vars.get("OAUTH_GITHUB_CLIENT_ID")) |id| try put("oauth_github_client_id", id);
-    if (vars.get("OAUTH_GITHUB_CLIENT_SECRET")) |secret| try put("oauth_github_client_secret", secret);
-    if (vars.get("OAUTH_GITHUB_ALLOWED")) |ids| try put("oauth_github_allowed", ids);
+fn apply(arena: std.mem.Allocator, io: std.Io) !void {
+    if (secret(arena, "MEET_LINK")) |url| try put("caldav_meeting_url", url);
+    if (secret(arena, "IBKR_FLEX_QUERY_ID")) |id| try put("ibkr_flex_query_id", id);
+    if (secret(arena, "OAUTH_GITHUB_ALLOWED")) |ids| try put("oauth_github_allowed", ids);
 
-    const user = vars.get("CALDAV_USER") orelse return;
-    const pass = vars.get("CALDAV_PASS") orelse return;
-    const unchanged = if (try stored(arena, "caldav_username")) |u| std.mem.eql(u8, u, user) else false;
-    try put("caldav_username", user);
-    try put("caldav_password", pass);
-    try put("caldav_organizer_email", vars.get("CALDAV_ORGANIZER_EMAIL") orelse user);
+    const user = secret(arena, "CALDAV_USER") orelse return;
+    const pass = secret(arena, "CALDAV_PASS") orelse return;
+    try put("caldav_organizer_email", secret(arena, "CALDAV_ORGANIZER_EMAIL") orelse user);
 
-    if (vars.get("CALDAV_CALENDAR_URL")) |url| return put("caldav_calendar_url", url);
-    const current = if (unchanged) try stored(arena, "caldav_calendar_url") else null;
+    if (secret(arena, "CALDAV_CALENDAR_URL")) |url| return put("caldav_calendar_url", url);
+    // Kept while it's still one of this account's calendars
+    const current = try stored(arena, "caldav_calendar_url");
 
     const client: caldav.Client = .{ .arena = arena, .io = io, .creds = .{
         .username = user,
@@ -86,7 +51,7 @@ fn apply(arena: std.mem.Allocator, io: std.Io, vars: Vars) !void {
     };
     if (current) |url| zx.log.warn("env: calendar {s} no longer exists, picking another", .{url});
 
-    const calendar = pick(calendars, user, vars.get("CALDAV_CALENDAR")) orelse return;
+    const calendar = pick(calendars, user, secret(arena, "CALDAV_CALENDAR")) orelse return;
     try put("caldav_calendar_url", calendar.url);
     zx.log.info("env: using calendar \"{s}\" for {s} ({s})", .{ calendar.name, user, calendar.url });
 }

@@ -280,7 +280,7 @@ pub fn BalanceCard(ctx: *zx.ComponentCtx(BalanceProps)) zx.Component {
 
 const BalanceInput = struct { balance: f64 };
 
-fn updateBalance(a: *zx.server.Action.Stateful) void {
+pub fn updateBalance(a: *zx.server.Action.Stateful) void {
     const card = a.state(BalanceState);
     const input = a.data(BalanceInput);
     const arena = a.inner.arena;

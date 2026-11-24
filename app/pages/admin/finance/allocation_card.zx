@@ -181,7 +181,7 @@ fn openTrendKey(e: *zx.client.Event.Stateful) void {
 
 // Ziex keeps handlers bound from the first render, so this runs on every click
 // and only queries the first time.
-fn showTrend(e: *zx.server.Event.Stateful) void {
+pub fn showTrend(e: *zx.server.Event.Stateful) void {
     const card = e.state(State);
     const arena = e.inner.arena;
     var next = card.get();

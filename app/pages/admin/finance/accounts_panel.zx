@@ -160,7 +160,7 @@ fn markLoadingKey(e: *zx.client.Event.Stateful) void {
 
 // Ziex keeps the handler bound on first render, so this one event loads the
 // accounts on the first click and only toggles after that.
-fn toggle(e: *zx.server.Event.Stateful) void {
+pub fn toggle(e: *zx.server.Event.Stateful) void {
     const group = e.state(GroupState);
     const arena = e.inner.arena;
     var next = group.get();

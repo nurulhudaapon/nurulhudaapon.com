@@ -129,7 +129,7 @@ pub fn NetWorthGlance(ctx: *zx.ComponentCtx(struct {})) zx.Component {
     );
 }
 
-fn loadNetWorth(a: *zx.server.Action.Stateful) void {
+pub fn loadNetWorth(a: *zx.server.Action.Stateful) void {
     const peek = a.state(Peek);
     const summary = finance.portfolio.summary(a.inner.arena) catch return peek.set(.{});
     peek.set(.{

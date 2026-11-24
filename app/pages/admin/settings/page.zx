@@ -32,7 +32,7 @@ pub fn Page(ctx: zx.PageContext, _: void, owner: ?Auth.Account) !zx.Component {
 
     return (
         <div @allocator={ctx.arena}>
-            <ui.PageHeader title="Settings" description="Integration credentials. Leave a secret blank to keep the current value." />
+            <ui.PageHeader title="Settings" description="Integration credentials. Leave a secret blank to keep the current value. Secrets set in .env or as Worker secrets take precedence over values saved here." />
             <ui.FlashBanner flash={flash} />
 
             {if (owner != null) (

@@ -213,7 +213,7 @@ fn refresh(e: *zx.client.Event.Stateful) void {
 }
 
 // Loads the rows when `openAlloc` just opened the panel, otherwise closes it.
-fn toggleAlloc(e: *zx.server.Event.Stateful) void {
+pub fn toggleAlloc(e: *zx.server.Event.Stateful) void {
     const cal = e.state(WeekState);
     var next = cal.get();
     if (!next.alloc_loading) {
@@ -229,15 +229,15 @@ fn toggleAlloc(e: *zx.server.Event.Stateful) void {
     cal.set(next);
 }
 
-fn goPrev(e: *zx.server.Event.Stateful) void {
+pub fn goPrev(e: *zx.server.Event.Stateful) void {
     step(e, -1);
 }
 
-fn goNext(e: *zx.server.Event.Stateful) void {
+pub fn goNext(e: *zx.server.Event.Stateful) void {
     step(e, 1);
 }
 
-fn goToday(e: *zx.server.Event.Stateful) void {
+pub fn goToday(e: *zx.server.Event.Stateful) void {
     const now = timestamp(e);
     const first = calendars.Prefs.load(e.inner.arena).week_start;
     show(e, e.state(WeekState), week.start(now, first), now);

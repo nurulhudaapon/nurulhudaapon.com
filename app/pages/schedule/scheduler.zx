@@ -142,7 +142,7 @@ fn pickSlot(e: *zx.client.Event.Stateful) void {
     e.state(Result).set(.{});
 }
 
-fn book(a: *zx.server.Action.Stateful) void {
+pub fn book(a: *zx.server.Action.Stateful) void {
     _ = a.state(usize);
     const slot = a.state(i64);
     const result = a.state(Result);

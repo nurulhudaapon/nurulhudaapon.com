@@ -1,6 +1,7 @@
 const std = @import("std");
 const zx = @import("zx");
 const slots = @import("slots.zig");
+const store = @import("../db/credentials.zig");
 
 const Header = zx.http.Header;
 
@@ -13,28 +14,13 @@ pub const Credentials = struct {
 };
 
 pub fn credentials(arena: std.mem.Allocator) !?Credentials {
-    const rows = try zx.db.rows(arena, struct { cat: []const u8, val: []const u8 },
-        \\SELECT cat, val FROM credentials WHERE cat LIKE 'caldav_%'
-    , .{});
-
-    var found: struct {
-        username: ?[]const u8 = null,
-        password: ?[]const u8 = null,
-        calendar_url: ?[]const u8 = null,
-        organizer_email: ?[]const u8 = null,
-        meeting_url: ?[]const u8 = null,
-    } = .{};
-    for (rows) |row| inline for (comptime std.meta.fieldNames(@TypeOf(found))) |name| {
-        if (std.mem.eql(u8, row.cat, "caldav_" ++ name)) @field(found, name) = row.val;
-    };
-
-    const username = found.username orelse return null;
+    const username = store.get(arena, "caldav_username") orelse return null;
     return .{
         .username = username,
-        .password = found.password orelse return null,
-        .calendar_url = found.calendar_url orelse return null,
-        .organizer_email = found.organizer_email orelse username,
-        .meeting_url = found.meeting_url,
+        .password = store.get(arena, "caldav_password") orelse return null,
+        .calendar_url = store.get(arena, "caldav_calendar_url") orelse return null,
+        .organizer_email = store.get(arena, "caldav_organizer_email") orelse username,
+        .meeting_url = store.get(arena, "caldav_meeting_url"),
     };
 }
 

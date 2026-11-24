@@ -117,7 +117,7 @@ fn QuestionCard(allocator: zx.Allocator, props: struct { q: db.Question }) zx.Co
 
 const max_question_len = 1000;
 
-fn submit(a: *zx.server.Action.Stateful) void {
+pub fn submit(a: *zx.server.Action.Stateful) void {
     const form = a.state(FormState);
     const input = a.data(AskInput);
     const arena = a.inner.arena;

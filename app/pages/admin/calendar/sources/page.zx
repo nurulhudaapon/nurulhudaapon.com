@@ -90,7 +90,7 @@ pub fn PrefsCard(ctx: *zx.ComponentCtx(struct { prefs: calendars.Prefs })) zx.Co
 
 const PrefsInput = struct { stale_minutes: i64, week_start: []const u8 };
 
-fn savePrefs(a: *zx.server.Action.Stateful) void {
+pub fn savePrefs(a: *zx.server.Action.Stateful) void {
     const card = a.state(PrefsState);
     const input = a.data(PrefsInput);
     const prefs: calendars.Prefs = .{
@@ -242,7 +242,7 @@ fn refreshed(arena: zx.Allocator, now: i64, prev: SourcesState, flash: ?ui.Flash
     return next;
 }
 
-fn syncCalendars(a: *zx.server.Action.Stateful) void {
+pub fn syncCalendars(a: *zx.server.Action.Stateful) void {
     const card = a.state(SourcesState);
     const arena = a.inner.arena;
     const io = a.inner.io;
@@ -253,7 +253,7 @@ fn syncCalendars(a: *zx.server.Action.Stateful) void {
 
 const AddInput = struct { url: []const u8, name: []const u8, color: []const u8 };
 
-fn addCalendar(a: *zx.server.Action.Stateful) void {
+pub fn addCalendar(a: *zx.server.Action.Stateful) void {
     const card = a.state(SourcesState);
     const arena = a.inner.arena;
     const io = a.inner.io;
@@ -274,7 +274,7 @@ const SaveInput = struct {
     in_feed: bool,
 };
 
-fn saveCalendar(a: *zx.server.Action.Stateful) void {
+pub fn saveCalendar(a: *zx.server.Action.Stateful) void {
     const card = a.state(SourcesState);
     const input = a.data(SaveInput);
     calendars.update(input.id, .{
@@ -299,7 +299,7 @@ fn autosave(e: *zx.client.Event.Stateful) void {
     form.call(void, "requestSubmit", .{}) catch {};
 }
 
-fn removeCalendar(e: *zx.server.Event.Stateful) void {
+pub fn removeCalendar(e: *zx.server.Event.Stateful) void {
     const card = e.state(SourcesState);
     const id = std.fmt.parseInt(i64, e.value() orelse "", 10) catch return;
     calendars.removeFeed(id) catch |err| return fail(card, err);
@@ -422,7 +422,7 @@ fn reloadLinks(arena: zx.Allocator, now: i64, prev: []const LinkRow) []const Lin
 
 const LinkInput = struct { label: []const u8, detail: []const u8 };
 
-fn createLink(a: *zx.server.Action.Stateful) void {
+pub fn createLink(a: *zx.server.Action.Stateful) void {
     const card = a.state(LinksState);
     const arena = a.inner.arena;
     const input = a.data(LinkInput);
@@ -450,7 +450,7 @@ fn createLink(a: *zx.server.Action.Stateful) void {
     card.set(next);
 }
 
-fn revokeLink(e: *zx.server.Event.Stateful) void {
+pub fn revokeLink(e: *zx.server.Event.Stateful) void {
     const card = e.state(LinksState);
     const id = std.fmt.parseInt(i64, e.value() orelse "", 10) catch return;
     calendars.Link.revoke(id) catch |err| return fail(card, err);

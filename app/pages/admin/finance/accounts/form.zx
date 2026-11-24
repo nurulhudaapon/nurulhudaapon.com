@@ -215,7 +215,7 @@ fn onGroupChange(e: *zx.client.Event.Stateful) void {
     form.set(next);
 }
 
-fn save(a: *zx.server.Action.Stateful) void {
+pub fn save(a: *zx.server.Action.Stateful) void {
     const form = a.state(FormState);
     const input = a.data(AccountInput);
     const arena = a.inner.arena;

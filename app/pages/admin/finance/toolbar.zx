@@ -69,7 +69,7 @@ fn buttonClass(pending: bool, done: bool) []const u8 {
     return "adm-btn adm-btn-ghost adm-btn-icon";
 }
 
-fn syncIbkr(a: *zx.server.Action.Stateful) void {
+pub fn syncIbkr(a: *zx.server.Action.Stateful) void {
     const toolbar = a.state(State);
     const base = toolbar.get().base;
     const arena = a.inner.arena;

@@ -2,7 +2,25 @@ const std = @import("std");
 const zx = @import("zx");
 const github = @import("../github.zig");
 
+// Secrets from `zx.secrets` (`.env` locally, Worker secrets in prod) win over the db.
+const secrets = std.StaticStringMap([]const u8).initComptime(.{
+    .{ "caldav_username", "CALDAV_USER" },
+    .{ "caldav_password", "CALDAV_PASS" },
+    .{ "ibkr_flex_token", "IBKR_FLEX_TOKEN" },
+    .{ "github_token", "GITHUB_TOKEN" },
+    .{ "mcp_token", "MCP_TOKEN" },
+    .{ "oauth_github_client_id", "OAUTH_GITHUB_CLIENT_ID" },
+    .{ "oauth_github_client_secret", "OAUTH_GITHUB_CLIENT_SECRET" },
+});
+
+pub fn fromSecret(arena: std.mem.Allocator, cat: []const u8) ?[]const u8 {
+    const name = secrets.get(cat) orelse return null;
+    const val = zx.secrets.get(arena, name) catch return null;
+    return if (val) |v| if (v.len > 0) v else null else null;
+}
+
 pub fn get(arena: std.mem.Allocator, cat: []const u8) ?[]const u8 {
+    if (fromSecret(arena, cat)) |v| return v;
     const row = zx.db.row(arena, struct { val: []const u8 },
         \\SELECT val FROM credentials WHERE cat = ?1 LIMIT 1
     , .{cat}) catch return null;
@@ -69,16 +87,10 @@ pub const IbkrForm = struct {
     query_id: []const u8 = "",
 
     pub fn load(arena: std.mem.Allocator) IbkrForm {
-        const rows = zx.db.rows(arena, struct { cat: []const u8, val: []const u8 },
-            \\SELECT cat, val FROM credentials
-            \\WHERE cat IN ('ibkr_flex_token', 'ibkr_flex_query_id')
-        , .{}) catch return .{};
-        var out: IbkrForm = .{};
-        for (rows) |r| {
-            if (std.mem.eql(u8, r.cat, "ibkr_flex_token")) out.token_set = r.val.len > 0;
-            if (std.mem.eql(u8, r.cat, "ibkr_flex_query_id")) out.query_id = r.val;
-        }
-        return out;
+        return .{
+            .token_set = has(arena, "ibkr_flex_token"),
+            .query_id = get(arena, "ibkr_flex_query_id") orelse "",
+        };
     }
 };
 
