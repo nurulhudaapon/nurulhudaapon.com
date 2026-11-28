@@ -47,7 +47,10 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                 <meta name="apple-mobile-web-app-title" content="Nurul Huda" />
                 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
                 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-                <script @escaping={.none}>{register_sw}</script>
+                {for (pwa.splashes) |splash| (
+                    <link rel="apple-touch-startup-image" media={splash.media} href={splash.href} />
+                )}
+                <script defer src="/pwa.js"></script>
                 <link rel="stylesheet" href="/assets/style.css" />
             </head>
             <body>
@@ -90,7 +93,10 @@ fn AdminDocument(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                 <meta name="apple-mobile-web-app-title" content="Admin" />
                 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
                 <link rel="apple-touch-icon" href="/icons/admin-apple-touch-icon.png" />
-                <script @escaping={.none}>{register_sw}</script>
+                {for (pwa.splashes) |splash| (
+                    <link rel="apple-touch-startup-image" media={splash.media} href={splash.href} />
+                )}
+                <script defer src="/pwa.js"></script>
                 <link rel="stylesheet" href="/assets/style.css" />
                 <link rel="stylesheet" href="/assets/admin.css" />
             </head>
@@ -167,13 +173,10 @@ const SiteData = struct {
 
 const data: SiteData = @import("data.zon");
 
-const register_sw =
-    \\if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("/sw.js"));
-;
-
 pub const options: zx.LayoutOptions = .{ .rendering = .prerendered };
 
 const DevDocument = @import("dev/document.zx").Document;
+const pwa = @import("../pwa.zig");
 const icons = @import("component.zx").icons;
 const builtin = @import("builtin");
 const std = @import("std");

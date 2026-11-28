@@ -1315,3 +1315,62 @@ body:has(.page-home) .nav-link[href="/"] {
     color: var(--color-text-secondary);
 }
 
+
+/* Installed app: shown when a navigation isn't instant (see public/pwa.js). */
+.pwa-loader {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--background) 75%, transparent);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s;
+}
+
+.pwa-loading .pwa-loader {
+    opacity: 1;
+    visibility: visible;
+}
+
+.pwa-loader svg {
+    width: 96px;
+    height: 96px;
+}
+
+.pwa-loader circle {
+    fill: none;
+    stroke-width: 4;
+}
+
+.pwa-loader-track {
+    stroke: var(--color-border);
+}
+
+.pwa-loader-arc {
+    stroke: var(--color-text);
+    stroke-linecap: round;
+    stroke-dasharray: 77 277;
+    transform-origin: 50% 50%;
+    animation: pwa-spin 0.9s linear infinite;
+}
+
+.pwa-loader text {
+    fill: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 30px;
+    font-weight: 700;
+}
+
+@keyframes pwa-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pwa-loader-arc {
+        animation-duration: 2.5s;
+    }
+}

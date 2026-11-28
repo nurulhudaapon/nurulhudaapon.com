@@ -1,15 +1,19 @@
 pub fn GET(ctx: zx.RouteContext) !void {
     const pathname = ctx.request.pathname;
     const name = pathname["/icons/".len..];
-    const icon = for (icons) |i| {
-        if (std.mem.eql(u8, i.name, name)) break i;
-    } else return ctx.response.setStatus(.not_found);
 
     registerFonts();
 
     var aw: std.Io.Writer.Allocating = .init(ctx.arena);
-    try Mark(ctx.arena, icon).render(&aw.writer, .{});
-    const png = try lunasvg.svgToPngAlloc(ctx.arena, aw.written(), icon.size, icon.size, 0x00000000);
+    const png = for (icons) |icon| {
+        if (!std.mem.eql(u8, icon.name, name)) continue;
+        try Mark(ctx.arena, icon).render(&aw.writer, .{});
+        break try lunasvg.svgToPngAlloc(ctx.arena, aw.written(), icon.size, icon.size, 0x00000000);
+    } else for (pwa.splashes) |splash| {
+        if (!std.mem.eql(u8, splash.name, name)) continue;
+        try Splash(ctx.arena, splash).render(&aw.writer, .{});
+        break try lunasvg.svgToPngAlloc(ctx.arena, aw.written(), splash.width, splash.height, 0xff000000);
+    } else return ctx.response.setStatus(.not_found);
 
     ctx.response.text(png);
     ctx.response.setContentType(.@"image/png");
@@ -65,6 +69,50 @@ fn Mark(allocator: zx.Allocator, icon: Icon) zx.Component {
     );
 }
 
+// Launch screen: the logo inside a loading ring, sized in CSS pixels.
+fn Splash(allocator: zx.Allocator, splash: pwa.Splash) zx.Component {
+    const dark = splash.theme == .dark;
+    const cx = @as(f32, @floatFromInt(splash.width)) / 2;
+    const cy = @as(f32, @floatFromInt(splash.height)) / 2;
+    const r = 48 * splash.ratio;
+    const arc = 2 * std.math.pi * r * 0.28;
+    const font_size = 34 * splash.ratio;
+    const foreground = if (dark) "#fff" else "#000";
+    return (
+        <svg
+            @allocator={allocator}
+            xmlns="http://www.w3.org/2000/svg"
+            width={splash.width}
+            height={splash.height}
+        >
+            <rect width={splash.width} height={splash.height} fill={if (dark) "#0a0a0a" else "#fff"} />
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={if (dark) "#262626" else "#e5e5e5"} stroke-width={4 * splash.ratio} />
+            <circle
+                cx={cx}
+                cy={cy}
+                r={r}
+                fill="none"
+                stroke={foreground}
+                stroke-width={4 * splash.ratio}
+                stroke-linecap="round"
+                stroke-dasharray={std.fmt.allocPrint(allocator, "{d} {d}", .{ arc, 2 * std.math.pi * r }) catch ""}
+                transform={std.fmt.allocPrint(allocator, "rotate(-90 {d} {d})", .{ cx, cy }) catch ""}
+            />
+            <text
+                x={cx}
+                y={cy + font_size * 0.36}
+                text-anchor="middle"
+                fill={foreground}
+                font-family="'Geist', Arial, sans-serif"
+                font-weight="bold"
+                font-size={font_size}
+            >
+                NH
+            </text>
+        </svg>
+    );
+}
+
 var fonts_registered: std.atomic.Value(bool) = .init(false);
 
 fn registerFonts() void {
@@ -77,6 +125,7 @@ fn registerFonts() void {
 
 fn staticParams(ctx: *zx.StaticContext) !void {
     inline for (icons) |icon| try ctx.params.add(.{ .@"*" = icon.name });
+    inline for (pwa.splashes) |splash| try ctx.params.add(.{ .@"*" = splash.name });
 }
 
 pub const options = zx.RouteOptions{
@@ -84,6 +133,7 @@ pub const options = zx.RouteOptions{
     .static = staticParams,
 };
 
+const pwa = @import("../../../pwa.zig");
 const geist_fonts = @import("geist_fonts");
 const lunasvg = @import("lunasvg");
 const zx = @import("zx");
