@@ -1,0 +1,22 @@
+{
+  "id": "/",
+  "name": "Nurul Huda (Apon)",
+  "short_name": "Nurul Huda",
+  "description": "Building high quality software for companies and crafting Ziex, a full-stack web framework for Zig.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Admin", "url": "/admin", "icons": [{ "src": "/icons/admin-icon-192.png", "sizes": "192x192" }] },
+    { "name": "Finance", "url": "/admin/finance", "icons": [{ "src": "/icons/admin-icon-192.png", "sizes": "192x192" }] },
+    { "name": "Posts", "url": "/admin/posts", "icons": [{ "src": "/icons/admin-icon-192.png", "sizes": "192x192" }] },
+    { "name": "Bookings", "url": "/admin/bookings", "icons": [{ "src": "/icons/admin-icon-192.png", "sizes": "192x192" }] }
+  ]
+}

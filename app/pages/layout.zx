@@ -39,6 +39,15 @@ pub fn Layout(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                 <meta name="twitter:description" content={description} />
                 <meta name="twitter:image" content={og_image_url} />
                 <link rel="icon" href="/favicon.ico" sizes="32x32" type="image/x-icon" />
+                <link rel="manifest" href="/manifest.webmanifest" />
+                <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+                <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+                <meta name="mobile-web-app-capable" content="yes" />
+                <meta name="apple-mobile-web-app-capable" content="yes" />
+                <meta name="apple-mobile-web-app-title" content="Nurul Huda" />
+                <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+                <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+                <script @escaping={.none}>{register_sw}</script>
                 <link rel="stylesheet" href="/assets/style.css" />
             </head>
             <body>
@@ -73,6 +82,15 @@ fn AdminDocument(ctx: zx.LayoutContext, children: zx.Component) zx.Component {
                 <meta name="robots" content="noindex, nofollow" />
                 <title>Admin · {data.author}</title>
                 <link rel="icon" href="/favicon.ico" sizes="32x32" type="image/x-icon" />
+                <link rel="manifest" href="/admin.webmanifest" />
+                <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+                <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+                <meta name="mobile-web-app-capable" content="yes" />
+                <meta name="apple-mobile-web-app-capable" content="yes" />
+                <meta name="apple-mobile-web-app-title" content="Admin" />
+                <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+                <link rel="apple-touch-icon" href="/icons/admin-apple-touch-icon.png" />
+                <script @escaping={.none}>{register_sw}</script>
                 <link rel="stylesheet" href="/assets/style.css" />
                 <link rel="stylesheet" href="/assets/admin.css" />
             </head>
@@ -148,6 +166,10 @@ const SiteData = struct {
 };
 
 const data: SiteData = @import("data.zon");
+
+const register_sw =
+    \\if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("/sw.js"));
+;
 
 pub const options: zx.LayoutOptions = .{ .rendering = .prerendered };
 

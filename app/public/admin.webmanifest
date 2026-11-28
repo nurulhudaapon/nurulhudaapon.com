@@ -1,0 +1,21 @@
+{
+  "id": "/admin",
+  "name": "Admin · Nurul Huda",
+  "short_name": "Admin",
+  "description": "Admin panel for nurulhudaapon.com.",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/icons/admin-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/admin-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/admin-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Finance", "url": "/admin/finance", "icons": [{ "src": "/icons/admin-icon-192.png", "sizes": "192x192" }] },
+    { "name": "Posts", "url": "/admin/posts", "icons": [{ "src": "/icons/admin-icon-192.png", "sizes": "192x192" }] },
+    { "name": "Bookings", "url": "/admin/bookings", "icons": [{ "src": "/icons/admin-icon-192.png", "sizes": "192x192" }] }
+  ]
+}

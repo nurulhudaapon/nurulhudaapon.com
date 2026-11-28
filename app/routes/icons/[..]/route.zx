@@ -1,0 +1,90 @@
+pub fn GET(ctx: zx.RouteContext) !void {
+    const pathname = ctx.request.pathname;
+    const name = pathname["/icons/".len..];
+    const icon = for (icons) |i| {
+        if (std.mem.eql(u8, i.name, name)) break i;
+    } else return ctx.response.setStatus(.not_found);
+
+    registerFonts();
+
+    var aw: std.Io.Writer.Allocating = .init(ctx.arena);
+    try Mark(ctx.arena, icon).render(&aw.writer, .{});
+    const png = try lunasvg.svgToPngAlloc(ctx.arena, aw.written(), icon.size, icon.size, 0x00000000);
+
+    ctx.response.text(png);
+    ctx.response.setContentType(.@"image/png");
+    ctx.response.headers.append("Cache-Control", "public, max-age=86400");
+}
+
+const Icon = struct {
+    name: []const u8,
+    size: i32,
+    full_bleed: bool,
+    scale: f32 = 1,
+    admin: bool = false,
+};
+
+const icons = [_]Icon{
+    .{ .name = "apple-touch-icon.png", .size = 180, .full_bleed = true },
+    .{ .name = "icon-192.png", .size = 192, .full_bleed = false },
+    .{ .name = "icon-512.png", .size = 512, .full_bleed = false },
+    .{ .name = "maskable-512.png", .size = 512, .full_bleed = true, .scale = 0.8 },
+    .{ .name = "admin-apple-touch-icon.png", .size = 180, .full_bleed = true, .admin = true },
+    .{ .name = "admin-icon-192.png", .size = 192, .full_bleed = false, .admin = true },
+    .{ .name = "admin-icon-512.png", .size = 512, .full_bleed = false, .admin = true },
+    .{ .name = "admin-maskable-512.png", .size = 512, .full_bleed = true, .scale = 0.8, .admin = true },
+};
+
+// Drawn on a 100×100 grid and scaled to the icon size.
+fn Mark(allocator: zx.Allocator, icon: Icon) zx.Component {
+    const font_size = 44 * icon.scale;
+    const background = if (icon.admin) "#fff" else "#000";
+    const foreground = if (icon.admin) "#000" else "#fff";
+    return (
+        <svg
+            @allocator={allocator}
+            xmlns="http://www.w3.org/2000/svg"
+            width={icon.size}
+            height={icon.size}
+            viewBox="0 0 100 100"
+        >
+            <rect width="100" height="100" rx={@as(u8, if (icon.full_bleed) 0 else 22)} fill={background} />
+            <text
+                x="50"
+                y={50 + font_size * 0.36}
+                text-anchor="middle"
+                fill={foreground}
+                font-family="'Geist', Arial, sans-serif"
+                font-weight="bold"
+                font-size={font_size}
+                letter-spacing="-1"
+            >
+                NH
+            </text>
+        </svg>
+    );
+}
+
+var fonts_registered: std.atomic.Value(bool) = .init(false);
+
+fn registerFonts() void {
+    if (fonts_registered.swap(true, .acq_rel)) return;
+    if (!lunasvg.addFontFaceFromData("Geist", true, false, geist_fonts.bold)) {
+        fonts_registered.store(false, .release);
+        std.log.warn("lunasvg: failed to register Geist", .{});
+    }
+}
+
+fn staticParams(ctx: *zx.StaticContext) !void {
+    inline for (icons) |icon| try ctx.params.add(.{ .@"*" = icon.name });
+}
+
+pub const options = zx.RouteOptions{
+    .rendering = .prerendered,
+    .static = staticParams,
+};
+
+const geist_fonts = @import("geist_fonts");
+const lunasvg = @import("lunasvg");
+const zx = @import("zx");
+const std = @import("std");
