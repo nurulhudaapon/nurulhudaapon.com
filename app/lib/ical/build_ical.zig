@@ -68,7 +68,7 @@ pub fn addLibical(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
     const gen_exe = b.addExecutable(.{
         .name = "libical-gen",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("lib/ical/gen.zig"),
+            .root_source_file = b.path("app/lib/ical/gen.zig"),
             .target = b.graph.host,
             .optimize = .ReleaseSafe,
         }),
@@ -96,7 +96,7 @@ pub fn addLibical(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
     });
 
     const lib_mod = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true });
-    lib_mod.addIncludePath(b.path("lib/ical"));
+    lib_mod.addIncludePath(b.path("app/lib/ical"));
     lib_mod.addIncludePath(gen_dir.getDirectory());
     lib_mod.addConfigHeader(version_h);
     lib_mod.addIncludePath(src_dir);

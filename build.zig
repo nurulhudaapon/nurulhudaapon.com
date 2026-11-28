@@ -1,6 +1,7 @@
 const std = @import("std");
 const ziex = @import("ziex");
-const libical = @import("lib/ical/build.zig");
+const libical = @import("app/lib/ical/build_ical.zig");
+const highlight = @import("app/lib/highlight/build_highlight.zig");
 
 pub fn build(b: *std.Build) !void {
     // --- Target and Optimize from `zig build` arguments ---
@@ -16,9 +17,6 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }),
     });
-
-    const markz_dep = b.dependency("markz", .{ .target = target, .optimize = optimize });
-    app_exe.root_module.addImport("markz", markz_dep.module("markz"));
 
     // --- Ziex setup: wires dependencies and adds `zx`/`dev` build steps ---
     var ziex_b = try ziex.init(b, app_exe, .{
@@ -41,47 +39,26 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
-    // ziex turns on rdynamic for wasi, turning of to reduce binary size
-    if (target.result.os.tag == .wasi) {
-        app_exe.rdynamic = false;
-        app_exe.root_module.export_symbol_names = &.{ "__zx_serve", "__zx_cb", "__zx_alloc", "__zx_free" };
-    }
-
-    ziex_b.addImport("lunasvg", b.dependency("lunasvg", .{
-        .target = target,
-        .optimize = optimize,
-    }).module("lunasvg"));
-
-    ziex_b.addImport("geist_fonts", addGeistFontsModule(b));
-    ziex_b.addImport("highlight", b.dependency("highlight", .{ .target = target, .optimize = optimize }).module("highlight"));
+    // Pure Zig: the same module serves the server, client and worker.
+    ziex_b.addImport("markz", b.dependency("markz", .{ .target = target, .optimize = optimize }).module("markz"));
     const xml_mod = b.dependency("xml", .{ .target = target, .optimize = optimize }).module("xml");
     ziex_b.addImport("xml", xml_mod);
 
     const ical_mod = libical.addLibical(b, target, optimize);
-    ziex_b.addImport("ical", ical_mod);
-
-    // --- Post editor preview: markdown + tree-sitter as its own wasm, loaded only by that page ---
-    const wasi = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
-    const preview = b.addExecutable(.{
-        .name = "preview",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("app/preview.zig"),
-            .target = wasi,
-            .optimize = .ReleaseSmall,
-            .link_libc = true,
-            .imports = &.{
-                .{ .name = "markz", .module = b.dependency("markz", .{ .target = wasi, .optimize = .ReleaseSmall }).module("markz") },
-                .{ .name = "highlight", .module = b.dependency("highlight", .{ .target = wasi, .optimize = .ReleaseSmall }).module("highlight") },
-            },
-        }),
-    });
-    preview.entry = .disabled;
-    preview.wasi_exec_model = .reactor;
-    preview.root_module.export_symbol_names = &.{
-        "preview_reset",     "preview_alloc",     "preview_render",   "preview_minutes",
-        "preview_title_ptr", "preview_title_len", "preview_html_ptr", "preview_html_len",
-    };
-    b.getInstallStep().dependOn(&b.addInstallFile(preview.getEmittedBin(), "static/assets/_/preview.wasm").step);
+    for (ziex_b.platforms) |p| {
+        if (p.kind == .server) {
+            p.addImport("lunasvg", b.dependency("lunasvg", .{ .target = p.target, .optimize = p.optimize }).module("lunasvg"));
+            p.addImport("geist_fonts", addGeistFontsModule(b));
+            p.addImport("ical", ical_mod);
+        }
+        // The server renders posts; the post editor's preview worker
+        // (`pages/admin/posts/[slug]/worker.zig`) renders them in the browser.
+        if (p.kind != .client) {
+            const highlight_mod = highlight.addHighlight(b, p.target, p.optimize);
+            p.linkLibc(highlight_mod);
+            p.addImport("highlight", highlight_mod);
+        }
+    }
 
     // --- Unit tests ---
     const test_step = b.step("test", "Run unit tests");

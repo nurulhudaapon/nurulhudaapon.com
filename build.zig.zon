@@ -5,16 +5,16 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .ziex = .{
-            .url = "git+https://github.com/ziex-dev/ziex#76e08b359ebce58f470d472e56e50840b634efed",
-            .hash = "ziex-0.2.0-dev-Z3YcvcTmoQFcFXC020wQlLjvfeKRIPAV_iTL2sERWl19",
+            .url = "git+https://github.com/ziex-dev/ziex#a57b41a96916ed5f9157e8e330d0325cdd53900f",
+            .hash = "ziex-0.2.0-dev-Z3YcvSh24wHbScwkUOCovksAUOxgnk0s9iPyIeaIfLC8",
         },
         .markz = .{
             .url = "git+https://codeberg.org/nurulhudaapon/markz.git?ref=zig-0.17#19af600075fc60775e89a3430dadd94299b13e14",
             .hash = "markz-0.1.0-53lpvCGhBgD-cT9CdpZAx065JqAJ75JavcvhPwyU5z8G",
         },
         .lunasvg = .{
-            .url = "git+https://github.com/nurulhudaapon/lunasvg.git#a3c19981a7cef75440444b401485c693c3962c53",
-            .hash = "lunasvg-0.0.0-9mEwLiMRAQDctmwhbMAwCACtK02EefOHg0YIg1K3hHUf",
+            .url = "git+https://github.com/nurulhudaapon/lunasvg.git#bc202a699db5eb4c52490eee61a95971ff2240d4",
+            .hash = "lunasvg-0.0.0-9mEwLi0SFgB6wluo8kf-7y_xnF0OsgKckKkDQZlbFwcO",
         },
         .geist_font = .{
             .url = "https://github.com/vercel/geist-font/releases/download/v1.7.2/geist-font-v1.7.2.zip",
@@ -24,8 +24,25 @@
             .url = "https://github.com/libical/libical/archive/refs/tags/v3.0.20.tar.gz",
             .hash = "N-V-__8AAOcUlQAjl4D6KzwCNfYoBNy-Y--4_E4Jn-tM98-K",
         },
-        .highlight = .{
-            .path = "lib/highlight",
+        .tree_sitter_typescript = .{
+            .url = "https://github.com/tree-sitter/tree-sitter-typescript/archive/refs/tags/v0.23.2.tar.gz",
+            .hash = "N-V-__8AALhpIQFpocCrfuYTb_Vzvxj3QG0T-yqi9x1QNRNM",
+        },
+        .tree_sitter_javascript = .{
+            .url = "https://github.com/tree-sitter/tree-sitter-javascript/archive/refs/tags/v0.25.0.tar.gz",
+            .hash = "N-V-__8AANlfOQB4iUiSxpYjpQ5R6BBgFscc5iYIWIu-9plN",
+        },
+        .tree_sitter_zig = .{
+            .url = "https://github.com/tree-sitter-grammars/tree-sitter-zig/archive/refs/tags/v1.1.2.tar.gz",
+            .hash = "N-V-__8AAN6NXgCZxLUnqe4620P_FqHrEY8PHTA1-VlOn4yX",
+        },
+        .tree_sitter_bash = .{
+            .url = "https://github.com/tree-sitter/tree-sitter-bash/archive/refs/tags/v0.25.1.tar.gz",
+            .hash = "N-V-__8AANjenwCy_cXlIbU8nqBzGxMlEHVokLZJYrmIXtoz",
+        },
+        .tree_sitter_json = .{
+            .url = "https://github.com/tree-sitter/tree-sitter-json/archive/refs/tags/v0.24.8.tar.gz",
+            .hash = "N-V-__8AACVXAgA_t-N8nrK20OmKiOtw3RhaBCAnXwQIiQ8g",
         },
         .xml = .{
             .url = "git+https://github.com/ianprime0509/zig-xml.git#4beab29d68ab308af4bd12a4fc4187c24fdad0d6",
@@ -36,6 +53,5 @@
         "build.zig",
         "build.zig.zon",
         "app",
-        "lib",
     },
 }

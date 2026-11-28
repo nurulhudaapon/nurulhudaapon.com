@@ -1,9 +1,8 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
-
+/// tree-sitter highlighting for the languages the blog uses. Called from the root
+/// `build.zig`, so ziex and the grammars come from the root `build.zig.zon`.
+pub fn addHighlight(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
     const ziex = b.dependency("ziex", .{});
     const tree_sitter = ziex.builder.dependency("tree_sitter", .{ .target = target, .optimize = optimize });
 
@@ -17,21 +16,30 @@ pub fn build(b: *std.Build) void {
         .{ .name = "json", .root = b.dependency("tree_sitter_json", .{}).path("") },
     };
 
+    // The grammars are their own library so they compile against the target's libc
+    // headers even when linked into a freestanding wasm (a `zx.worker`).
+    const c = b.addLibrary(.{
+        .name = "highlight-grammars",
+        .linkage = .static,
+        .root_module = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true }),
+    });
+
     const wf = b.addWriteFiles();
-    const mod = b.addModule("highlight", .{
-        .root_source_file = wf.addCopyFile(b.path("root.zig"), "root.zig"),
+    const mod = b.createModule(.{
+        .root_source_file = wf.addCopyFile(b.path("app/lib/highlight/root.zig"), "root.zig"),
         .target = target,
         .optimize = optimize,
-        .link_libc = true,
         .imports = &.{.{ .name = "tree_sitter", .module = tree_sitter.module("tree_sitter") }},
     });
+    mod.linkLibrary(c);
     for (grammars) |g| {
         const src = g.root.path(b, g.src);
-        mod.addCSourceFile(.{ .file = src.path(b, "parser.c"), .flags = &.{"-std=c11"} });
+        c.root_module.addCSourceFile(.{ .file = src.path(b, "parser.c"), .flags = &.{"-std=c11"} });
         if (g.scanner) {
-            mod.addIncludePath(src);
-            mod.addCSourceFile(.{ .file = src.path(b, "scanner.c"), .flags = &.{"-std=c11"} });
+            c.root_module.addIncludePath(src);
+            c.root_module.addCSourceFile(.{ .file = src.path(b, "scanner.c"), .flags = &.{"-std=c11"} });
         }
         _ = wf.addCopyFile(g.root.path(b, "queries/highlights.scm"), b.fmt("{s}.scm", .{g.name}));
     }
+    return mod;
 }
